@@ -343,15 +343,10 @@ async def _reset_circuit_breakers() -> dict[str, Any]:
     :meth:`~src.risk.circuit_breaker.CircuitBreaker.reset_all` to perform a
     SCAN + DEL sweep of all ``circuit_breaker:*`` keys, then disconnects.
 
-    The ``starting_balance`` and ``daily_loss_limit_pct`` constructor args are
-    not used by ``reset_all()`` (which only scans/deletes keys), so placeholder
-    values are passed.
-
     Returns:
         Serialisable summary dict with ``duration_ms``.
     """
     import time
-    from decimal import Decimal
 
     from src.cache.redis_client import RedisClient
     from src.config import get_settings
@@ -364,11 +359,7 @@ async def _reset_circuit_breakers() -> dict[str, Any]:
     await redis_client.connect()
 
     try:
-        cb = CircuitBreaker(
-            redis=redis_client.get_client(),
-            starting_balance=Decimal(str(settings.default_starting_balance)),
-            daily_loss_limit_pct=Decimal("20"),  # placeholder — reset_all() does not use this
-        )
+        cb = CircuitBreaker(redis=redis_client.get_client())
         await cb.reset_all()
     except Exception:
         logger.exception("circuit_breaker.reset_all.error")

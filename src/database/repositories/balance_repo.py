@@ -15,7 +15,7 @@ Dependency direction:
 
 from __future__ import annotations
 
-import logging
+import structlog
 from decimal import Decimal
 from typing import Sequence
 from uuid import UUID
@@ -30,7 +30,7 @@ from src.utils.exceptions import (
     InsufficientBalanceError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Sentinel value used when the caller does not supply a specific amount for
 # delta operations -- kept as a module-level constant for clarity.
@@ -836,8 +836,9 @@ class BalanceRepository:
             locked=Decimal("0"),
         )
         try:
-            self._session.add(new_row)
-            await self._session.flush()
+            async with self._session.begin_nested():
+                self._session.add(new_row)
+                await self._session.flush()
             await self._session.refresh(new_row)
             logger.info(
                 "balance.auto_created",
@@ -846,8 +847,7 @@ class BalanceRepository:
             return new_row
         except IntegrityError:
             # Race condition: another concurrent request just created the row.
-            # Roll back the failed flush savepoint and re-fetch.
-            await self._session.rollback()
+            # The savepoint above was rolled back; the parent transaction is intact.
             existing = await self.get(account_id, asset)
             if existing is not None:
                 return existing

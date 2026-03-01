@@ -80,8 +80,13 @@ class AuthenticationError(TradingPlatformError):
     code = "INVALID_API_KEY"
     http_status = 401
 
-    def __init__(self, message: str = "Invalid or missing API key.") -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str = "Invalid or missing API key.",
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
 
 
 class InvalidTokenError(TradingPlatformError):
@@ -138,8 +143,13 @@ class PermissionDeniedError(TradingPlatformError):
     code = "PERMISSION_DENIED"
     http_status = 403
 
-    def __init__(self, message: str = "You do not have permission to perform this action.") -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str = "You do not have permission to perform this action.",
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +537,7 @@ class RiskLimitExceededError(TradingPlatformError):
     """Raised by the risk manager when an order would breach a risk limit
     (position size, max open orders, etc.).
 
-    Error code: ``POSITION_LIMIT_EXCEEDED``
+    Error code: ``RISK_LIMIT_EXCEEDED``
     HTTP status: 400
 
     Args:
@@ -540,7 +550,7 @@ class RiskLimitExceededError(TradingPlatformError):
         raise RiskLimitExceededError(limit_type="position_size", current_value=Decimal("0.26"), max_value=Decimal("0.25"))
     """
 
-    code = "POSITION_LIMIT_EXCEEDED"
+    code = "RISK_LIMIT_EXCEEDED"
     http_status = 400
 
     def __init__(
@@ -674,7 +684,7 @@ class DuplicateAccountError(TradingPlatformError):
 # ---------------------------------------------------------------------------
 
 
-class ValidationError(TradingPlatformError):
+class InputValidationError(TradingPlatformError):
     """Raised for generic request payload validation failures that are not
     covered by a more specific exception.
 
@@ -685,7 +695,7 @@ class ValidationError(TradingPlatformError):
         field: The specific field that failed validation (optional).
 
     Example:
-        raise ValidationError("'side' must be 'buy' or 'sell'.", field="side")
+        raise InputValidationError("'side' must be 'buy' or 'sell'.", field="side")
     """
 
     code = "VALIDATION_ERROR"
@@ -696,11 +706,12 @@ class ValidationError(TradingPlatformError):
         message: str = "Request validation failed.",
         *,
         field: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
-        details: dict[str, Any] = {}
+        _details: dict[str, Any] = dict(details) if details else {}
         if field is not None:
-            details["field"] = field
-        super().__init__(message, details=details)
+            _details["field"] = field
+        super().__init__(message, details=_details)
 
 
 # ---------------------------------------------------------------------------
@@ -718,8 +729,13 @@ class DatabaseError(TradingPlatformError):
     code = "DATABASE_ERROR"
     http_status = 500
 
-    def __init__(self, message: str = "A database error occurred.") -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str = "A database error occurred.",
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
 
 
 class CacheError(TradingPlatformError):
@@ -732,8 +748,13 @@ class CacheError(TradingPlatformError):
     code = "CACHE_ERROR"
     http_status = 500
 
-    def __init__(self, message: str = "A cache error occurred.") -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str = "A cache error occurred.",
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
 
 
 class ServiceUnavailableError(TradingPlatformError):
@@ -747,8 +768,13 @@ class ServiceUnavailableError(TradingPlatformError):
     code = "SERVICE_UNAVAILABLE"
     http_status = 503
 
-    def __init__(self, message: str = "Service is temporarily unavailable.") -> None:
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str = "Service is temporarily unavailable.",
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
 
 
 # ---------------------------------------------------------------------------
@@ -784,7 +810,7 @@ __all__ = [
     "AccountNotFoundError",
     "DuplicateAccountError",
     # Validation
-    "ValidationError",
+    "InputValidationError",
     # Infrastructure
     "DatabaseError",
     "CacheError",

@@ -12,6 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create non-root user
+RUN adduser --disabled-password --gecos "" appuser
+
 COPY src/ ./src/
+
+RUN chown -R appuser /app
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c "import redis, os, sys; r=redis.from_url(os.environ['REDIS_URL']); sys.exit(0 if r.hlen('prices') > 0 else 1)"
 
 CMD ["python", "-m", "src.price_ingestion.service"]

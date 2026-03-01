@@ -20,6 +20,7 @@ All models inherit from the shared ``Base`` declarative base.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
@@ -88,11 +89,11 @@ class Tick(Base):
         primary_key=True,
         nullable=False,
     )
-    price: Mapped[float] = mapped_column(
+    price: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    quantity: Mapped[float] = mapped_column(
+    quantity: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
@@ -158,19 +159,19 @@ class TradingPair(Base):
         default="active",
         server_default="'active'",
     )
-    min_qty: Mapped[float | None] = mapped_column(
+    min_qty: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
-    max_qty: Mapped[float | None] = mapped_column(
+    max_qty: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
-    step_size: Mapped[float | None] = mapped_column(
+    step_size: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
-    min_notional: Mapped[float | None] = mapped_column(
+    min_notional: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
@@ -241,7 +242,7 @@ class Account(Base):
         VARCHAR(255),
         nullable=True,
     )
-    starting_balance: Mapped[float] = mapped_column(
+    starting_balance: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
         server_default="10000.00",
@@ -330,12 +331,12 @@ class Balance(Base):
         VARCHAR(20),
         nullable=False,
     )
-    available: Mapped[float] = mapped_column(
+    available: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
         server_default="0",
     )
-    locked: Mapped[float] = mapped_column(
+    locked: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
         server_default="0",
@@ -395,7 +396,7 @@ class TradingSession(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    starting_balance: Mapped[float] = mapped_column(
+    starting_balance: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
@@ -408,7 +409,7 @@ class TradingSession(Base):
         TIMESTAMP(timezone=True),
         nullable=True,
     )
-    ending_equity: Mapped[float | None] = mapped_column(
+    ending_equity: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
@@ -482,7 +483,7 @@ class Order(Base):
     )
     session_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("trading_sessions.id"),
+        ForeignKey("trading_sessions.id", ondelete="SET NULL"),
         nullable=True,
     )
     symbol: Mapped[str] = mapped_column(
@@ -497,27 +498,27 @@ class Order(Base):
         VARCHAR(20),
         nullable=False,
     )
-    quantity: Mapped[float] = mapped_column(
+    quantity: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    price: Mapped[float | None] = mapped_column(
+    price: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
-    executed_price: Mapped[float | None] = mapped_column(
+    executed_price: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
-    executed_qty: Mapped[float | None] = mapped_column(
+    executed_qty: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
-    slippage_pct: Mapped[float | None] = mapped_column(
+    slippage_pct: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 6),
         nullable=True,
     )
-    fee: Mapped[float | None] = mapped_column(
+    fee: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
@@ -623,12 +624,12 @@ class Trade(Base):
     )
     order_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("orders.id"),
+        ForeignKey("orders.id", ondelete="CASCADE"),
         nullable=False,
     )
     session_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("trading_sessions.id"),
+        ForeignKey("trading_sessions.id", ondelete="SET NULL"),
         nullable=True,
     )
     symbol: Mapped[str] = mapped_column(
@@ -639,23 +640,23 @@ class Trade(Base):
         VARCHAR(4),
         nullable=False,
     )
-    quantity: Mapped[float] = mapped_column(
+    quantity: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    price: Mapped[float] = mapped_column(
+    price: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    quote_amount: Mapped[float] = mapped_column(
+    quote_amount: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    fee: Mapped[float] = mapped_column(
+    fee: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    realized_pnl: Mapped[float | None] = mapped_column(
+    realized_pnl: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),
         nullable=True,
     )
@@ -672,6 +673,7 @@ class Trade(Base):
     )
 
     __table_args__ = (
+        CheckConstraint("side IN ('buy', 'sell')", name="ck_trades_side"),
         Index("idx_trades_account", "account_id"),
         Index("idx_trades_account_time", "account_id", "created_at"),
         Index("idx_trades_symbol", "symbol", "created_at"),
@@ -729,20 +731,20 @@ class Position(Base):
         nullable=False,
         server_default="'long'",
     )
-    quantity: Mapped[float] = mapped_column(
+    quantity: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
         server_default="0",
     )
-    avg_entry_price: Mapped[float] = mapped_column(
+    avg_entry_price: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    total_cost: Mapped[float] = mapped_column(
+    total_cost: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    realized_pnl: Mapped[float] = mapped_column(
+    realized_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
         server_default="0",
@@ -824,23 +826,23 @@ class PortfolioSnapshot(Base):
         VARCHAR(10),
         nullable=False,
     )
-    total_equity: Mapped[float] = mapped_column(
+    total_equity: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    available_cash: Mapped[float] = mapped_column(
+    available_cash: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    position_value: Mapped[float] = mapped_column(
+    position_value: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    unrealized_pnl: Mapped[float] = mapped_column(
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )
-    realized_pnl: Mapped[float] = mapped_column(
+    realized_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
     )

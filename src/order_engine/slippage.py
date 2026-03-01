@@ -44,18 +44,22 @@ Example::
 
 from __future__ import annotations
 
-import logging
+import structlog
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from src.cache.price_cache import PriceCache
-from src.utils.exceptions import PriceNotAvailableError
+from src.utils.exceptions import InputValidationError, PriceNotAvailableError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Minimum slippage used when no ticker volume is available.  Expressed as a
 # fraction (0.0001 = 0.01 %).
 _MIN_SLIPPAGE_FRACTION: Decimal = Decimal("0.0001")
+
+# Maximum slippage cap to prevent negative execution prices on extreme orders
+# (e.g. a sell order with > 100 % slippage would produce a negative price).
+_MAX_SLIPPAGE_FRACTION: Decimal = Decimal("0.10")
 
 # Fee expressed as a fraction (0.001 = 0.1 %).
 _FEE_FRACTION: Decimal = Decimal("0.001")
@@ -147,7 +151,10 @@ class SlippageCalculator:
         """
         side_lower = side.lower()
         if side_lower not in {"buy", "sell"}:
-            raise ValueError(f"Invalid order side: {side!r}. Must be 'buy' or 'sell'.")
+            raise InputValidationError(
+                f"Invalid order side: {side!r}. Must be 'buy' or 'sell'.",
+                field="side",
+            )
 
         if reference_price <= Decimal("0"):
             raise PriceNotAvailableError(
@@ -242,5 +249,6 @@ class SlippageCalculator:
         # Core formula: slippage_fraction = factor * order_size / daily_volume
         slippage_fraction = self._default_factor * order_size_usd / avg_daily_volume_usd
 
-        # Clamp to minimum so even tiny orders pay at least _MIN_SLIPPAGE_FRACTION.
-        return max(slippage_fraction, _MIN_SLIPPAGE_FRACTION)
+        # Clamp between minimum (so tiny orders still pay some slippage) and maximum
+        # (so extreme orders cannot produce zero or negative execution prices).
+        return min(max(slippage_fraction, _MIN_SLIPPAGE_FRACTION), _MAX_SLIPPAGE_FRACTION)

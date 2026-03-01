@@ -19,17 +19,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
+import structlog
 import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from src.cache.price_cache import Tick
+from src.cache.types import Tick
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 _EXCHANGE_INFO_URL: str = "https://api.binance.com/api/v3/exchangeInfo"
 _WS_BASE_URL: str = "wss://stream.binance.com:9443/stream"
@@ -93,7 +94,7 @@ class BinanceWebSocketClient:
             for s in data["symbols"]
             if s["status"] == "TRADING" and s["quoteAsset"] == "USDT"
         )
-        logger.info("Fetched %d active USDT trading pairs from Binance", len(self._symbols))
+        log.info("Fetched active USDT trading pairs from Binance", count=len(self._symbols))
 
         self._stream_urls = self._build_stream_urls(self._symbols)
         return self._symbols
@@ -106,7 +107,7 @@ class BinanceWebSocketClient:
         """
         return list(self._symbols)
 
-    async def listen(self) -> None:  # type: ignore[override]
+    async def listen(self) -> AsyncGenerator[Tick, None]:
         """Async generator that yields :class:`~src.cache.price_cache.Tick` objects.
 
         Spawns one concurrent listener task per WebSocket URL (needed when
@@ -132,7 +133,7 @@ class BinanceWebSocketClient:
         try:
             while True:
                 tick = await queue.get()
-                yield tick  # type: ignore[misc]
+                yield tick
         finally:
             for task in tasks:
                 task.cancel()
@@ -154,7 +155,7 @@ class BinanceWebSocketClient:
             chunk = symbols[i : i + self._max_streams]
             streams = "/".join(f"{sym.lower()}@trade" for sym in chunk)
             urls.append(f"{self._ws_base_url}?streams={streams}")
-        logger.debug("Built %d WebSocket connection URL(s) for %d symbols", len(urls), len(symbols))
+        log.debug("Built WebSocket connection URLs", url_count=len(urls), symbol_count=len(symbols))
         return urls
 
     async def _connection_loop(
@@ -174,7 +175,7 @@ class BinanceWebSocketClient:
         backoff = _BACKOFF_BASE
         while True:
             try:
-                logger.info("Connecting to Binance WebSocket: %s…", url[:80])
+                log.info("Connecting to Binance WebSocket", url=url[:80])
                 async with websockets.connect(
                     url,
                     ping_interval=20,
@@ -182,26 +183,26 @@ class BinanceWebSocketClient:
                     close_timeout=5,
                 ) as ws:
                     backoff = _BACKOFF_BASE  # reset on successful connection
-                    logger.info("Binance WebSocket connected")
+                    log.info("Binance WebSocket connected")
                     async for raw_message in ws:
                         tick = self._parse_message(raw_message)
                         if tick is not None:
                             await queue.put(tick)
 
             except asyncio.CancelledError:
-                logger.info("Binance WebSocket listener cancelled")
+                log.info("Binance WebSocket listener cancelled")
                 return
             except (ConnectionClosed, WebSocketException, OSError) as exc:
-                logger.warning(
-                    "Binance WebSocket disconnected (%s). Reconnecting in %.0fs…",
-                    exc,
-                    backoff,
+                log.warning(
+                    "Binance WebSocket disconnected — reconnecting",
+                    error=str(exc),
+                    backoff=backoff,
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "Unexpected error in Binance WebSocket loop: %s. Reconnecting in %.0fs…",
-                    exc,
-                    backoff,
+                log.error(
+                    "Unexpected error in Binance WebSocket loop — reconnecting",
+                    error=str(exc),
+                    backoff=backoff,
                 )
 
             await asyncio.sleep(backoff)
@@ -234,6 +235,6 @@ class BinanceWebSocketClient:
                 is_buyer_maker=bool(data["m"]),
                 trade_id=int(data["t"]),
             )
-        except (KeyError, ValueError, TypeError) as exc:
-            logger.debug("Failed to parse Binance message: %s — %r", exc, raw)
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+            log.debug("Failed to parse Binance message", error=str(exc))
             return None

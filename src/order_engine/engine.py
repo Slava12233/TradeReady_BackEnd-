@@ -54,7 +54,7 @@ Example::
 
 from __future__ import annotations
 
-import logging
+import structlog
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -72,13 +72,15 @@ from src.database.repositories.trade_repo import TradeRepository
 from src.order_engine.slippage import SlippageCalculator
 from src.order_engine.validators import OrderRequest, OrderValidator
 from src.utils.exceptions import (
+    CacheError,
     DatabaseError,
     InsufficientBalanceError,
+    OrderNotCancellableError,
     OrderNotFoundError,
     PriceNotAvailableError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -202,7 +204,7 @@ class OrderEngine:
             or ``status="pending"`` for queued orders.
 
         Raises:
-            ValidationError:         From the validator for bad field values.
+            InputValidationError:    From the validator for bad field values.
             InvalidOrderTypeError:   From the validator for unsupported type.
             InvalidQuantityError:    From the validator for non-positive qty.
             InvalidSymbolError:      From the validator if the pair is inactive.
@@ -219,7 +221,12 @@ class OrderEngine:
         """
         pair = await self._validator.validate(order)
 
-        reference_price = await self._price_cache.get_price(order.symbol)
+        try:
+            reference_price = await self._price_cache.get_price(order.symbol)
+        except Exception as exc:
+            raise CacheError(
+                f"Failed to fetch price for {order.symbol} from cache."
+            ) from exc
         if reference_price is None:
             raise PriceNotAvailableError(symbol=order.symbol)
 
@@ -238,7 +245,7 @@ class OrderEngine:
             order=order,
             base_asset=pair.base_asset,
             quote_asset=pair.quote_asset,
-            reference_price=reference_price,
+            market_price=reference_price,
         )
 
     async def cancel_order(self, account_id: UUID, order_id: UUID) -> bool:
@@ -261,8 +268,13 @@ class OrderEngine:
 
             cancelled = await engine.cancel_order(account_id, order.id)
         """
-        order = await self._order_repo.get_by_id(order_id, account_id=account_id)
-        await self._order_repo.cancel(order_id, account_id)
+        # cancel() raises OrderNotCancellableError if the order is already in a
+        # terminal state (e.g. filled by the matcher between our fetch and now).
+        # In that case _release_locked_funds must NOT be called — the funds were
+        # already settled as part of the fill.  Using the order returned by
+        # cancel() (rather than a pre-fetched copy) ensures we release exactly
+        # the amount that was locked, avoiding any TOCTOU inconsistency.
+        order = await self._order_repo.cancel(order_id, account_id)
         await self._release_locked_funds(account_id=account_id, order=order)
 
         try:
@@ -312,20 +324,32 @@ class OrderEngine:
         )
 
         cancelled_count = 0
+        failed_order_ids: list[str] = []
         for order in open_orders:
             try:
-                await self._order_repo.cancel(order.id, account_id)
-                await self._release_locked_funds(account_id=account_id, order=order)
+                cancelled = await self._order_repo.cancel(order.id, account_id)
+                await self._release_locked_funds(account_id=account_id, order=cancelled)
                 cancelled_count += 1
-            except Exception:
-                logger.exception(
-                    "engine.cancel_all.single_cancel_error",
+            except (OrderNotFoundError, OrderNotCancellableError, InsufficientBalanceError):
+                # Order was already filled/cancelled or funds state is inconsistent;
+                # skip and continue so the remaining orders are still cancelled.
+                logger.warning(
+                    "engine.cancel_all.single_cancel_skipped",
                     extra={
                         "order_id": str(order.id),
                         "account_id": str(account_id),
                     },
                 )
-                # Continue cancelling the rest; we'll still commit what succeeded.
+                failed_order_ids.append(str(order.id))
+            except SQLAlchemyError:
+                logger.exception(
+                    "engine.cancel_all.single_cancel_db_error",
+                    extra={
+                        "order_id": str(order.id),
+                        "account_id": str(account_id),
+                    },
+                )
+                failed_order_ids.append(str(order.id))
 
         if cancelled_count > 0:
             try:
@@ -340,7 +364,12 @@ class OrderEngine:
 
         logger.info(
             "engine.cancel_all_orders",
-            extra={"account_id": str(account_id), "cancelled": cancelled_count},
+            extra={
+                "account_id": str(account_id),
+                "cancelled": cancelled_count,
+                "failed": len(failed_order_ids),
+                "failed_ids": failed_order_ids,
+            },
         )
         return cancelled_count
 
@@ -424,10 +453,10 @@ class OrderEngine:
                 session_id=order.session_id,
                 symbol=order.symbol,
                 side=order.side,
-                quantity=order.quantity,
-                price=float(slippage.execution_price),
-                quote_amount=float(settlement.quote_amount),
-                fee=float(settlement.fee_charged),
+                quantity=Decimal(str(order.quantity)),
+                price=slippage.execution_price,
+                quote_amount=settlement.quote_amount,
+                fee=settlement.fee_charged,
             )
         )
 
@@ -533,7 +562,7 @@ class OrderEngine:
             symbol=order.symbol,
             side=order.side,
             type=order.type,
-            quantity=float(order.quantity),
+            quantity=order.quantity,
             status="pending",
         )
         db_order = await self._order_repo.create(db_order)
@@ -568,10 +597,10 @@ class OrderEngine:
                 order_id=db_order.id,
                 symbol=order.symbol,
                 side=order.side,
-                quantity=float(order.quantity),
-                price=float(slippage.execution_price),
-                quote_amount=float(settlement.quote_amount),
-                fee=float(settlement.fee_charged),
+                quantity=order.quantity,
+                price=slippage.execution_price,
+                quote_amount=settlement.quote_amount,
+                fee=settlement.fee_charged,
             )
         )
 
@@ -616,7 +645,7 @@ class OrderEngine:
         order: OrderRequest,
         base_asset: str,
         quote_asset: str,
-        reference_price: Decimal,
+        market_price: Decimal,
     ) -> OrderResult:
         """Create a pending (limit/stop_loss/take_profit) order and lock funds.
 
@@ -626,12 +655,12 @@ class OrderEngine:
         amount exactly matches the expected fill cost.
 
         Args:
-            account_id:      The owning account's UUID.
-            order:           The validated order request (must have ``price``).
-            base_asset:      Base asset ticker.
-            quote_asset:     Quote asset ticker.
-            reference_price: Current market price (used only for slippage
-                             estimate logging; not used for locking calculation).
+            account_id:  The owning account's UUID.
+            order:       The validated order request (must have ``price``).
+            base_asset:  Base asset ticker.
+            quote_asset: Quote asset ticker.
+            market_price: Current market price at placement time (logged for
+                          observability; not used for locking calculation).
 
         Returns:
             :class:`OrderResult` with ``status="pending"``.
@@ -674,8 +703,8 @@ class OrderEngine:
             symbol=order.symbol,
             side=order.side,
             type=order.type,
-            quantity=float(order.quantity),
-            price=float(limit_price),
+            quantity=order.quantity,
+            price=limit_price,
             status="pending",
         )
         db_order = await self._order_repo.create(db_order)
@@ -704,7 +733,7 @@ class OrderEngine:
                 "price": str(limit_price),
                 "lock_asset": lock_asset,
                 "lock_amount": str(lock_amount),
-                "reference_price": str(reference_price),
+                "market_price": str(market_price),
             },
         )
 
@@ -736,12 +765,19 @@ class OrderEngine:
             account_id: The owning account's UUID.
             order:      The ORM :class:`~src.database.models.Order` being cancelled.
         """
-        # Only pending orders have funds locked.  The status was already
-        # ``pending`` when we fetched the order for cancellation.
+        # Only pending orders have funds locked.  Market orders go straight to
+        # ``filled`` and never enter the cancellable state, so a ``None`` price
+        # here indicates a data inconsistency (e.g. migration edge case).
+        # Raise rather than silently skip so the caller knows funds may be stuck.
         if order.price is None:
-            # Market orders should never reach here (they go straight to filled),
-            # but guard defensively.
-            return
+            logger.warning(
+                "engine.release_locked_funds.no_price",
+                extra={"order_id": str(order.id), "account_id": str(account_id)},
+            )
+            raise DatabaseError(
+                f"Cannot release locked funds for order {order.id}: order has no "
+                "price field (possible data inconsistency; locked funds may be stuck)."
+            )
 
         try:
             if order.side == "buy":
@@ -788,15 +824,13 @@ def _base_asset_from_order(order: Order) -> str:
         The base asset string, e.g. ``"BTC"`` for ``"BTCUSDT"``.
     """
     symbol: str = order.symbol
-    if symbol.endswith("USDT"):
-        return symbol[:-4]
-    if symbol.endswith("BTC"):
-        return symbol[:-3]
-    if symbol.endswith("ETH"):
-        return symbol[:-3]
-    if symbol.endswith("BNB"):
-        return symbol[:-3]
-    # Generic fallback: strip last 4 chars (USDT length)
+    # Use str.removesuffix (Python 3.9+) to avoid silent wrong-length stripping.
+    for quote in ("USDT", "BTC", "ETH", "BNB"):
+        base = symbol.removesuffix(quote)
+        if base != symbol:  # suffix was present
+            return base
+    # Unknown quote currency — log and fall back to USDT-length strip.
+    logger.warning("engine.unknown_symbol_format", extra={"symbol": symbol})
     return symbol[:-4]
 
 
@@ -813,12 +847,7 @@ def _quote_asset_from_order(order: Order) -> str:
         The quote asset string, e.g. ``"USDT"`` for ``"BTCUSDT"``.
     """
     symbol: str = order.symbol
-    if symbol.endswith("USDT"):
-        return "USDT"
-    if symbol.endswith("BTC"):
-        return "BTC"
-    if symbol.endswith("ETH"):
-        return "ETH"
-    if symbol.endswith("BNB"):
-        return "BNB"
+    for quote in ("USDT", "BTC", "ETH", "BNB"):
+        if symbol.endswith(quote):
+            return quote
     return "USDT"

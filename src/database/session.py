@@ -160,7 +160,7 @@ async def close_db() -> None:
             yield
             await close_db()
     """
-    global _engine, _asyncpg_pool
+    global _engine, _asyncpg_pool, _session_factory
 
     if _asyncpg_pool is not None:
         await _asyncpg_pool.close()
@@ -169,3 +169,5 @@ async def close_db() -> None:
     if _engine is not None:
         await _engine.dispose()
         _engine = None
+
+    _session_factory = None

@@ -30,15 +30,16 @@ Example::
 
 from __future__ import annotations
 
-import logging
+import asyncio
+import structlog
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import select, update
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.accounts.auth import (
@@ -46,16 +47,17 @@ from src.accounts.auth import (
     generate_api_credentials,
 )
 from src.config import Settings
-from src.database.models import Account, Balance, TradingSession
+from src.database.models import Account, Balance, Order, TradingSession
 from src.database.repositories.account_repo import AccountRepository
 from src.database.repositories.balance_repo import BalanceRepository
 from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,
     DatabaseError,
+    DuplicateAccountError,
 )
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # Asset credited on every new account and account reset.
 _STARTING_ASSET = "USDT"
@@ -161,50 +163,61 @@ class AccountService:
             creds = await svc.register("AlphaBot", email="alpha@example.com")
             # → AccountCredentials(account_id=UUID(...), api_key="ak_live_...", ...)
         """
-        balance_amount = starting_balance or self._settings.default_starting_balance
+        balance_amount = starting_balance if starting_balance is not None else self._settings.default_starting_balance
 
-        creds = generate_api_credentials()
+        # generate_api_credentials() runs bcrypt (CPU-bound) — offload to thread pool
+        loop = asyncio.get_event_loop()
+        creds = await loop.run_in_executor(None, generate_api_credentials)
 
-        account = Account(
-            api_key=creds.api_key,
-            api_key_hash=creds.api_key_hash,
-            api_secret_hash=creds.api_secret_hash,
-            display_name=display_name,
-            email=email,
-            starting_balance=balance_amount,
-            status="active",
-            risk_profile={},
-        )
+        try:
+            account = Account(
+                api_key=creds.api_key,
+                api_key_hash=creds.api_key_hash,
+                api_secret_hash=creds.api_secret_hash,
+                display_name=display_name,
+                email=email,
+                starting_balance=balance_amount,
+                status="active",
+                risk_profile={},
+            )
 
-        account = await self._account_repo.create(account)
+            account = await self._account_repo.create(account)
 
-        usdt_balance = Balance(
-            account_id=account.id,
-            asset=_STARTING_ASSET,
-            available=balance_amount,
-            locked=Decimal("0"),
-        )
-        await self._balance_repo.create(usdt_balance)
+            usdt_balance = Balance(
+                account_id=account.id,
+                asset=_STARTING_ASSET,
+                available=balance_amount,
+                locked=Decimal("0"),
+            )
+            await self._balance_repo.create(usdt_balance)
 
-        session_row = TradingSession(
-            account_id=account.id,
-            starting_balance=balance_amount,
-            status="active",
-        )
-        self._session.add(session_row)
-        await self._session.flush()
-        await self._session.refresh(session_row)
+            session_row = TradingSession(
+                account_id=account.id,
+                starting_balance=balance_amount,
+                status="active",
+            )
+            self._session.add(session_row)
+            await self._session.flush()
+            await self._session.refresh(session_row)
 
-        await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise DuplicateAccountError(email=email) from exc
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            log.exception(
+                "account.register.db_error",
+                display_name=display_name,
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to register account.") from exc
 
-        logger.info(
+        log.info(
             "account.registered",
-            extra={
-                "account_id": str(account.id),
-                "display_name": display_name,
-                "starting_balance": str(balance_amount),
-                "session_id": str(session_row.id),
-            },
+            account_id=str(account.id),
+            display_name=display_name,
+            starting_balance=str(balance_amount),
+            session_id=str(session_row.id),
         )
 
         return AccountCredentials(
@@ -246,20 +259,19 @@ class AccountService:
         """
         account = await self._account_repo.get_by_api_key(api_key)
 
-        # Raises AuthenticationError on mismatch
-        authenticate_api_key(api_key, account.api_key_hash)
+        # authenticate_api_key() calls bcrypt (CPU-bound) — offload to thread pool
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, authenticate_api_key, api_key, account.api_key_hash)
 
         if account.status != "active":
-            logger.warning(
+            log.warning(
                 "account.auth.rejected_non_active",
-                extra={"account_id": str(account.id), "status": account.status},
+                account_id=str(account.id),
+                status=account.status,
             )
             raise AccountSuspendedError(account_id=account.id)
 
-        logger.debug(
-            "account.authenticated",
-            extra={"account_id": str(account.id)},
-        )
+        log.debug("account.authenticated", account_id=str(account.id))
         return account
 
     # ------------------------------------------------------------------
@@ -351,7 +363,19 @@ class AccountService:
             raise AccountSuspendedError(account_id=account_id)
 
         try:
-            # 1. Close the current active session (if one exists)
+            # 1. Cancel all pending / partially-filled orders before wiping balances.
+            #    Without this, the Celery LimitOrderMonitor could execute stale orders
+            #    against the freshly-credited USDT balance after the reset.
+            await self._session.execute(
+                update(Order)
+                .where(
+                    Order.account_id == account_id,
+                    Order.status.in_(["pending", "partially_filled"]),
+                )
+                .values(status="cancelled")
+            )
+
+            # 2. Close the current active session (if one exists)
             await self._session.execute(
                 update(TradingSession)
                 .where(
@@ -364,13 +388,13 @@ class AccountService:
                 )
             )
 
-            # 2. Wipe all balance rows for the account
+            # 3. Wipe all balance rows for the account
             balances: Sequence[Balance] = await self._balance_repo.get_all(account_id)
             for bal in balances:
                 await self._session.delete(bal)
             await self._session.flush()
 
-            # 3. Re-credit starting USDT balance
+            # 4. Re-credit starting USDT balance
             starting = Decimal(str(account.starting_balance))
             fresh_balance = Balance(
                 account_id=account_id,
@@ -381,7 +405,7 @@ class AccountService:
             self._session.add(fresh_balance)
             await self._session.flush()
 
-            # 4. Open a new trading session
+            # 5. Open a new trading session
             new_session = TradingSession(
                 account_id=account_id,
                 starting_balance=starting,
@@ -391,15 +415,11 @@ class AccountService:
             await self._session.flush()
             await self._session.refresh(new_session)
 
-            await self._session.commit()
-
-            logger.info(
+            log.info(
                 "account.reset",
-                extra={
-                    "account_id": str(account_id),
-                    "new_session_id": str(new_session.id),
-                    "starting_balance": str(starting),
-                },
+                account_id=str(account_id),
+                new_session_id=str(new_session.id),
+                starting_balance=str(starting),
             )
             return new_session
 
@@ -407,9 +427,10 @@ class AccountService:
             raise
         except SQLAlchemyError as exc:
             await self._session.rollback()
-            logger.exception(
+            log.exception(
                 "account.reset.db_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise DatabaseError("Failed to reset account.") from exc
 
@@ -431,12 +452,12 @@ class AccountService:
 
             await svc.suspend_account(account.id)
         """
-        await self._account_repo.update_status(account_id, "suspended")
-        await self._session.commit()
-        logger.info(
-            "account.suspended",
-            extra={"account_id": str(account_id)},
-        )
+        try:
+            await self._account_repo.update_status(account_id, "suspended")
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            raise DatabaseError("Failed to suspend account.") from exc
+        log.info("account.suspended", account_id=str(account_id))
 
     async def unsuspend_account(self, account_id: UUID) -> None:
         """Reactivate a previously suspended account.
@@ -454,42 +475,10 @@ class AccountService:
 
             await svc.unsuspend_account(account.id)
         """
-        await self._account_repo.update_status(account_id, "active")
-        await self._session.commit()
-        logger.info(
-            "account.unsuspended",
-            extra={"account_id": str(account_id)},
-        )
-
-    async def _get_active_session(self, account_id: UUID) -> TradingSession | None:
-        """Return the current active :class:`TradingSession` for an account.
-
-        Args:
-            account_id: The account's UUID.
-
-        Returns:
-            The active :class:`TradingSession`, or ``None`` if no active session
-            exists (e.g. first call before any session is opened — should not
-            happen in normal flow).
-
-        Raises:
-            DatabaseError: On any SQLAlchemy error.
-        """
         try:
-            stmt = (
-                select(TradingSession)
-                .where(
-                    TradingSession.account_id == account_id,
-                    TradingSession.status == "active",
-                )
-                .order_by(TradingSession.started_at.desc())
-                .limit(1)
-            )
-            result = await self._session.execute(stmt)
-            return result.scalars().first()
+            await self._account_repo.update_status(account_id, "active")
         except SQLAlchemyError as exc:
-            logger.exception(
-                "account.get_active_session.db_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
-            )
-            raise DatabaseError("Failed to fetch active trading session.") from exc
+            await self._session.rollback()
+            raise DatabaseError("Failed to unsuspend account.") from exc
+        log.info("account.unsuspended", account_id=str(account_id))
+

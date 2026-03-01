@@ -167,7 +167,7 @@ def verify_api_key(plaintext: str, stored_hash: str) -> bool:
     """
     try:
         return bcrypt.checkpw(plaintext.encode(), stored_hash.encode())
-    except Exception:
+    except ValueError:
         return False
 
 
@@ -186,7 +186,7 @@ def verify_api_secret(plaintext: str, stored_hash: str) -> bool:
     """
     try:
         return bcrypt.checkpw(plaintext.encode(), stored_hash.encode())
-    except Exception:
+    except ValueError:
         return False
 
 
@@ -279,14 +279,10 @@ def verify_jwt(token: str, jwt_secret: str) -> JwtPayload:
     except (ValueError, KeyError) as exc:
         raise InvalidTokenError("JWT token contains an invalid 'sub' claim.") from exc
 
-    iat_raw = decoded.get("iat")
-    exp_raw = decoded.get("exp")
-
-    if not isinstance(iat_raw, (int, float)) or not isinstance(exp_raw, (int, float)):
-        raise InvalidTokenError("JWT token is missing 'iat' or 'exp' claims.")
-
-    issued_at = datetime.fromtimestamp(float(iat_raw), tz=timezone.utc)
-    expires_at = datetime.fromtimestamp(float(exp_raw), tz=timezone.utc)
+    # PyJWT guarantees iat and exp are present numeric values when decode()
+    # succeeds with options={"require": ["iat", "exp"]}.
+    issued_at = datetime.fromtimestamp(float(decoded["iat"]), tz=timezone.utc)  # type: ignore[arg-type]
+    expires_at = datetime.fromtimestamp(float(decoded["exp"]), tz=timezone.utc)  # type: ignore[arg-type]
 
     return JwtPayload(
         account_id=account_id,
@@ -319,5 +315,19 @@ def authenticate_api_key(raw_key: str, stored_hash: str) -> None:
         authenticate_api_key(request.headers["X-API-Key"], account.api_key_hash)
         # No exception → key is valid
     """
+    if not raw_key.startswith(_API_KEY_PREFIX) or len(raw_key) != len(_API_KEY_PREFIX) + 64:
+        raise AuthenticationError("API key format is invalid.")
     if not verify_api_key(raw_key, stored_hash):
         raise AuthenticationError("API key is invalid.")
+
+
+__all__ = [
+    "ApiCredentials",
+    "JwtPayload",
+    "generate_api_credentials",
+    "verify_api_key",
+    "verify_api_secret",
+    "create_jwt",
+    "verify_jwt",
+    "authenticate_api_key",
+]

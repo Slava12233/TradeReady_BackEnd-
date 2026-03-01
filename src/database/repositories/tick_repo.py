@@ -24,8 +24,9 @@ Dependency direction:
 
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Sequence
 
 from sqlalchemy import func as sa_func, select
@@ -35,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Tick
 from src.utils.exceptions import DatabaseError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class TickRepository:
@@ -296,7 +297,7 @@ class TickRepository:
         *,
         since: datetime,
         until: datetime | None = None,
-    ) -> float | None:
+    ) -> Decimal | None:
         """Compute the volume-weighted average price (VWAP) for *symbol*.
 
         VWAP = SUM(price * quantity) / SUM(quantity) over the requested
@@ -313,7 +314,7 @@ class TickRepository:
                     current UTC moment when ``None``.
 
         Returns:
-            VWAP as a ``float``, or ``None`` if the window contains no ticks.
+            VWAP as a ``Decimal``, or ``None`` if the window contains no ticks.
 
         Raises:
             DatabaseError: On any SQLAlchemy / database error.
@@ -345,9 +346,9 @@ class TickRepository:
             row = result.one()
             total_value, total_qty = row[0], row[1]
 
-            if total_qty is None or float(total_qty) == 0.0:
+            if total_qty is None or total_qty == 0:
                 return None
-            return float(total_value) / float(total_qty)
+            return Decimal(str(total_value)) / Decimal(str(total_qty))
         except SQLAlchemyError as exc:
             logger.exception(
                 "tick_repo.get_vwap.db_error",

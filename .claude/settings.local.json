@@ -4,7 +4,12 @@
       "Bash(ls:*)",
       "Bash(cat:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "Bash(docker compose up -d --build api)",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U postgres -c \"SELECT extversion FROM pg_extension WHERE extname=''timescaledb'';\")",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U agentexchange -d agentexchange -c \"SELECT extversion FROM pg_extension WHERE extname=''timescaledb'';\")",
+      "Bash(docker compose up -d timescaledb)",
+      "Bash(docker compose up -d api)"
     ]
   }
 }

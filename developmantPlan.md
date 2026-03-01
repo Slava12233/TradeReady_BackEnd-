@@ -1436,16 +1436,27 @@ X-API-Key: {your_api_key}
 | Code | HTTP Status | Description |
 |---|---|---|
 | `INVALID_API_KEY` | 401 | API key not found or inactive |
+| `INVALID_TOKEN` | 401 | JWT token invalid or expired |
+| `PERMISSION_DENIED` | 403 | Action not authorised for this account |
 | `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
 | `INSUFFICIENT_BALANCE` | 400 | Not enough funds |
 | `INVALID_SYMBOL` | 400 | Trading pair not found |
 | `INVALID_ORDER_TYPE` | 400 | Unsupported order type |
 | `INVALID_QUANTITY` | 400 | Quantity below minimum or above maximum |
-| `POSITION_LIMIT_EXCEEDED` | 400 | Would exceed position size limit |
+| `VALIDATION_ERROR` | 422 | Generic request payload validation failure |
+| `RISK_LIMIT_EXCEEDED` | 400 | Would exceed a risk limit (position size, max open orders, etc.) |
 | `DAILY_LOSS_LIMIT` | 403 | Daily loss limit reached, trading halted |
 | `ORDER_NOT_FOUND` | 404 | Order ID not found |
 | `ORDER_NOT_CANCELLABLE` | 400 | Order already filled or cancelled |
+| `ORDER_REJECTED` | 400 | Order rejected by the engine or risk manager |
+| `TRADE_NOT_FOUND` | 404 | Trade ID not found |
 | `ACCOUNT_SUSPENDED` | 403 | Account is suspended |
+| `DUPLICATE_ACCOUNT` | 409 | Email already registered |
+| `ACCOUNT_NOT_FOUND` | 404 | Account ID not found |
+| `PRICE_NOT_AVAILABLE` | 503 | Real-time price not available for the symbol |
+| `DATABASE_ERROR` | 500 | Unexpected database failure |
+| `CACHE_ERROR` | 500 | Unexpected Redis/cache failure |
+| `SERVICE_UNAVAILABLE` | 503 | Required downstream service is unavailable |
 | `INTERNAL_ERROR` | 500 | Unexpected server error |
 
 ---

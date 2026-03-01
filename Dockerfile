@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create non-root user
+RUN adduser --disabled-password --gecos "" appuser
+
 # Copy application source
 COPY src/ ./src/
 COPY alembic/ ./alembic/
@@ -23,6 +26,12 @@ COPY scripts/ ./scripts/
 # .env is optional at build time — runtime env vars from docker-compose env_file take precedence
 COPY .env* ./
 
+RUN chown -R appuser /app
+USER appuser
+
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

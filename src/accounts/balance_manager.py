@@ -35,20 +35,21 @@ Example::
 
 from __future__ import annotations
 
-import logging
+import structlog
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Sequence
 from uuid import UUID
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import Settings
 from src.database.models import Balance
 from src.database.repositories.balance_repo import BalanceRepository
-from src.utils.exceptions import InsufficientBalanceError, ValidationError
+from src.utils.exceptions import DatabaseError, InsufficientBalanceError, InputValidationError
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
@@ -137,7 +138,7 @@ class BalanceManager:
             The refreshed :class:`~src.database.models.Balance` instance.
 
         Raises:
-            ValidationError:  If ``amount`` ≤ 0.
+            InputValidationError:  If ``amount`` ≤ 0.
             DatabaseError:    On any unexpected database failure.
 
         Example::
@@ -145,18 +146,16 @@ class BalanceManager:
             bal = await mgr.credit(account_id, asset="USDT", amount=Decimal("1000"))
         """
         if amount <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"credit amount must be positive, got {amount!r}",
                 field="amount",
             )
 
-        logger.debug(
+        log.debug(
             "balance_manager.credit",
-            extra={
-                "account_id": str(account_id),
-                "asset": asset,
-                "amount": str(amount),
-            },
+            account_id=str(account_id),
+            asset=asset,
+            amount=str(amount),
         )
         return await self._repo.update_available(account_id, asset, amount)
 
@@ -182,7 +181,7 @@ class BalanceManager:
             The refreshed :class:`~src.database.models.Balance` instance.
 
         Raises:
-            ValidationError:         If ``amount`` ≤ 0.
+            InputValidationError:         If ``amount`` ≤ 0.
             InsufficientBalanceError: If available balance would go negative.
             DatabaseError:            On any unexpected database failure.
 
@@ -191,18 +190,16 @@ class BalanceManager:
             bal = await mgr.debit(account_id, asset="BTC", amount=Decimal("0.5"))
         """
         if amount <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"debit amount must be positive, got {amount!r}",
                 field="amount",
             )
 
-        logger.debug(
+        log.debug(
             "balance_manager.debit",
-            extra={
-                "account_id": str(account_id),
-                "asset": asset,
-                "amount": str(amount),
-            },
+            account_id=str(account_id),
+            asset=asset,
+            amount=str(amount),
         )
         return await self._repo.update_available(account_id, asset, -amount)
 
@@ -233,7 +230,7 @@ class BalanceManager:
             The refreshed :class:`~src.database.models.Balance` instance.
 
         Raises:
-            ValidationError:         If ``amount`` ≤ 0.
+            InputValidationError:         If ``amount`` ≤ 0.
             InsufficientBalanceError: If ``available`` would go negative.
             DatabaseError:            On any unexpected database failure.
 
@@ -243,18 +240,16 @@ class BalanceManager:
             bal = await mgr.lock(account_id, asset="USDT", amount=Decimal("500"))
         """
         if amount <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"lock amount must be positive, got {amount!r}",
                 field="amount",
             )
 
-        logger.info(
+        log.info(
             "balance_manager.lock",
-            extra={
-                "account_id": str(account_id),
-                "asset": asset,
-                "amount": str(amount),
-            },
+            account_id=str(account_id),
+            asset=asset,
+            amount=str(amount),
         )
         return await self._repo.atomic_lock_funds(account_id, asset, amount)
 
@@ -279,7 +274,7 @@ class BalanceManager:
             The refreshed :class:`~src.database.models.Balance` instance.
 
         Raises:
-            ValidationError:         If ``amount`` ≤ 0.
+            InputValidationError:         If ``amount`` ≤ 0.
             InsufficientBalanceError: If ``locked`` would go negative
                 (releasing more than was locked).
             DatabaseError:            On any unexpected database failure.
@@ -290,18 +285,16 @@ class BalanceManager:
             bal = await mgr.unlock(account_id, asset="USDT", amount=Decimal("500"))
         """
         if amount <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"unlock amount must be positive, got {amount!r}",
                 field="amount",
             )
 
-        logger.info(
+        log.info(
             "balance_manager.unlock",
-            extra={
-                "account_id": str(account_id),
-                "asset": asset,
-                "amount": str(amount),
-            },
+            account_id=str(account_id),
+            asset=asset,
+            amount=str(amount),
         )
         return await self._repo.atomic_unlock_funds(account_id, asset, amount)
 
@@ -335,7 +328,7 @@ class BalanceManager:
             ``False`` otherwise (includes the case where no balance row exists).
 
         Raises:
-            ValidationError: If ``amount`` ≤ 0.
+            InputValidationError: If ``amount`` ≤ 0.
             DatabaseError:   On any unexpected database failure.
 
         Example::
@@ -344,7 +337,7 @@ class BalanceManager:
                 raise InsufficientBalanceError(asset="USDT", required=order_cost)
         """
         if amount <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"amount must be positive, got {amount!r}",
                 field="amount",
             )
@@ -478,7 +471,7 @@ class BalanceManager:
             execution price.
 
         Raises:
-            ValidationError:         If ``side`` is neither ``"buy"`` nor
+            InputValidationError:         If ``side`` is neither ``"buy"`` nor
                                      ``"sell"``, or if ``quantity`` / ``price``
                                      are non-positive.
             InsufficientBalanceError: If the account lacks sufficient funds
@@ -502,17 +495,17 @@ class BalanceManager:
             print(settlement.fee_charged)   # e.g. Decimal("25.10")
         """
         if side not in ("buy", "sell"):
-            raise ValidationError(
+            raise InputValidationError(
                 f"side must be 'buy' or 'sell', got {side!r}",
                 field="side",
             )
         if quantity <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"quantity must be positive, got {quantity!r}",
                 field="quantity",
             )
         if execution_price <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 f"execution_price must be positive, got {execution_price!r}",
                 field="execution_price",
             )
@@ -524,28 +517,31 @@ class BalanceManager:
             quote_spent = gross_quote + fee
             base_received = quantity
 
-            logger.info(
+            log.info(
                 "balance_manager.execute_buy",
-                extra={
-                    "account_id": str(account_id),
-                    "symbol": symbol,
-                    "quantity": str(quantity),
-                    "execution_price": str(execution_price),
-                    "gross_quote": str(gross_quote),
-                    "fee": str(fee),
-                    "quote_spent": str(quote_spent),
-                    "from_locked": from_locked,
-                },
-            )
-
-            quote_bal, base_bal = await self._repo.atomic_execute_buy(
-                account_id,
-                quote_asset=quote_asset,
-                base_asset=base_asset,
-                quote_spent=quote_spent,
-                base_received=base_received,
+                account_id=str(account_id),
+                symbol=symbol,
+                quantity=str(quantity),
+                execution_price=str(execution_price),
+                gross_quote=str(gross_quote),
+                fee=str(fee),
+                quote_spent=str(quote_spent),
                 from_locked=from_locked,
             )
+
+            try:
+                quote_bal, base_bal = await self._repo.atomic_execute_buy(
+                    account_id,
+                    quote_asset=quote_asset,
+                    base_asset=base_asset,
+                    quote_spent=quote_spent,
+                    base_received=base_received,
+                    from_locked=from_locked,
+                )
+            except InsufficientBalanceError:
+                raise
+            except SQLAlchemyError as exc:
+                raise DatabaseError("Balance settlement failed.") from exc
 
             return TradeSettlement(
                 quote_balance=quote_bal,
@@ -558,34 +554,37 @@ class BalanceManager:
         # side == "sell"
         net_quote = gross_quote - fee
         if net_quote <= _ZERO:
-            raise ValidationError(
+            raise InputValidationError(
                 "Fee exceeds gross proceeds; trade cannot be settled.",
                 field="execution_price",
             )
         base_spent = quantity
 
-        logger.info(
+        log.info(
             "balance_manager.execute_sell",
-            extra={
-                "account_id": str(account_id),
-                "symbol": symbol,
-                "quantity": str(quantity),
-                "execution_price": str(execution_price),
-                "gross_quote": str(gross_quote),
-                "fee": str(fee),
-                "net_quote": str(net_quote),
-                "from_locked": from_locked,
-            },
-        )
-
-        quote_bal, base_bal = await self._repo.atomic_execute_sell(
-            account_id,
-            quote_asset=quote_asset,
-            base_asset=base_asset,
-            quote_received=net_quote,
-            base_spent=base_spent,
+            account_id=str(account_id),
+            symbol=symbol,
+            quantity=str(quantity),
+            execution_price=str(execution_price),
+            gross_quote=str(gross_quote),
+            fee=str(fee),
+            net_quote=str(net_quote),
             from_locked=from_locked,
         )
+
+        try:
+            quote_bal, base_bal = await self._repo.atomic_execute_sell(
+                account_id,
+                quote_asset=quote_asset,
+                base_asset=base_asset,
+                quote_received=net_quote,
+                base_spent=base_spent,
+                from_locked=from_locked,
+            )
+        except InsufficientBalanceError:
+            raise
+        except SQLAlchemyError as exc:
+            raise DatabaseError("Balance settlement failed.") from exc
 
         return TradeSettlement(
             quote_balance=quote_bal,

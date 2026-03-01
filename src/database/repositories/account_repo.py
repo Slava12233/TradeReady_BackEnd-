@@ -10,7 +10,7 @@ Dependency direction:
 
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import Sequence
 from uuid import UUID
 
@@ -25,7 +25,7 @@ from src.utils.exceptions import (
     DuplicateAccountError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class AccountRepository:
@@ -107,6 +107,51 @@ class AccountRepository:
             await self._session.rollback()
             logger.exception("account.create.db_error", extra={"error": str(exc)})
             raise DatabaseError("Failed to create account.") from exc
+
+    async def update_risk_profile(
+        self, account_id: UUID, profile: dict[str, object]
+    ) -> None:
+        """Persist an updated ``risk_profile`` JSONB value for the given account.
+
+        Mutates the account row's ``risk_profile`` column and flushes the
+        change to the database within the current session.  The caller is
+        responsible for committing.
+
+        Args:
+            account_id: Primary key of the account to update.
+            profile:    New risk-profile dict to store.
+
+        Raises:
+            AccountNotFoundError: If no account exists with ``account_id``.
+            DatabaseError: On any SQLAlchemy / database error.
+
+        Example::
+
+            await repo.update_risk_profile(account.id, {"max_open_orders": 20})
+            await session.commit()
+        """
+        try:
+            stmt = select(Account).where(Account.id == account_id)
+            result = await self._session.execute(stmt)
+            account = result.scalars().first()
+            if account is None:
+                raise AccountNotFoundError(account_id=account_id)
+            account.risk_profile = profile
+            await self._session.flush()
+            logger.info(
+                "account.risk_profile_updated",
+                account_id=str(account_id),
+            )
+        except AccountNotFoundError:
+            raise
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            logger.exception(
+                "account.update_risk_profile.db_error",
+                account_id=str(account_id),
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to update account risk profile.") from exc
 
     async def update_status(self, account_id: UUID, status: str) -> Account:
         """Update the ``status`` column for the given account.

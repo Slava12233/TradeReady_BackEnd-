@@ -22,9 +22,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
-from sqlalchemy import Select
+if TYPE_CHECKING:
+    from sqlalchemy import Select
 
 
 # ---------------------------------------------------------------------------
@@ -37,15 +38,24 @@ _T = TypeVar("_T")
 # Period mapping: label → calendar days
 # ---------------------------------------------------------------------------
 
-#: Supported period labels and their equivalent number of calendar days.
-#: ``None`` indicates "all time" (no lower bound).
-_PERIOD_DAYS: dict[str, int | None] = {
+#: Supported bounded period labels and their equivalent number of calendar days.
+#: ``"all"`` is handled explicitly in :func:`parse_period` — it is NOT in this dict
+#: so that unknown inputs can be detected and rejected rather than silently
+#: falling through to ``dict.get()``'s default ``None`` return.
+_PERIOD_DAYS: dict[str, int] = {
     "1d": 1,
     "7d": 7,
     "30d": 30,
     "90d": 90,
-    "all": None,
 }
+
+# ---------------------------------------------------------------------------
+# Module-level constants (D2-1: avoid re-allocating on every call)
+# ---------------------------------------------------------------------------
+
+#: Known quote-currency suffixes for Binance symbol splitting, ordered longest-first
+#: so that e.g. ``"BUSD"`` is matched before ``"USD"``.
+_KNOWN_QUOTES: tuple[str, ...] = ("USDT", "BUSD", "USDC", "TUSD", "BTC", "ETH", "BNB", "DAI", "PAX")
 
 
 # ---------------------------------------------------------------------------
@@ -75,15 +85,21 @@ def parse_period(period: str) -> timedelta | None:
     """Convert a period label string to a :class:`~datetime.timedelta`.
 
     Recognised labels: ``"1d"``, ``"7d"``, ``"30d"``, ``"90d"``, ``"all"``.
-    For ``"all"`` (or any unrecognised value) ``None`` is returned to indicate
-    *no lower time bound*.
+    Returns ``None`` for ``"all"`` to indicate *no lower time bound*.
+    Raises :exc:`~src.utils.exceptions.InputValidationError` for any
+    unrecognised value so callers receive a clean 422 instead of silently
+    querying all-time data.
 
     Args:
         period: Period label, e.g. ``"30d"`` or ``"all"``.
 
     Returns:
         A :class:`~datetime.timedelta` for recognised bounded periods, or
-        ``None`` for ``"all"`` / unknown labels.
+        ``None`` for ``"all"``.
+
+    Raises:
+        :exc:`~src.utils.exceptions.InputValidationError`: If *period* is not a
+            recognised label.
 
     Example::
 
@@ -91,12 +107,19 @@ def parse_period(period: str) -> timedelta | None:
         assert delta == timedelta(days=7)
 
         assert parse_period("all") is None
-        assert parse_period("unknown") is None
     """
-    days = _PERIOD_DAYS.get(period)
-    if days is None:
+    # Explicit sentinel for "all time" — keeps _PERIOD_DAYS unambiguous.
+    if period == "all":
         return None
-    return timedelta(days=days)
+    if period not in _PERIOD_DAYS:
+        from src.utils.exceptions import InputValidationError  # lazy: avoids any future circular-import risk
+
+        supported = list(_PERIOD_DAYS) + ["all"]
+        raise InputValidationError(
+            f"Invalid period '{period}'. Supported values: {supported}",
+            field="period",
+        )
+    return timedelta(days=_PERIOD_DAYS[period])
 
 
 def period_to_since(period: str) -> datetime | None:
@@ -111,6 +134,10 @@ def period_to_since(period: str) -> datetime | None:
     Returns:
         A timezone-aware UTC :class:`~datetime.datetime` representing the
         earliest timestamp included in the window, or ``None`` for ``"all"``.
+
+    Raises:
+        :exc:`~src.utils.exceptions.InputValidationError`: If *period* is not a
+            recognised label.
 
     Example::
 
@@ -142,7 +169,7 @@ def paginate(stmt: Select[tuple[_T]], *, limit: int, offset: int) -> Select[tupl
         The same ``stmt`` with ``.limit()`` and ``.offset()`` applied.
 
     Raises:
-        :exc:`ValueError`: If *limit* < 1 or *offset* < 0.
+        :exc:`~src.utils.exceptions.InputValidationError`: If *limit* < 1 or *offset* < 0.
 
     Example::
 
@@ -152,10 +179,12 @@ def paginate(stmt: Select[tuple[_T]], *, limit: int, offset: int) -> Select[tupl
         stmt = select(Order).where(Order.account_id == account_id)
         paginated = paginate(stmt, limit=50, offset=100)
     """
+    from src.utils.exceptions import InputValidationError  # lazy: same package, safe
+
     if limit < 1:
-        raise ValueError(f"limit must be ≥ 1, got {limit!r}")
+        raise InputValidationError(f"limit must be ≥ 1, got {limit!r}", field="limit")
     if offset < 0:
-        raise ValueError(f"offset must be ≥ 0, got {offset!r}")
+        raise InputValidationError(f"offset must be ≥ 0, got {offset!r}", field="offset")
     return stmt.limit(limit).offset(offset)
 
 
@@ -213,7 +242,6 @@ def symbol_to_base_quote(symbol: str) -> tuple[str, str]:
         assert symbol_to_base_quote("ETHBTC")  == ("ETH", "BTC")
     """
     symbol = symbol.upper()
-    _KNOWN_QUOTES = ("USDT", "BUSD", "USDC", "TUSD", "BTC", "ETH", "BNB", "DAI", "PAX")
     for quote in _KNOWN_QUOTES:
         if symbol.endswith(quote) and len(symbol) > len(quote):
             base = symbol[: -len(quote)]
@@ -235,7 +263,7 @@ def clamp(value: Decimal, lo: Decimal, hi: Decimal) -> Decimal:
         *lo* if ``value < lo``, *hi* if ``value > hi``, otherwise *value*.
 
     Raises:
-        :exc:`ValueError`: If ``lo > hi``.
+        :exc:`~src.utils.exceptions.InputValidationError`: If ``lo > hi``.
 
     Example::
 
@@ -244,7 +272,9 @@ def clamp(value: Decimal, lo: Decimal, hi: Decimal) -> Decimal:
         assert clamp(Decimal("99"), Decimal("1"), Decimal("10")) == Decimal("10")
     """
     if lo > hi:
-        raise ValueError(f"lo ({lo}) must be ≤ hi ({hi})")
+        from src.utils.exceptions import InputValidationError  # lazy: same package, safe
+
+        raise InputValidationError(f"lo ({lo}) must be ≤ hi ({hi})")
     if value < lo:
         return lo
     if value > hi:

@@ -70,6 +70,7 @@ from src.api.schemas.account import (
 )
 from src.database.models import Account, TradingSession
 from src.dependencies import (
+    AccountRepoDep,
     AccountServiceDep,
     BalanceManagerDep,
     DbSessionDep,
@@ -77,7 +78,7 @@ from src.dependencies import (
     TradeRepoDep,
 )
 from src.portfolio.tracker import PositionView
-from src.utils.exceptions import ValidationError
+from src.utils.exceptions import InputValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -602,6 +603,51 @@ async def get_pnl(
     )
 
 
+# ---------------------------------------------------------------------------
+# PUT /api/v1/account/risk-profile — update risk limits
+# ---------------------------------------------------------------------------
+
+
+@router.put(
+    "/risk-profile",
+    response_model=RiskProfileInfo,
+    status_code=status.HTTP_200_OK,
+    summary="Update risk profile",
+    description=(
+        "Update the authenticated account's risk limits. "
+        "All three fields must be provided."
+    ),
+)
+async def update_risk_profile(
+    body: RiskProfileInfo,
+    account: CurrentAccountDep,
+    account_repo: AccountRepoDep,
+) -> RiskProfileInfo:
+    """Persist updated risk limits for the authenticated account.
+
+    Args:
+        body:         New risk limits to apply.
+        account:      Injected authenticated account.
+        account_repo: Injected :class:`~src.database.repositories.account_repo.AccountRepository`.
+
+    Returns:
+        The updated :class:`~src.api.schemas.account.RiskProfileInfo`.
+    """
+    profile: dict[str, object] = {
+        "max_position_size_pct": body.max_position_size_pct,
+        "daily_loss_limit_pct": body.daily_loss_limit_pct,
+        "max_open_orders": body.max_open_orders,
+    }
+    await account_repo.update_risk_profile(account.id, profile)
+
+    logger.info(
+        "account.risk_profile_updated",
+        extra={"account_id": str(account.id)},
+    )
+
+    return body
+
+
 def _period_to_trade_limit(period: PnLPeriod) -> int:
     """Map a PnL period string to a reasonable trade fetch limit.
 
@@ -671,7 +717,7 @@ async def reset_account(
         closed session and the new session.
 
     Raises:
-        :exc:`~src.utils.exceptions.ValidationError`: If ``confirm`` is
+        :exc:`~src.utils.exceptions.InputValidationError`: If ``confirm`` is
             ``False`` (HTTP 400).
         :exc:`~src.utils.exceptions.AccountSuspendedError`: If the account
             is suspended (HTTP 403).
@@ -692,7 +738,7 @@ async def reset_account(
         }
     """
     if not body.confirm:
-        raise ValidationError(
+        raise InputValidationError(
             "Account reset requires confirm=true in the request body.",
             field="confirm",
         )

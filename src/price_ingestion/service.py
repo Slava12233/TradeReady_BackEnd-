@@ -10,8 +10,8 @@ Responsibilities:
    a. Update Redis ``prices`` hash with the latest price (overwrite).
    b. Update Redis ``ticker:{symbol}`` with rolling 24-h stats.
    c. Add the tick to the in-memory :class:`~src.price_ingestion.tick_buffer.TickBuffer`.
-   d. Publish the tick to the Redis ``price_updates`` pub/sub channel.
-3. Flush the buffer to TimescaleDB every 1 second (or when it hits 5 000 ticks).
+3. Flush the buffer to TimescaleDB every 1 second (or when it hits 5 000 ticks);
+   broadcast the same batch to Redis pub/sub subscribers.
 4. Handle SIGINT / SIGTERM gracefully: finish the final buffer flush before exit.
 """
 
@@ -21,7 +21,6 @@ import asyncio
 import logging
 import signal
 import sys
-from typing import TYPE_CHECKING
 
 import structlog
 
@@ -33,14 +32,8 @@ from src.price_ingestion.binance_ws import BinanceWebSocketClient
 from src.price_ingestion.broadcaster import PriceBroadcaster
 from src.price_ingestion.tick_buffer import TickBuffer
 
-if TYPE_CHECKING:
-    pass
-
-# Use structlog for the ingestion service so log lines are machine-parseable
-# JSON in production but human-friendly during development.
-structlog.configure(
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-)
+# Module-level logger — structlog.configure() is called in main() so that
+# importing this module in tests does not mutate the global structlog singleton.
 log = structlog.get_logger(__name__)
 
 # Module-level flag set by the signal handler to request a graceful shutdown.
@@ -80,10 +73,14 @@ async def run() -> None:
     price_cache = PriceCache(redis)
     broadcaster = PriceBroadcaster(redis)
 
+    # Pass broadcaster into TickBuffer so broadcast_batch() is called inside
+    # _write_batch() — one pipeline round-trip per flush instead of one PUBLISH
+    # per tick.
     buffer = TickBuffer(
         db_pool=db_pool,
         flush_interval=settings.tick_flush_interval,
         max_size=settings.tick_buffer_max_size,
+        broadcaster=broadcaster,
     )
 
     ws_client = BinanceWebSocketClient(
@@ -101,6 +98,7 @@ async def run() -> None:
 
     # ── Main tick loop ─────────────────────────────────────────────────────
     tick_count: int = 0
+    _fatal_exc: BaseException | None = None
     try:
         async for tick in ws_client.listen():
             if _shutdown_requested:
@@ -112,11 +110,11 @@ async def run() -> None:
             # b. Update rolling 24-h ticker stats
             await price_cache.update_ticker(tick)
 
-            # c. Buffer for bulk DB insert
+            # c. Buffer for bulk DB insert + batched pub/sub broadcast.
+            #    Broadcasting is handled inside TickBuffer._write_batch() via
+            #    broadcast_batch() so that all PUBLISH calls for a flush are
+            #    sent in a single Redis pipeline round-trip.
             await buffer.add(tick)
-
-            # d. Broadcast to pub/sub subscribers
-            await broadcaster.broadcast(tick)
 
             tick_count += 1
             if tick_count % 10_000 == 0:
@@ -126,26 +124,37 @@ async def run() -> None:
         log.info("Ingestion loop cancelled")
     except Exception as exc:
         log.error("Fatal error in ingestion loop", error=str(exc), exc_info=True)
-        raise
+        _fatal_exc = exc
+    finally:
+        # Graceful shutdown always runs, regardless of how the loop exited.
+        # This ensures Redis and DB connections are never leaked on fatal errors.
+        log.info("Shutting down ingestion service…", ticks_processed=tick_count)
 
-    # ── Graceful shutdown ──────────────────────────────────────────────────
-    log.info("Shutting down ingestion service…", ticks_processed=tick_count)
+        flush_task.cancel()
+        try:
+            await flush_task
+        except asyncio.CancelledError:
+            pass
 
-    flush_task.cancel()
-    try:
-        await flush_task
-    except asyncio.CancelledError:
-        pass
+        await buffer.shutdown()
+        await redis_client.disconnect()
+        await close_db()
 
-    await buffer.shutdown()
-    await redis_client.disconnect()
-    await close_db()
+        log.info("Price ingestion service stopped cleanly")
 
-    log.info("Price ingestion service stopped cleanly")
+    if _fatal_exc is not None:
+        raise _fatal_exc
 
 
 def main() -> None:
     """CLI entry point: register signal handlers and run the async loop."""
+    # Configure structlog here — inside main() rather than at module level —
+    # so that importing service.py in tests does not mutate the global
+    # structlog singleton and break log assertions.
+    structlog.configure(
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    )
+
     # Register POSIX signal handlers for graceful shutdown.
     # On Windows SIGTERM may not be available; guard accordingly.
     signal.signal(signal.SIGINT, _request_shutdown)

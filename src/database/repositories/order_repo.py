@@ -15,12 +15,12 @@ Dependency direction:
 
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime, timezone
 from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func as sa_func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ from src.utils.exceptions import (
     OrderNotFoundError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Statuses from which an order can be cancelled.
 _CANCELLABLE_STATUSES: frozenset[str] = frozenset({"pending", "partially_filled"})
@@ -392,9 +392,14 @@ class OrderRepository:
         *,
         symbol: str | None = None,
         limit: int = 500,
-        offset: int = 0,
+        after_id: UUID | None = None,
     ) -> Sequence[Order]:
         """Return all ``pending`` orders, optionally filtered by symbol.
+
+        Uses keyset pagination (``WHERE id > after_id``) rather than OFFSET to
+        avoid skipping orders that are inserted between page fetches.  Orders
+        are returned in ascending ``id`` order so the cursor advances
+        monotonically.
 
         Used by the background limit-order matcher to find orders that need
         price checks.  The partial index ``idx_orders_symbol_status``
@@ -402,11 +407,12 @@ class OrderRepository:
         millions of historical orders.
 
         Args:
-            symbol: Optional symbol filter (e.g. ``"BTCUSDT"``).  When
-                    ``None``, all pending orders across all symbols are
-                    returned (used during a full matcher sweep).
-            limit:  Maximum rows to fetch per call (default 500).
-            offset: Rows to skip for pagination (default 0).
+            symbol:   Optional symbol filter (e.g. ``"BTCUSDT"``).  When
+                      ``None``, all pending orders across all symbols are
+                      returned (used during a full matcher sweep).
+            limit:    Maximum rows to fetch per call (default 500).
+            after_id: Keyset cursor — only rows with ``id > after_id`` are
+                      returned.  Pass ``None`` for the first page.
 
         Returns:
             A (possibly empty) sequence of :class:`Order` instances with
@@ -427,10 +433,11 @@ class OrderRepository:
             stmt = (
                 select(Order)
                 .where(Order.status == "pending")
-                .order_by(Order.created_at.asc())
+                .order_by(Order.id.asc())
                 .limit(limit)
-                .offset(offset)
             )
+            if after_id is not None:
+                stmt = stmt.where(Order.id > after_id)
             if symbol is not None:
                 stmt = stmt.where(Order.symbol == symbol)
             result = await self._session.execute(stmt)
@@ -511,8 +518,6 @@ class OrderRepository:
             if open_count >= risk_profile.max_open_orders:
                 raise RiskLimitExceededError(...)
         """
-        from sqlalchemy import func as sa_func
-
         try:
             stmt = (
                 select(sa_func.count())

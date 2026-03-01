@@ -47,7 +47,7 @@ Example::
 
 from __future__ import annotations
 
-import logging
+import structlog
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -70,7 +70,7 @@ from src.utils.exceptions import (
     DatabaseError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Default risk limits
@@ -275,14 +275,8 @@ class RiskManager:
             if not result.approved:
                 logger.warning("order.rejected", extra={"reason": result.rejection_reason})
         """
-        try:
-            account = await self._account_repo.get_by_id(account_id)
-        except AccountNotFoundError:
-            raise
-        except DatabaseError:
-            raise
-
-        limits = await self.get_risk_limits(account_id)
+        account = await self._account_repo.get_by_id(account_id)
+        limits = self._build_risk_limits(account)
 
         # ── Step 1: Account active ────────────────────────────────────────
         result = self._check_account_active(account)
@@ -294,8 +288,10 @@ class RiskManager:
         if not result.approved:
             return result
 
-        # ── Step 3: Order rate limit ──────────────────────────────────────
-        result = await self._check_rate_limit(account_id, limits)
+        # ── Step 3: Order rate limit (read-only) ─────────────────────────
+        # The counter is incremented AFTER all checks pass (see end of chain)
+        # so that rejected orders do not consume a rate-limit token.
+        result, rate_limit_key = await self._check_rate_limit(account_id, limits)
         if not result.approved:
             return result
 
@@ -306,7 +302,8 @@ class RiskManager:
             # position limits — reject conservatively.
             logger.warning(
                 "risk.price_unavailable",
-                extra={"account_id": str(account_id), "symbol": order.symbol},
+                account_id=str(account_id),
+                symbol=order.symbol,
             )
             return RiskCheckResult.reject(
                 "price_unavailable",
@@ -317,6 +314,12 @@ class RiskManager:
             Decimal("0.00000001")
         )
 
+        # Compute real total portfolio equity once — reused by steps 5 and 6
+        # to avoid extra DB/cache round-trips and to use correct denominator.
+        total_equity = await self._compute_total_equity(
+            account_id, order.symbol, current_price
+        )
+
         # ── Step 4: Minimum order size ────────────────────────────────────
         result = self._check_min_order_size(estimated_value, limits)
         if not result.approved:
@@ -324,14 +327,14 @@ class RiskManager:
 
         # ── Step 5: Maximum order size % ─────────────────────────────────
         result = await self._check_max_order_size(
-            account_id, estimated_value, order, limits
+            account_id, estimated_value, order, limits, total_equity
         )
         if not result.approved:
             return result
 
         # ── Step 6: Maximum position % ───────────────────────────────────
         result = await self._check_position_limit(
-            account_id, order, estimated_value, limits
+            account_id, order, estimated_value, limits, total_equity, current_price
         )
         if not result.approved:
             return result
@@ -348,15 +351,16 @@ class RiskManager:
         if not result.approved:
             return result
 
+        # ── All checks passed — consume the rate-limit token now ─────────
+        await self._consume_rate_limit_token(rate_limit_key)
+
         logger.debug(
             "risk.validate_order.approved",
-            extra={
-                "account_id": str(account_id),
-                "symbol": order.symbol,
-                "side": order.side,
-                "quantity": str(order.quantity),
-                "estimated_value_usd": str(estimated_value),
-            },
+            account_id=str(account_id),
+            symbol=order.symbol,
+            side=order.side,
+            quantity=str(order.quantity),
+            estimated_value_usd=str(estimated_value),
         )
         return RiskCheckResult.ok()
 
@@ -380,7 +384,7 @@ class RiskManager:
                 raise DailyLossLimitError(account_id=account_id)
         """
         account = await self._account_repo.get_by_id(account_id)
-        limits = await self.get_risk_limits(account_id)
+        limits = self._build_risk_limits(account)
         result = await self._check_daily_loss(account, limits)
         return result.approved
 
@@ -444,19 +448,12 @@ class RiskManager:
         profile["max_order_size_pct"] = str(limits.max_order_size_pct)
         profile["order_rate_limit"] = limits.order_rate_limit
 
-        try:
-            account.risk_profile = profile
-            await self._account_repo._session.flush()
-            logger.info(
-                "risk.limits_updated",
-                extra={"account_id": str(account_id), "profile": profile},
-            )
-        except Exception as exc:
-            logger.exception(
-                "risk.limits_update.error",
-                extra={"account_id": str(account_id), "error": str(exc)},
-            )
-            raise DatabaseError("Failed to update risk limits.") from exc
+        await self._account_repo.update_risk_profile(account_id, profile)
+        logger.info(
+            "risk.limits_updated",
+            account_id=str(account_id),
+            profile=profile,
+        )
 
     # ------------------------------------------------------------------
     # Private helpers — one method per validation step
@@ -482,7 +479,9 @@ class RiskManager:
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "risk.invalid_profile_value",
-                    extra={"account_id": str(account.id), "key": key, "value": raw},
+                    account_id=str(account.id),
+                    key=key,
+                    value=raw,
                 )
                 return default
 
@@ -495,7 +494,9 @@ class RiskManager:
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "risk.invalid_profile_value",
-                    extra={"account_id": str(account.id), "key": key, "value": raw},
+                    account_id=str(account.id),
+                    key=key,
+                    value=raw,
                 )
                 return default
 
@@ -523,10 +524,8 @@ class RiskManager:
         if account.status != "active":
             logger.info(
                 "risk.check.account_not_active",
-                extra={
-                    "account_id": str(account.id),
-                    "status": account.status,
-                },
+                account_id=str(account.id),
+                status=account.status,
             )
             return RiskCheckResult.reject(
                 "account_not_active",
@@ -548,6 +547,13 @@ class RiskManager:
             )
         except DatabaseError:
             raise
+        except Exception as exc:
+            logger.exception(
+                "risk.check_daily_loss.unexpected_error",
+                account_id=str(account.id),
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to check daily loss limit.") from exc
 
         starting_balance = Decimal(str(account.starting_balance))
         loss_limit = (starting_balance * limits.daily_loss_limit_pct / _HUNDRED).quantize(
@@ -558,12 +564,10 @@ class RiskManager:
         if daily_pnl < _ZERO and abs(daily_pnl) >= loss_limit:
             logger.warning(
                 "risk.check.daily_loss_limit",
-                extra={
-                    "account_id": str(account.id),
-                    "daily_pnl": str(daily_pnl),
-                    "loss_limit": str(loss_limit),
-                    "starting_balance": str(starting_balance),
-                },
+                account_id=str(account.id),
+                daily_pnl=str(daily_pnl),
+                loss_limit=str(loss_limit),
+                starting_balance=str(starting_balance),
             )
             return RiskCheckResult.reject(
                 "daily_loss_limit",
@@ -579,12 +583,19 @@ class RiskManager:
         self,
         account_id: UUID,
         limits: RiskLimits,
-    ) -> RiskCheckResult:
-        """Step 3: Check the per-minute order rate limit via Redis INCR.
+    ) -> tuple[RiskCheckResult, str]:
+        """Step 3: Read-only check of the per-minute order rate limit.
+
+        Returns the current count and the Redis key so the caller can
+        increment the counter *after* all other checks pass — rejected
+        orders therefore do not consume a rate-limit token.
 
         Uses a minute-bucket key so the window resets naturally at each new
         UTC minute.  TTL is set to 120 s to cover both the current and the
         immediately preceding bucket while avoiding unbounded key growth.
+
+        Returns:
+            A tuple of (RiskCheckResult, rate_limit_key).
         """
         now_utc = datetime.now(tz=timezone.utc)
         minute_bucket = now_utc.strftime("%Y%m%d%H%M")
@@ -594,34 +605,55 @@ class RiskManager:
         )
 
         try:
-            async with self._redis.pipeline(transaction=False) as pipe:
-                pipe.incr(key)
-                pipe.expire(key, _RATE_LIMIT_TTL_SECONDS)
-                results = await pipe.execute()
-            current_count: int = int(results[0])
+            raw = await self._redis.get(key)
+            current_count: int = int(raw) if raw is not None else 0
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "risk.rate_limit.redis_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise CacheError("Failed to check order rate limit.") from exc
 
-        if current_count > limits.order_rate_limit:
+        if current_count >= limits.order_rate_limit:
             logger.warning(
                 "risk.check.rate_limit_exceeded",
-                extra={
-                    "account_id": str(account_id),
-                    "current_count": current_count,
-                    "limit": limits.order_rate_limit,
-                    "minute_bucket": minute_bucket,
-                },
+                account_id=str(account_id),
+                current_count=current_count,
+                limit=limits.order_rate_limit,
+                minute_bucket=minute_bucket,
             )
             return RiskCheckResult.reject(
                 "rate_limit_exceeded",
                 current_count=current_count,
                 limit=limits.order_rate_limit,
+            ), key
+        return RiskCheckResult.ok(), key
+
+    async def _consume_rate_limit_token(self, key: str) -> None:
+        """Increment the rate-limit counter for a successfully validated order.
+
+        Called only after all 8 validation steps pass so that rejected orders
+        do not consume a token.
+
+        Args:
+            key: The rate-limit Redis key returned by :meth:`_check_rate_limit`.
+
+        Raises:
+            CacheError: On unexpected Redis failures.
+        """
+        try:
+            async with self._redis.pipeline(transaction=False) as pipe:
+                pipe.incr(key)
+                pipe.expire(key, _RATE_LIMIT_TTL_SECONDS)
+                await pipe.execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "risk.rate_limit.consume_error",
+                key=key,
+                error=str(exc),
             )
-        return RiskCheckResult.ok()
+            raise CacheError("Failed to increment order rate limit counter.") from exc
 
     # ── Step 4 ─────────────────────────────────────────────────────────────────
 
@@ -634,10 +666,8 @@ class RiskManager:
         if estimated_value < limits.min_order_size_usd:
             logger.info(
                 "risk.check.order_too_small",
-                extra={
-                    "estimated_value": str(estimated_value),
-                    "min_order_size_usd": str(limits.min_order_size_usd),
-                },
+                estimated_value=str(estimated_value),
+                min_order_size_usd=str(limits.min_order_size_usd),
             )
             return RiskCheckResult.reject(
                 "order_too_small",
@@ -654,43 +684,31 @@ class RiskManager:
         estimated_value: Decimal,
         order: OrderRequest,
         limits: RiskLimits,
+        total_equity: Decimal,
     ) -> RiskCheckResult:
-        """Step 5: Ensure the order value does not exceed max % of available balance.
+        """Step 5: Ensure the order value does not exceed max % of total portfolio equity.
 
-        For buy orders the relevant balance is USDT (the cost asset).
-        For sell orders the relevant balance is the base asset (what is sold),
-        valued at the current price.  We compare the estimated USD value in
-        both cases for a consistent percentage check.
+        Uses the full portfolio value (USDT + all held assets at live prices) as
+        the denominator so the limit reflects true account size, not just remaining
+        USDT.  This prevents false rejections after buying multiple coins when the
+        USDT balance is lower but total portfolio value is unchanged.
         """
-        usdt_balance = await self._balance_manager.get_balance(account_id, "USDT")
-        available_usdt = (
-            Decimal(str(usdt_balance.available)) if usdt_balance else _ZERO
-        )
-
-        if available_usdt <= _ZERO:
-            # No USDT balance — only block if this is a buy.
-            # For sells we compare against total equity (step 6).
-            if order.side == "buy":
-                return RiskCheckResult.reject(
-                    "insufficient_balance",
-                    asset="USDT",
-                    available="0",
-                )
+        if total_equity <= _ZERO:
+            # No equity at all; step 8 (sufficient balance) will catch this.
             return RiskCheckResult.ok()
 
-        max_allowed_usd = (available_usdt * limits.max_order_size_pct / _HUNDRED).quantize(
+        max_allowed_usd = (total_equity * limits.max_order_size_pct / _HUNDRED).quantize(
             Decimal("0.00000001")
         )
 
         if estimated_value > max_allowed_usd:
             logger.info(
                 "risk.check.order_too_large",
-                extra={
-                    "account_id": str(account_id),
-                    "estimated_value": str(estimated_value),
-                    "max_allowed_usd": str(max_allowed_usd),
-                    "max_order_size_pct": str(limits.max_order_size_pct),
-                },
+                account_id=str(account_id),
+                estimated_value=str(estimated_value),
+                max_allowed_usd=str(max_allowed_usd),
+                max_order_size_pct=str(limits.max_order_size_pct),
+                total_equity=str(total_equity),
             )
             return RiskCheckResult.reject(
                 "order_too_large",
@@ -708,43 +726,31 @@ class RiskManager:
         order: OrderRequest,
         estimated_value: Decimal,
         limits: RiskLimits,
+        total_equity: Decimal,
+        current_price: Decimal,
     ) -> RiskCheckResult:
-        """Step 6: Ensure the resulting position won't exceed max % of equity.
+        """Step 6: Ensure the resulting position won't exceed max % of total equity.
 
-        For a **buy** order, the new position value = existing position value
-        + estimated order value.  We calculate total equity as the sum of all
-        available USDT balances (a simplified approximation; the full tracker
-        is in Component 6).
+        Uses the full portfolio value pre-computed by :meth:`_compute_total_equity`
+        so the percentage is relative to real account size across all holdings,
+        not just remaining USDT.
 
-        For a **sell** order, the position shrinks, so no limit is breached.
+        For a **sell** order the position shrinks, so no limit is breached.
         """
         if order.side == "sell":
             return RiskCheckResult.ok()
 
-        # Approximate total equity: sum available USDT + all non-USDT assets
-        # valued at current prices.  We use the simpler approach of summing
-        # the USDT balance + existing position value for the target symbol.
-        usdt_balance = await self._balance_manager.get_balance(account_id, "USDT")
-        available_usdt = (
-            Decimal(str(usdt_balance.available)) if usdt_balance else _ZERO
-        )
-
-        # Determine base asset from symbol (e.g. "BTC" from "BTCUSDT")
-        symbol = order.symbol
-        base_asset = symbol.replace("USDT", "")
-        base_balance = await self._balance_manager.get_balance(account_id, base_asset)
-        existing_base = (
-            Decimal(str(base_balance.available)) if base_balance else _ZERO
-        )
-
-        existing_position_value = (existing_base * estimated_value / order.quantity).quantize(
-            Decimal("0.00000001")
-        ) if order.quantity > _ZERO else _ZERO
-
-        total_equity = available_usdt + existing_position_value
         if total_equity <= _ZERO:
-            # Cannot compute percentage; allow (balance check in step 8 will catch it)
+            # Cannot compute percentage; step 8 will catch it.
             return RiskCheckResult.ok()
+
+        symbol = order.symbol
+        base_asset = symbol.removesuffix("USDT")
+        base_balance = await self._balance_manager.get_balance(account_id, base_asset)
+        existing_base = Decimal(str(base_balance.available)) if base_balance else _ZERO
+        existing_position_value = (existing_base * current_price).quantize(
+            Decimal("0.00000001")
+        )
 
         new_position_value = existing_position_value + estimated_value
         new_position_pct = (new_position_value / total_equity * _HUNDRED).quantize(
@@ -754,14 +760,12 @@ class RiskManager:
         if new_position_pct > limits.max_position_size_pct:
             logger.info(
                 "risk.check.position_limit_exceeded",
-                extra={
-                    "account_id": str(account_id),
-                    "symbol": symbol,
-                    "new_position_pct": str(new_position_pct),
-                    "max_position_size_pct": str(limits.max_position_size_pct),
-                    "new_position_value": str(new_position_value),
-                    "total_equity": str(total_equity),
-                },
+                account_id=str(account_id),
+                symbol=symbol,
+                new_position_pct=str(new_position_pct),
+                max_position_size_pct=str(limits.max_position_size_pct),
+                new_position_value=str(new_position_value),
+                total_equity=str(total_equity),
             )
             return RiskCheckResult.reject(
                 "position_limit_exceeded",
@@ -770,6 +774,48 @@ class RiskManager:
                 symbol=symbol,
             )
         return RiskCheckResult.ok()
+
+    # ── Equity helper ──────────────────────────────────────────────────────────
+
+    async def _compute_total_equity(
+        self,
+        account_id: UUID,
+        current_symbol: str,
+        current_price: Decimal,
+    ) -> Decimal:
+        """Return total portfolio value in USDT by pricing all held assets.
+
+        Fetches all balance rows in a single DB call, then prices each non-USDT
+        asset via :attr:`_price_cache`.  The price of ``current_symbol`` is
+        supplied directly to avoid a redundant cache lookup.
+
+        Assets whose price cannot be resolved are excluded (conservative: lower
+        equity → stricter limits, never looser).
+
+        Args:
+            account_id:     The account to evaluate.
+            current_symbol: The symbol being ordered (e.g. ``"BTCUSDT"``).
+            current_price:  Live price for ``current_symbol``.
+
+        Returns:
+            Total portfolio value in USDT, or ``Decimal("0")`` when no
+            balance rows exist.
+        """
+        all_balances = await self._balance_manager.get_all_balances(account_id)
+        total = _ZERO
+        for balance in all_balances:
+            total_qty = Decimal(str(balance.available)) + Decimal(str(balance.locked))
+            if total_qty <= _ZERO:
+                continue
+            if balance.asset == "USDT":
+                total += total_qty
+            elif f"{balance.asset}USDT" == current_symbol:
+                total += (total_qty * current_price).quantize(Decimal("0.00000001"))
+            else:
+                price = await self._price_cache.get_price(f"{balance.asset}USDT")
+                if price is not None:
+                    total += (total_qty * price).quantize(Decimal("0.00000001"))
+        return total
 
     # ── Step 7 ─────────────────────────────────────────────────────────────────
 
@@ -784,11 +830,9 @@ class RiskManager:
         if open_count >= limits.max_open_orders:
             logger.info(
                 "risk.check.max_open_orders_exceeded",
-                extra={
-                    "account_id": str(account_id),
-                    "open_count": open_count,
-                    "max_open_orders": limits.max_open_orders,
-                },
+                account_id=str(account_id),
+                open_count=open_count,
+                max_open_orders=limits.max_open_orders,
             )
             return RiskCheckResult.reject(
                 "max_open_orders_exceeded",
@@ -835,12 +879,10 @@ class RiskManager:
                 )
                 logger.info(
                     "risk.check.insufficient_balance",
-                    extra={
-                        "account_id": str(account_id),
-                        "asset": "USDT",
-                        "required": str(required_usdt),
-                        "available": str(available),
-                    },
+                    account_id=str(account_id),
+                    asset="USDT",
+                    required=str(required_usdt),
+                    available=str(available),
                 )
                 return RiskCheckResult.reject(
                     "insufficient_balance",
@@ -850,7 +892,7 @@ class RiskManager:
                 )
 
         else:  # sell
-            base_asset = order.symbol.replace("USDT", "")
+            base_asset = order.symbol.removesuffix("USDT")
             has_funds = await self._balance_manager.has_sufficient_balance(
                 account_id,
                 asset=base_asset,
@@ -867,12 +909,10 @@ class RiskManager:
                 )
                 logger.info(
                     "risk.check.insufficient_balance",
-                    extra={
-                        "account_id": str(account_id),
-                        "asset": base_asset,
-                        "required": str(order.quantity),
-                        "available": str(available),
-                    },
+                    account_id=str(account_id),
+                    asset=base_asset,
+                    required=str(order.quantity),
+                    available=str(available),
                 )
                 return RiskCheckResult.reject(
                     "insufficient_balance",

@@ -28,20 +28,21 @@ TTL    : automatically set to the number of seconds remaining until the *next*
 
 Example::
 
-    cb = CircuitBreaker(
-        redis=redis_client,
+    cb = CircuitBreaker(redis=redis_client)
+    await cb.record_trade_pnl(
+        account_id,
+        Decimal("-500"),
         starting_balance=Decimal("10000"),
         daily_loss_limit_pct=Decimal("20"),
     )
-    await cb.record_trade_pnl(account_id, Decimal("-500"))
     if await cb.is_tripped(account_id):
         raise DailyLossLimitError(account_id=account_id)
 """
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timezone
+import structlog
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import AsyncIterator
 from uuid import UUID
@@ -50,7 +51,7 @@ import redis.asyncio as aioredis
 
 from src.utils.exceptions import CacheError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -90,9 +91,6 @@ def _seconds_until_midnight_utc() -> int:
     """
     now = datetime.now(tz=timezone.utc)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    # Roll forward to the *next* midnight, not today's already-passed one.
-    from datetime import timedelta  # noqa: PLC0415 — local import to keep module top clean
-
     next_midnight = midnight + timedelta(days=1)
     delta = next_midnight - now
     return max(1, int(delta.total_seconds()))
@@ -109,21 +107,21 @@ class CircuitBreaker:
     All state is stored in Redis.  No database writes occur inside this class,
     keeping it fast and decoupled from the DB session lifecycle.
 
+    The loss threshold is computed per-call from the caller-supplied
+    ``starting_balance`` and ``daily_loss_limit_pct``, so a single shared
+    instance correctly handles every account regardless of its balance.
+
     Args:
-        redis:                Async Redis client.
-        starting_balance:     The account's starting balance (used to convert
-                              the loss-limit *percentage* to an absolute USD
-                              threshold).  Callers should pass the account's
-                              ``starting_balance`` column value.
-        daily_loss_limit_pct: Loss threshold as a percentage of
-                              *starting_balance* (e.g. ``Decimal("20")`` means
-                              a 20 % daily loss halts trading).
+        redis: Async Redis client.
 
     Example::
 
-        cb = CircuitBreaker(redis=r, starting_balance=Decimal("10000"),
-                            daily_loss_limit_pct=Decimal("20"))
-        await cb.record_trade_pnl(account_id, Decimal("-1500"))
+        cb = CircuitBreaker(redis=r)
+        await cb.record_trade_pnl(
+            account_id, Decimal("-1500"),
+            starting_balance=Decimal("10000"),
+            daily_loss_limit_pct=Decimal("20"),
+        )
         tripped = await cb.is_tripped(account_id)
     """
 
@@ -131,15 +129,8 @@ class CircuitBreaker:
         self,
         *,
         redis: aioredis.Redis,  # type: ignore[type-arg]
-        starting_balance: Decimal,
-        daily_loss_limit_pct: Decimal,
     ) -> None:
         self._redis = redis
-        self._starting_balance = starting_balance
-        self._daily_loss_limit_pct = daily_loss_limit_pct
-        self._loss_threshold: Decimal = (
-            starting_balance * daily_loss_limit_pct / _HUNDRED
-        ).quantize(_QUANTIZE)
 
     # ------------------------------------------------------------------
     # Public API
@@ -149,25 +140,47 @@ class CircuitBreaker:
         self,
         account_id: UUID,
         pnl: Decimal,
+        *,
+        starting_balance: Decimal,
+        daily_loss_limit_pct: Decimal,
     ) -> None:
         """Add *pnl* to the account's running daily total and trip the breaker
         if the loss threshold is exceeded.
+
+        The loss threshold is computed dynamically as
+        ``starting_balance × daily_loss_limit_pct / 100`` so that the correct
+        per-account threshold is applied even when this instance is shared
+        across many accounts.
 
         This method is idempotent with respect to the *tripped* flag — once
         tripped it stays tripped until :meth:`reset_all` is called.
 
         Args:
-            account_id: The account that just executed a trade.
-            pnl:        Realized PnL for this fill.  Negative values represent
-                        losses; positive values represent profits.
+            account_id:           The account that just executed a trade.
+            pnl:                  Realized PnL for this fill.  Negative values
+                                  represent losses; positive values represent
+                                  profits.
+            starting_balance:     The account's starting balance used to
+                                  convert the loss-limit percentage to an
+                                  absolute USD threshold.
+            daily_loss_limit_pct: Loss threshold as a percentage of
+                                  *starting_balance* (e.g. ``Decimal("20")``
+                                  means a 20 % daily loss halts trading).
 
         Raises:
             CacheError: On unexpected Redis failures.
 
         Example::
 
-            await cb.record_trade_pnl(account_id, Decimal("-200.50"))
+            await cb.record_trade_pnl(
+                account_id, Decimal("-200.50"),
+                starting_balance=Decimal("10000"),
+                daily_loss_limit_pct=Decimal("20"),
+            )
         """
+        loss_threshold = (starting_balance * daily_loss_limit_pct / _HUNDRED).quantize(
+            _QUANTIZE
+        )
         key = _cb_key(account_id)
         ttl = _seconds_until_midnight_utc()
 
@@ -177,8 +190,10 @@ class CircuitBreaker:
             # worst case is a slightly stale daily_pnl value across concurrent
             # requests — the loss limit acts as a safety threshold, not an
             # exact accounting system.
+            # Pass str(pnl) to avoid float precision loss — Redis HINCRBYFLOAT
+            # accepts string representations of numeric values.
             async with self._redis.pipeline(transaction=False) as pipe:
-                pipe.hincrbyfloat(key, _FIELD_DAILY_PNL, float(pnl))
+                pipe.hincrbyfloat(key, _FIELD_DAILY_PNL, str(pnl))
                 pipe.expire(key, ttl)
                 results = await pipe.execute()
 
@@ -187,23 +202,23 @@ class CircuitBreaker:
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "circuit_breaker.record_trade_pnl.redis_error",
-                extra={"account_id": str(account_id), "pnl": str(pnl), "error": str(exc)},
+                account_id=str(account_id),
+                pnl=str(pnl),
+                error=str(exc),
             )
             raise CacheError("Failed to record trade PnL in circuit breaker.") from exc
 
         logger.debug(
             "circuit_breaker.record_trade_pnl",
-            extra={
-                "account_id": str(account_id),
-                "pnl": str(pnl),
-                "daily_pnl": str(new_daily_pnl),
-                "loss_threshold": str(self._loss_threshold),
-            },
+            account_id=str(account_id),
+            pnl=str(pnl),
+            daily_pnl=str(new_daily_pnl),
+            loss_threshold=str(loss_threshold),
         )
 
         # Trip the breaker when cumulative loss exceeds the threshold
-        if new_daily_pnl < _ZERO and abs(new_daily_pnl) >= self._loss_threshold:
-            await self._trip(account_id, new_daily_pnl)
+        if new_daily_pnl < _ZERO and abs(new_daily_pnl) >= loss_threshold:
+            await self._trip(account_id, new_daily_pnl, loss_threshold)
 
     async def is_tripped(self, account_id: UUID) -> bool:
         """Return ``True`` if the circuit breaker is currently tripped for
@@ -232,7 +247,8 @@ class CircuitBreaker:
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "circuit_breaker.is_tripped.redis_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise CacheError("Failed to read circuit breaker state.") from exc
 
@@ -265,7 +281,8 @@ class CircuitBreaker:
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "circuit_breaker.get_daily_pnl.redis_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise CacheError("Failed to read daily PnL from circuit breaker.") from exc
 
@@ -277,7 +294,8 @@ class CircuitBreaker:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "circuit_breaker.get_daily_pnl.parse_error",
-                extra={"account_id": str(account_id), "raw_value": str(value)},
+                account_id=str(account_id),
+                raw_value=str(value),
             )
             raise CacheError(
                 f"Failed to parse daily PnL value from Redis: {value!r}"
@@ -291,7 +309,8 @@ class CircuitBreaker:
         self-clean even if this method is not called on schedule.
 
         The deletion is done in batches of 1 000 keys using ``SCAN`` to avoid
-        blocking the Redis event loop on instances with many accounts.
+        blocking the Redis event loop on instances with many accounts.  Each
+        batch is deleted with a single ``DEL`` call to minimise round-trips.
 
         Raises:
             CacheError: On unexpected Redis failures.
@@ -304,33 +323,37 @@ class CircuitBreaker:
         deleted = 0
 
         try:
-            async for key in self._scan_keys(pattern):
-                await self._redis.delete(key)
-                deleted += 1
+            async for batch in self._scan_key_batches(pattern):
+                if batch:
+                    await self._redis.delete(*batch)
+                    deleted += len(batch)
         except CacheError:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "circuit_breaker.reset_all.redis_error",
-                extra={"error": str(exc)},
+                error=str(exc),
             )
             raise CacheError("Failed to reset circuit breakers.") from exc
 
         logger.info(
             "circuit_breaker.reset_all.complete",
-            extra={"keys_deleted": deleted},
+            keys_deleted=deleted,
         )
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _trip(self, account_id: UUID, daily_pnl: Decimal) -> None:
+    async def _trip(
+        self, account_id: UUID, daily_pnl: Decimal, loss_threshold: Decimal
+    ) -> None:
         """Mark the breaker as tripped in Redis.
 
         Args:
-            account_id: The account to trip.
-            daily_pnl:  The PnL value that triggered the trip.
+            account_id:     The account to trip.
+            daily_pnl:      The PnL value that triggered the trip.
+            loss_threshold: The absolute loss threshold that was breached.
         """
         key = _cb_key(account_id)
         tripped_at = datetime.now(tz=timezone.utc).isoformat()
@@ -350,28 +373,30 @@ class CircuitBreaker:
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "circuit_breaker.trip.redis_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise CacheError("Failed to trip circuit breaker.") from exc
 
         logger.warning(
             "circuit_breaker.tripped",
-            extra={
-                "account_id": str(account_id),
-                "daily_pnl": str(daily_pnl),
-                "loss_threshold": str(self._loss_threshold),
-                "tripped_at": tripped_at,
-            },
+            account_id=str(account_id),
+            daily_pnl=str(daily_pnl),
+            loss_threshold=str(loss_threshold),
+            tripped_at=tripped_at,
         )
 
-    async def _scan_keys(self, pattern: str) -> AsyncIterator[bytes]:
-        """Yield Redis keys matching *pattern* using non-blocking SCAN.
+    async def _scan_key_batches(self, pattern: str) -> AsyncIterator[list[bytes]]:
+        """Yield batches of Redis keys matching *pattern* using non-blocking SCAN.
+
+        Each yielded batch contains up to 1 000 keys from a single SCAN cursor
+        page, allowing the caller to issue one ``DEL`` per batch.
 
         Args:
             pattern: Redis SCAN pattern (e.g. ``"circuit_breaker:*"``).
 
         Yields:
-            Raw key bytes from Redis.
+            Lists of raw key bytes from each SCAN page.
         """
         cursor: int = 0
         while True:
@@ -382,12 +407,12 @@ class CircuitBreaker:
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "circuit_breaker.scan_keys.redis_error",
-                    extra={"pattern": pattern, "error": str(exc)},
+                    pattern=pattern,
+                    error=str(exc),
                 )
                 raise CacheError("Failed to scan circuit breaker keys.") from exc
 
-            for key in keys:
-                yield key
+            yield list(keys)
 
             if cursor == 0:
                 break

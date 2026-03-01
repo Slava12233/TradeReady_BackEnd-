@@ -15,8 +15,9 @@ Dependency direction:
 
 from __future__ import annotations
 
-import logging
-from datetime import date, datetime, time, timezone
+import structlog
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from typing import Sequence
 from uuid import UUID
 
@@ -27,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Trade
 from src.utils.exceptions import DatabaseError, TradeNotFoundError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class TradeRepository:
@@ -337,7 +338,7 @@ class TradeRepository:
             day = datetime.now(tz=timezone.utc).date()
 
         day_start = datetime.combine(day, time.min, tzinfo=timezone.utc)
-        day_end = datetime.combine(day, time.max, tzinfo=timezone.utc)
+        day_end = day_start + timedelta(days=1)
 
         try:
             stmt = (
@@ -345,7 +346,7 @@ class TradeRepository:
                 .where(
                     Trade.account_id == account_id,
                     Trade.created_at >= day_start,
-                    Trade.created_at <= day_end,
+                    Trade.created_at < day_end,
                 )
                 .order_by(Trade.created_at.asc())
             )
@@ -369,7 +370,7 @@ class TradeRepository:
         account_id: UUID,
         *,
         day: date | None = None,
-    ) -> float:
+    ) -> Decimal:
         """Return the total realised PnL for an account within a UTC calendar day.
 
         Aggregates ``realized_pnl`` for all trades on the given day.
@@ -385,8 +386,8 @@ class TradeRepository:
             day:        The calendar day to aggregate (UTC).  Defaults to today.
 
         Returns:
-            The summed realised PnL as a ``float`` (``0.0`` when there are
-            no trades or all ``realized_pnl`` values are ``NULL``).
+            The summed realised PnL as a ``Decimal`` (``Decimal("0")`` when
+            there are no trades or all ``realized_pnl`` values are ``NULL``).
 
         Raises:
             DatabaseError: On any SQLAlchemy / database error.
@@ -401,7 +402,7 @@ class TradeRepository:
             day = datetime.now(tz=timezone.utc).date()
 
         day_start = datetime.combine(day, time.min, tzinfo=timezone.utc)
-        day_end = datetime.combine(day, time.max, tzinfo=timezone.utc)
+        day_end = day_start + timedelta(days=1)
 
         try:
             stmt = select(
@@ -409,11 +410,11 @@ class TradeRepository:
             ).where(
                 Trade.account_id == account_id,
                 Trade.created_at >= day_start,
-                Trade.created_at <= day_end,
+                Trade.created_at < day_end,
             )
             result = await self._session.execute(stmt)
-            total: float = result.scalar_one()
-            return float(total)
+            total = result.scalar_one()
+            return Decimal(str(total))
         except SQLAlchemyError as exc:
             logger.exception(
                 "trade.sum_daily_realized_pnl.db_error",

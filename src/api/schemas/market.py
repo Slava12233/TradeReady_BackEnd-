@@ -65,6 +65,9 @@ class PairResponse(_BaseSchema):
         min_qty:      Minimum order quantity (step-size aligned).
         step_size:    Minimum quantity increment allowed.
         min_notional: Minimum order value in quote asset.
+        has_price:    ``True`` when a live price is currently in the Redis cache.
+                      Orders placed against symbols with ``has_price=False`` will
+                      be rejected with ``ORDER_REJECTED / price_unavailable``.
     """
 
     symbol: str = Field(..., description="Pair symbol (e.g. BTCUSDT).", examples=["BTCUSDT"])
@@ -74,6 +77,14 @@ class PairResponse(_BaseSchema):
     min_qty: Decimal = Field(..., description="Minimum order quantity.", examples=["0.00001"])
     step_size: Decimal = Field(..., description="Minimum quantity increment.", examples=["0.00001"])
     min_notional: Decimal = Field(..., description="Minimum order value in USDT.", examples=["10.00"])
+    has_price: bool = Field(
+        ...,
+        description=(
+            "True when a live price is available in Redis. "
+            "Orders for symbols with has_price=False will be rejected."
+        ),
+        examples=[True],
+    )
 
     @field_serializer("min_qty", "step_size", "min_notional")
     def _serialize_decimal(self, value: Decimal) -> str:  # noqa: PLR6301

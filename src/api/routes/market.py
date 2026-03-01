@@ -49,7 +49,8 @@ from src.api.schemas.market import (
     TradePublicResponse,
     TradesPublicResponse,
 )
-from src.cache.price_cache import PriceCache, TickerData
+from src.cache.price_cache import PriceCache
+from src.cache.types import TickerData
 from src.database.models import Tick, TradingPair
 from src.dependencies import DbSessionDep, PriceCacheDep
 from src.utils.exceptions import InvalidSymbolError, PriceNotAvailableError
@@ -90,6 +91,7 @@ _ALLOWED_DEPTHS = {5, 10, 20}
 )
 async def list_pairs(
     db: DbSessionDep,
+    cache: PriceCacheDep,
     status: Annotated[
         str | None,
         Query(description="Filter by pair status: 'active' or 'inactive'."),
@@ -97,8 +99,14 @@ async def list_pairs(
 ) -> PairsListResponse:
     """Return all trading pairs from the ``trading_pairs`` table.
 
+    Each pair includes a ``has_price`` flag indicating whether a live Redis
+    price is currently available.  Agents should filter to ``has_price=true``
+    before placing orders to avoid ``ORDER_REJECTED / price_unavailable`` errors.
+
     Args:
         db:     Injected async database session.
+        cache:  Injected :class:`~src.cache.price_cache.PriceCache` for
+                live-price availability checks.
         status: Optional filter; when provided only pairs with a matching
                 ``status`` field are returned.
 
@@ -119,6 +127,9 @@ async def list_pairs(
     result = await db.execute(stmt)
     pairs = result.scalars().all()
 
+    # Single HGETALL round-trip to Redis; O(1) lookup per pair.
+    live_prices: dict[str, Decimal] = await cache.get_all_prices()
+
     pair_responses = [
         PairResponse(
             symbol=pair.symbol,
@@ -128,6 +139,7 @@ async def list_pairs(
             min_qty=Decimal(str(pair.min_qty)) if pair.min_qty is not None else Decimal("0"),
             step_size=Decimal(str(pair.step_size)) if pair.step_size is not None else Decimal("0"),
             min_notional=Decimal(str(pair.min_notional)) if pair.min_notional is not None else Decimal("0"),
+            has_price=pair.symbol in live_prices,
         )
         for pair in pairs
     ]

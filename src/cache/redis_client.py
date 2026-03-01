@@ -14,25 +14,26 @@ Example::
     await client.disconnect()
 """
 
-import logging
+import asyncio
 from typing import Self
 
 import redis.asyncio as aioredis
+import structlog
 from redis.asyncio.connection import ConnectionPool
-from redis.exceptions import ConnectionError as RedisConnectionError
-from redis.exceptions import TimeoutError as RedisTimeoutError
+from redis.exceptions import RedisError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _MAX_CONNECTIONS: int = 50
 
-# Module-level singleton used by the health probe and other lightweight callers
-# that don't go through the full RedisClient lifecycle (connect/disconnect).
+# Module-level singleton with an async lock for safe concurrent first-call
+# initialisation (C1-3: guards the check-then-set against concurrent coroutines).
 _redis_singleton: aioredis.Redis | None = None  # type: ignore[type-arg]
+_redis_lock: asyncio.Lock = asyncio.Lock()
 
 
 async def get_redis_client() -> aioredis.Redis:  # type: ignore[type-arg]
-    """Return a module-level Redis client, creating it on first call.
+    """Return a module-level Redis client, creating it on first call (async-safe).
 
     Uses the ``REDIS_URL`` from application settings.  Suitable for use in
     health checks and FastAPI dependencies — not for the ingestion service
@@ -43,15 +44,34 @@ async def get_redis_client() -> aioredis.Redis:  # type: ignore[type-arg]
     """
     global _redis_singleton
     if _redis_singleton is None:
-        from src.config import get_settings  # noqa: PLC0415
+        async with _redis_lock:
+            # Double-checked locking: re-test after acquiring the lock in case
+            # another coroutine already completed initialisation while we waited.
+            if _redis_singleton is None:
+                from src.config import get_settings  # noqa: PLC0415
 
-        settings = get_settings()
-        _redis_singleton = aioredis.from_url(
-            settings.redis_url,
-            max_connections=_MAX_CONNECTIONS,
-            decode_responses=True,
-        )
+                settings = get_settings()
+                _redis_singleton = aioredis.from_url(
+                    settings.redis_url,
+                    max_connections=_MAX_CONNECTIONS,
+                    decode_responses=True,
+                )
     return _redis_singleton
+
+
+async def close_redis_client() -> None:
+    """Close the module-level singleton connection pool and reset it to ``None``.
+
+    Call this from the application ``lifespan`` shutdown handler to ensure
+    TCP connections are released before the process exits and to allow tests
+    to clean up between test cases.
+    """
+    global _redis_singleton
+    async with _redis_lock:
+        if _redis_singleton is not None:
+            await _redis_singleton.aclose()
+            _redis_singleton = None
+            logger.info("redis_singleton_closed")
 
 
 class RedisClient:
@@ -79,8 +99,13 @@ class RedisClient:
     async def connect(self) -> None:
         """Create the connection pool and verify the server is reachable.
 
+        If the initial PING fails, all partially-initialised resources are
+        cleaned up before re-raising so that a subsequent ``connect()`` call
+        starts from a clean state (C1-5).
+
         Raises:
-            RedisConnectionError: If the initial PING fails.
+            RedisError: If the initial PING fails or the connection cannot be
+                established.
         """
         self._pool = ConnectionPool.from_url(
             self._url,
@@ -88,18 +113,29 @@ class RedisClient:
             decode_responses=True,
         )
         self._redis = aioredis.Redis(connection_pool=self._pool)
-        await self._ping()
-        logger.info("Redis connected (pool max=%d url=%s)", self._max_connections, self._url)
+        try:
+            await self._ping()
+        except Exception:
+            # Clean up partial state before propagating so the caller can
+            # safely retry without leaking pool resources (C1-5).
+            await self.disconnect()
+            raise
+        logger.info("redis_connected", pool_max=self._max_connections, url=self._url)
 
     async def disconnect(self) -> None:
-        """Close all pooled connections gracefully."""
+        """Close all pooled connections gracefully.
+
+        Closing the ``Redis`` instance is sufficient — it already drains and
+        closes the underlying pool.  The redundant ``pool.aclose()`` call has
+        been removed to avoid double-close confusion (C1-6).
+        """
         if self._redis is not None:
             await self._redis.aclose()
             self._redis = None
+        # Pool is already closed by redis.aclose(); just drop the reference.
         if self._pool is not None:
-            await self._pool.aclose()
             self._pool = None
-        logger.info("Redis disconnected")
+        logger.info("redis_disconnected")
 
     def get_client(self) -> aioredis.Redis:  # type: ignore[type-arg]
         """Return the underlying async Redis client.
@@ -114,12 +150,18 @@ class RedisClient:
     async def ping(self) -> bool:
         """Return ``True`` if Redis responds to PING, ``False`` otherwise.
 
-        This is a safe, non-raising health-check wrapper used by the
-        ``/health`` endpoint.
+        Catches all ``redis.exceptions.RedisError`` subtypes — including
+        ``ResponseError``, ``AuthenticationError``, ``BusyLoadingError``, and
+        ``DataError`` — in addition to ``RuntimeError`` for the not-connected
+        case (C1-2).
+
+        Returns:
+            ``True`` on a successful PING, ``False`` on any Redis or runtime
+            error.
         """
         try:
             return await self._ping()
-        except (RedisConnectionError, RedisTimeoutError, RuntimeError):
+        except (RedisError, RuntimeError):
             return False
 
     # ── private ───────────────────────────────────────────────────────────────

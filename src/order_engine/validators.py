@@ -23,12 +23,12 @@ Example::
     validator = OrderValidator(session)
     await validator.validate(order_request)
     # raises InvalidOrderTypeError, InvalidQuantityError, InvalidSymbolError,
-    # or ValidationError on failure; returns None on success
+    # or InputValidationError on failure; returns None on success
 """
 
 from __future__ import annotations
 
-import logging
+import structlog
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -38,13 +38,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import TradingPair
 from src.utils.exceptions import (
     DatabaseError,
+    InputValidationError,
     InvalidOrderTypeError,
     InvalidQuantityError,
     InvalidSymbolError,
-    ValidationError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+
+# Minimum platform quantity — used as fallback when a pair has no min_qty set.
+_PLATFORM_MIN_QTY: Decimal = Decimal("1E-8")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -163,10 +166,10 @@ class OrderValidator:
             ``order.symbol``.
 
         Raises:
-            ValidationError: If ``side`` is not ``"buy"`` or ``"sell"``.
+            InputValidationError: If ``side`` is not ``"buy"`` or ``"sell"``.
             InvalidOrderTypeError: If ``type`` is not a supported order type.
             InvalidQuantityError: If ``quantity`` is not a positive ``Decimal``.
-            ValidationError: If ``price`` is missing or non-positive for a
+            InputValidationError: If ``price`` is missing or non-positive for a
                 limit/stop/tp order.
             InvalidSymbolError: If the symbol does not exist in
                 ``trading_pairs`` or is not active.
@@ -182,6 +185,7 @@ class OrderValidator:
         self._check_quantity(order)
         self._check_price(order)
         pair = await self._check_symbol(order)
+        self._check_pair_limits(order, pair)
         return pair
 
     # ------------------------------------------------------------------
@@ -190,9 +194,9 @@ class OrderValidator:
 
     @staticmethod
     def _check_side(order: OrderRequest) -> None:
-        """Raise :class:`ValidationError` if side is not ``buy`` or ``sell``."""
+        """Raise :class:`InputValidationError` if side is not ``buy`` or ``sell``."""
         if order.side not in VALID_SIDES:
-            raise ValidationError(
+            raise InputValidationError(
                 f"'side' must be 'buy' or 'sell'; got {order.side!r}.",
                 field="side",
             )
@@ -210,27 +214,65 @@ class OrderValidator:
             raise InvalidQuantityError(
                 "Order quantity must be greater than zero.",
                 quantity=order.quantity,
-                min_qty=Decimal("0"),
+                min_qty=_PLATFORM_MIN_QTY,
             )
 
     @staticmethod
     def _check_price(order: OrderRequest) -> None:
-        """Raise :class:`ValidationError` if price is missing or non-positive
+        """Raise :class:`InputValidationError` if price is missing or non-positive
         for order types that require it."""
         if order.type not in PRICE_REQUIRED_TYPES:
             return
 
         if order.price is None:
-            raise ValidationError(
+            raise InputValidationError(
                 f"'price' is required for '{order.type}' orders.",
                 field="price",
             )
         if order.price <= Decimal("0"):
-            raise ValidationError(
+            raise InputValidationError(
                 f"'price' must be a positive value for '{order.type}' orders; "
                 f"got {order.price}.",
                 field="price",
             )
+
+    @staticmethod
+    def _check_pair_limits(order: OrderRequest, pair: TradingPair) -> None:
+        """Raise :class:`InvalidQuantityError` if qty or notional is below the pair minimums.
+
+        Enforces the ``min_qty`` and ``min_notional`` fields seeded from Binance
+        exchange info.  When a pair has no limit set the check is skipped.
+
+        Args:
+            order: The order request after basic quantity validation.
+            pair:  The active :class:`~src.database.models.TradingPair` row.
+
+        Raises:
+            InvalidQuantityError: If ``quantity < pair.min_qty`` or the order's
+                notional value is below ``pair.min_notional``.
+        """
+        if pair.min_qty is not None and order.quantity < pair.min_qty:
+            raise InvalidQuantityError(
+                f"Quantity {order.quantity} is below the minimum {pair.min_qty} "
+                f"for {order.symbol}.",
+                quantity=order.quantity,
+                min_qty=pair.min_qty,
+                max_qty=pair.max_qty,
+            )
+
+        if pair.min_notional is not None:
+            # Use limit price for queued orders; None for market orders (no
+            # reference price available here — the engine will re-check).
+            reference_price: Decimal | None = order.price
+            if reference_price is not None:
+                notional = order.quantity * reference_price
+                if notional < pair.min_notional:
+                    raise InvalidQuantityError(
+                        f"Order notional value {notional} is below the minimum "
+                        f"{pair.min_notional} for {order.symbol}.",
+                        quantity=order.quantity,
+                        min_qty=pair.min_qty,
+                    )
 
     async def _check_symbol(self, order: OrderRequest) -> TradingPair:
         """Return the active :class:`TradingPair` or raise :class:`InvalidSymbolError`.

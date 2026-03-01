@@ -15,7 +15,7 @@ Dependency direction:
 
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime, timezone
 from typing import Sequence
 from uuid import UUID
@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import PortfolioSnapshot
 from src.utils.exceptions import DatabaseError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 #: Valid snapshot granularities as defined by the DB check constraint.
 _VALID_TYPES: frozenset[str] = frozenset({"minute", "hourly", "daily"})

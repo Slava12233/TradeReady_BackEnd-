@@ -41,7 +41,7 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -64,7 +64,7 @@ from src.utils.exceptions import (
     PriceNotAvailableError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Internal types
@@ -150,6 +150,8 @@ class LimitOrderMatcher:
         self._balance_manager_factory = balance_manager_factory
         self._slippage_calculator = slippage_calculator
         self._page_size = page_size
+        # Tracks execution errors for the current sweep; reset at sweep start.
+        self._sweep_execution_errors: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -158,8 +160,10 @@ class LimitOrderMatcher:
     async def check_all_pending(self) -> MatcherStats:
         """Run one full sweep over all pending orders.
 
-        Fetches pending orders in pages of ``page_size``, evaluates each
-        against the current Redis price, and executes matched orders.
+        Fetches pending orders in pages of ``page_size`` using keyset
+        pagination (``WHERE id > last_seen_id``) to avoid the shifting-offset
+        problem when new orders are inserted mid-sweep.  Evaluates each order
+        against the current Redis price and executes matched orders.
 
         Returns:
             A :class:`MatcherStats` summary for this sweep.
@@ -170,18 +174,20 @@ class LimitOrderMatcher:
             print(stats.orders_filled)
         """
         started_at = datetime.now(tz=timezone.utc)
-        t0 = asyncio.get_event_loop().time()
+        t0 = asyncio.get_running_loop().time()
 
+        self._sweep_execution_errors = 0
         checked = 0
         filled = 0
-        errored = 0
         filled_results: list[OrderResult] = []
 
-        offset = 0
+        last_id: UUID | None = None
         while True:
-            pending_orders = await self._fetch_pending_page(offset)
+            pending_orders = await self._fetch_pending_page(after_id=last_id)
             if not pending_orders:
                 break
+
+            last_id = pending_orders[-1].id  # advance keyset cursor
 
             for order in pending_orders:
                 checked += 1
@@ -189,17 +195,13 @@ class LimitOrderMatcher:
                 if result is not None:
                     filled += 1
                     filled_results.append(result)
-                elif result is None and _was_execution_error(order):
-                    # Execution errors are counted separately in check_order;
-                    # we use a sentinel to surface them here.
-                    errored += 1
 
             if len(pending_orders) < self._page_size:
                 # Last page — no more orders to process.
                 break
-            offset += self._page_size
 
-        duration_ms = (asyncio.get_event_loop().time() - t0) * 1000
+        errored = self._sweep_execution_errors
+        duration_ms = (asyncio.get_running_loop().time() - t0) * 1000
 
         stats = MatcherStats(
             swept_at=started_at,
@@ -286,8 +288,13 @@ class LimitOrderMatcher:
         In production the Celery beat scheduler drives :func:`run_matcher_once`
         instead.  The loop exits cleanly on :exc:`asyncio.CancelledError`.
 
+        Error handling: if a sweep raises an unhandled exception (e.g. the
+        database is temporarily down) the failure is logged and the loop backs
+        off exponentially (1 s → 2 s → 4 s … capped at 60 s) before retrying.
+        Consecutive-failure count resets to 0 after any successful sweep.
+
         Args:
-            interval_seconds: Pause between sweeps in seconds (default 1.0).
+            interval_seconds: Pause between successful sweeps (default 1.0).
 
         Example::
 
@@ -299,13 +306,26 @@ class LimitOrderMatcher:
             "matcher.loop_started",
             extra={"interval_seconds": interval_seconds},
         )
+        consecutive_failures = 0
         try:
             while True:
                 try:
                     await self.check_all_pending()
+                    consecutive_failures = 0
+                    await asyncio.sleep(interval_seconds)
                 except Exception:
-                    logger.exception("matcher.sweep_unhandled_error")
-                await asyncio.sleep(interval_seconds)
+                    consecutive_failures += 1
+                    backoff = min(
+                        interval_seconds * (2 ** (consecutive_failures - 1)), 60.0
+                    )
+                    logger.exception(
+                        "matcher.sweep_unhandled_error",
+                        extra={
+                            "consecutive_failures": consecutive_failures,
+                            "backoff_seconds": backoff,
+                        },
+                    )
+                    await asyncio.sleep(backoff)
         except asyncio.CancelledError:
             logger.info("matcher.loop_cancelled")
             raise
@@ -314,11 +334,15 @@ class LimitOrderMatcher:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _fetch_pending_page(self, offset: int) -> Sequence[Order]:
-        """Load one page of pending orders using a short-lived session.
+    async def _fetch_pending_page(self, after_id: UUID | None) -> Sequence[Order]:
+        """Load one page of pending orders using keyset pagination.
+
+        Uses ``after_id`` (last seen order ID from the previous page) to avoid
+        the shifting-offset problem when new orders are inserted mid-sweep.
 
         Args:
-            offset: Row offset for pagination.
+            after_id: The ``id`` of the last order returned by the previous
+                      page, or ``None`` for the first page.
 
         Returns:
             A (possibly empty) sequence of :class:`Order` rows.
@@ -328,12 +352,12 @@ class LimitOrderMatcher:
             try:
                 return await repo.list_pending(
                     limit=self._page_size,
-                    offset=offset,
+                    after_id=after_id,
                 )
             except DatabaseError:
                 logger.exception(
                     "matcher.fetch_pending.db_error",
-                    extra={"offset": offset},
+                    extra={"after_id": str(after_id) if after_id else None},
                 )
                 return []
 
@@ -407,6 +431,7 @@ class LimitOrderMatcher:
                         "current_price": str(current_price),
                     },
                 )
+                self._sweep_execution_errors += 1
                 return None
 
 
@@ -535,18 +560,3 @@ def _condition_met(
     return False
 
 
-def _was_execution_error(order: Order) -> bool:  # noqa: ARG001
-    """Placeholder predicate — always returns ``False``.
-
-    :meth:`LimitOrderMatcher.check_order` already handles execution errors
-    internally and returns ``None``; this sentinel exists so the caller in
-    :meth:`check_all_pending` can be extended later to distinguish *skipped*
-    orders from *errored* orders without a breaking API change.
-
-    Args:
-        order: The order that produced a ``None`` result.
-
-    Returns:
-        Always ``False`` in the current implementation.
-    """
-    return False

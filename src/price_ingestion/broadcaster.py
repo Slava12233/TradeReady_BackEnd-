@@ -24,13 +24,13 @@ Example::
 from __future__ import annotations
 
 import json
-import logging
 
 import redis.asyncio as aioredis
+import structlog
 
-from src.cache.price_cache import Tick
+from src.cache.types import Tick
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 _CHANNEL: str = "price_updates"
 
@@ -60,7 +60,7 @@ class PriceBroadcaster:
         try:
             await self._redis.publish(_CHANNEL, message)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to broadcast tick for %s: %s", tick.symbol, exc)
+            log.error("Failed to broadcast tick", symbol=tick.symbol, error=str(exc))
 
     async def broadcast_batch(self, ticks: list[Tick]) -> None:
         """Publish multiple ticks in a single Redis pipeline.
@@ -79,7 +79,7 @@ class PriceBroadcaster:
                     pipe.publish(_CHANNEL, self._serialize(tick))
                 await pipe.execute()
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to broadcast batch of %d ticks: %s", len(ticks), exc)
+            log.error("Failed to broadcast batch", count=len(ticks), error=str(exc))
 
     # ── Private helpers ───────────────────────────────────────────────────────
 

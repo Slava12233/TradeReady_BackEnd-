@@ -21,14 +21,18 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import UTC
+from typing import TYPE_CHECKING
 
 import asyncpg
+import structlog
 
-from src.cache.price_cache import Tick
+from src.cache.types import Tick
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from src.price_ingestion.broadcaster import PriceBroadcaster
+
+log = structlog.get_logger(__name__)
 
 _TABLE_NAME: str = "ticks"
 _COLUMNS: tuple[str, ...] = (
@@ -49,6 +53,11 @@ class TickBuffer:
         flush_interval: Seconds between periodic flushes.  Default ``1.0``.
         max_size: Flush immediately when the buffer reaches this size.
             Default ``5000``.
+        broadcaster: Optional :class:`~src.price_ingestion.broadcaster.PriceBroadcaster`
+            used to publish ticks to Redis pub/sub after each successful DB
+            flush.  When provided, ``broadcast_batch()`` is called with the
+            same batch that was written to the database so that all ``PUBLISH``
+            commands are sent in a single pipeline round-trip.
 
     Example::
 
@@ -64,6 +73,7 @@ class TickBuffer:
         db_pool: asyncpg.Pool,  # type: ignore[type-arg]
         flush_interval: float = 1.0,
         max_size: int = 5000,
+        broadcaster: PriceBroadcaster | None = None,
     ) -> None:
         self._pool = db_pool
         self._flush_interval = flush_interval
@@ -71,19 +81,29 @@ class TickBuffer:
         self._buffer: list[Tick] = []
         self._lock = asyncio.Lock()
         self._total_flushed: int = 0
+        self._broadcaster = broadcaster
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def add(self, tick: Tick) -> None:
         """Append *tick* to the buffer; trigger an immediate flush if full.
 
+        The lock is released before the DB write so that callers are not
+        blocked for the duration of the ``asyncpg`` COPY operation.
+
         Args:
             tick: A :class:`~src.cache.price_cache.Tick` namedtuple.
         """
+        batch: list[Tick] = []
         async with self._lock:
             self._buffer.append(tick)
             if len(self._buffer) >= self._max_size:
-                await self._do_flush()
+                # Snapshot and clear inside the lock; write outside.
+                batch = list(self._buffer)
+                self._buffer.clear()
+        # Lock is released — DB write (and broadcast) happen without blocking add().
+        if batch:
+            await self._write_batch(batch)
 
     async def flush(self) -> int:
         """Flush all buffered ticks to TimescaleDB now.
@@ -94,7 +114,10 @@ class TickBuffer:
             Number of ticks actually written (0 on empty buffer or error).
         """
         async with self._lock:
-            return await self._do_flush()
+            batch = list(self._buffer)
+            self._buffer.clear()
+        # Lock released — DB write happens outside the lock.
+        return await self._write_batch(batch)
 
     async def start_periodic_flush(self) -> None:
         """Background task that flushes the buffer every ``flush_interval`` seconds.
@@ -108,20 +131,20 @@ class TickBuffer:
             # … later …
             task.cancel()
         """
-        logger.info(
-            "TickBuffer periodic flush started (interval=%.1fs, max_size=%d)",
-            self._flush_interval,
-            self._max_size,
+        log.info(
+            "TickBuffer periodic flush started",
+            interval=self._flush_interval,
+            max_size=self._max_size,
         )
         while True:
             try:
                 await asyncio.sleep(self._flush_interval)
                 await self.flush()
             except asyncio.CancelledError:
-                logger.info("TickBuffer periodic flush task cancelled")
+                log.info("TickBuffer periodic flush task cancelled")
                 return
             except Exception as exc:  # noqa: BLE001
-                logger.error("Unexpected error in periodic flush loop: %s", exc)
+                log.error("Unexpected error in periodic flush loop", error=str(exc))
 
     async def shutdown(self) -> None:
         """Flush any remaining ticks before the process exits.
@@ -133,25 +156,30 @@ class TickBuffer:
 
             await buffer.shutdown()
         """
-        logger.info("TickBuffer shutting down — performing final flush…")
+        log.info("TickBuffer shutting down — performing final flush…")
         flushed = await self.flush()
-        logger.info("TickBuffer shutdown complete. Final flush wrote %d ticks.", flushed)
+        log.info("TickBuffer shutdown complete", final_flush_count=flushed)
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
-    async def _do_flush(self) -> int:
-        """Perform the actual COPY insert.  Caller must hold :attr:`_lock`.
+    async def _write_batch(self, batch: list[Tick]) -> int:
+        """Write *batch* to TimescaleDB and broadcast via pub/sub.
+
+        Called **without** the lock held so that :meth:`add` can continue
+        accepting ticks while the ``asyncpg`` COPY round-trip is in progress.
+        On failure the batch is prepended back into the buffer so that the
+        next flush attempt retries those ticks.
+
+        Args:
+            batch: Snapshot of ticks to write.
 
         Returns:
-            Number of ticks written, or 0 on empty buffer / error.
+            Number of ticks written, or 0 on empty batch / error.
         """
-        if not self._buffer:
+        if not batch:
             return 0
 
-        # Snapshot current buffer; keep the reference so we can restore on failure.
-        batch = list(self._buffer)
         count = len(batch)
-
         records = [
             (
                 tick.timestamp.astimezone(UTC),
@@ -171,22 +199,30 @@ class TickBuffer:
                     records=records,
                     columns=list(_COLUMNS),
                 )
-            # Clear only after successful write.
-            self._buffer.clear()
             self._total_flushed += count
-            logger.debug("Flushed %d ticks to TimescaleDB (total=%d)", count, self._total_flushed)
+            log.debug("Flushed ticks to TimescaleDB", count=count, total=self._total_flushed)
+
+            # Broadcast the same batch in a single Redis pipeline round-trip,
+            # co-located with the DB flush.  Failure here is non-fatal.
+            if self._broadcaster is not None:
+                await self._broadcaster.broadcast_batch(batch)
+
             return count
         except asyncpg.PostgresError as exc:
-            logger.error(
-                "PostgreSQL error during tick flush (%d ticks retained): %s",
-                count,
-                exc,
+            log.error(
+                "PostgreSQL error during tick flush — retaining batch",
+                count=count,
+                error=str(exc),
             )
+            async with self._lock:
+                self._buffer = batch + self._buffer
             return 0
         except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "Unexpected error during tick flush (%d ticks retained): %s",
-                count,
-                exc,
+            log.error(
+                "Unexpected error during tick flush — retaining batch",
+                count=count,
+                error=str(exc),
             )
+            async with self._lock:
+                self._buffer = batch + self._buffer
             return 0
