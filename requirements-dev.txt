@@ -1,0 +1,28 @@
+# Development and testing dependencies — AI Agent Crypto Trading Platform
+# Install with: pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.2
+pytest-cov==6.0.0
+
+# Linting and type checking
+ruff==0.9.4
+mypy==1.14.1
+
+# Type stubs
+types-redis==4.6.0.20241004
+
+# Load testing
+locust==2.32.6
+
+# Test factories
+factory-boy==3.3.1
+
+# Async HTTP mocking
+aioresponses==0.7.7
+
+# Sync/async httpx mocking
+respx==0.22.0

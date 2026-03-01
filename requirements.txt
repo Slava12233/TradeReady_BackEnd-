@@ -1,0 +1,37 @@
+# Production dependencies — AI Agent Crypto Trading Platform
+# Python 3.12+
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Configuration
+pydantic-settings==2.7.1
+email-validator==2.3.0
+
+# Database (async SQLAlchemy + TimescaleDB via asyncpg)
+sqlalchemy[asyncio]==2.0.37
+asyncpg==0.30.0
+alembic==1.14.1
+
+# Redis (async, with hiredis C extension for speed)
+redis[hiredis]==5.2.1
+
+# WebSocket client (Binance WS)
+websockets==14.1
+
+# Task queue
+celery[redis]==5.4.0
+
+# Auth
+pyjwt==2.10.1
+bcrypt==4.3.0
+
+# Structured logging
+structlog==25.1.0
+
+# Metrics
+prometheus-client==0.21.1
+
+# HTTP client (for REST calls to Binance)
+httpx==0.28.1

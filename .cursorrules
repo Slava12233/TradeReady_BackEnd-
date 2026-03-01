@@ -1,0 +1,143 @@
+# AI Agent Crypto Trading Platform — Cursor Rules
+
+## 0. ABSOLUTE AUTHORITY: Development Plan
+
+`developmantPlan.md` is the single source of truth for this project. ALL implementation — file structure, class names, method signatures, database schemas, API endpoints, data flows, and component responsibilities — MUST match what is specified in that plan. Do NOT deviate, rename, restructure, or "improve" anything that the plan already defines. If something seems wrong or outdated in the plan, ask the user before changing it.
+
+## 1. MANDATORY: Read Before Every Task
+
+Before starting ANY new task, you MUST read these files in order:
+
+1. `context.md` — project architecture, stack, design decisions
+2. `tasks.md` — full task breakdown with statuses
+3. `developmentprogress.md` — current phase, progress, blockers
+4. `developmantPlan.md` — read the relevant section(s) for the specific task you are about to implement
+
+Do NOT skip this step. Do NOT assume you remember previous context. Do NOT start coding without reading the plan section for the component you are working on.
+
+## 2. MANDATORY: Update After Every Task
+
+After completing any task:
+
+1. **`tasks.md`** — mark the task `[x]` Done (or `[~]` if partially complete)
+2. **`developmentprogress.md`** — update progress percentage, component status, milestones; add a changelog entry with today's date
+3. **`context.md`** — update ONLY if architecture, stack, or design decisions changed
+
+## 3. One File at a Time
+
+- Create exactly ONE file per step. Never batch-create multiple source files.
+- After creating the file, stop and explain to the user:
+  - What the file does and its purpose in the system
+  - Which component (1–9) or layer it belongs to
+  - How it connects to other files
+  - What the next file to create would be
+- Wait for user confirmation before proceeding to the next file.
+
+## 4. Project Standards
+
+### Python Style
+- Python 3.12+, fully typed (all function signatures have type hints)
+- Use `async/await` for all I/O-bound code
+- Pydantic v2 for all data models and validation
+- Use `Decimal` (not float) for all monetary/price values
+- Docstrings on every public class and function (Google style)
+- Imports: stdlib → third-party → local, separated by blank lines
+
+### Naming Conventions
+- Files: `snake_case.py`
+- Classes: `PascalCase`
+- Functions/methods: `snake_case`
+- Constants: `UPPER_SNAKE_CASE`
+- Private: prefix with `_`
+
+### Error Handling
+- Never use bare `except:`; always catch specific exceptions
+- Use custom exception classes from `src/utils/exceptions.py`
+- All external calls (Redis, DB, Binance WS) must have try/except with logging
+- Fail closed on network/parse errors — reject the operation, don't guess
+
+### Security
+- Never hardcode secrets, tokens, or credentials
+- All secrets via environment variables; document required names in `.env.example`
+- API keys: `secrets.token_urlsafe(48)` with `ak_live_` / `sk_live_` prefixes
+- Store hashes (bcrypt), never plaintext secrets
+- Parameterized queries only (SQLAlchemy handles this, never use raw f-strings in SQL)
+
+## 5. Architecture Rules
+
+### File Placement
+Follow the project structure defined in `developmantPlan.md` Section 4. Every new file must go in its designated directory with the exact name specified in the plan. Do not invent new files or directories that are not in the plan without explicit user approval.
+
+### Dependency Direction
+```
+Routes → Schemas + Services
+Services → Repositories + Cache + External clients
+Repositories → Models + Session
+```
+Never import routes from services. Never import services from repositories.
+
+### Database
+- All DB access goes through repository classes in `src/database/repositories/`
+- All write operations must be atomic (use SQLAlchemy transactions)
+- Use `NUMERIC(20,8)` for all price/quantity/balance columns
+- TimescaleDB hypertables for time-series data only (ticks, snapshots)
+
+### Redis
+- Current prices: `HSET prices {SYMBOL} {price}`
+- Rate limits: `INCR rate_limit:{api_key}:{endpoint}:{minute}` + `EXPIRE 60`
+- Circuit breaker: `HSET circuit_breaker:{account_id} daily_pnl {value}`
+- Always set TTL on ephemeral keys
+
+### API Design
+- All routes under `/api/v1/` prefix
+- JSON responses with consistent error format: `{"error": {"code": "...", "message": "..."}}`
+- Pydantic schemas for request validation and response serialization
+- Rate limit headers on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+## 6. Testing Requirements
+
+- Write tests for non-trivial logic before moving to the next component
+- Unit tests go in `tests/unit/`, integration tests in `tests/integration/`
+- Use `pytest` + `pytest-asyncio` for async tests
+- Mock external dependencies (Redis, DB, Binance WS) in unit tests
+- Integration tests use real Docker services via `docker compose`
+
+## 7. Git & Version Control
+
+- Small, focused commits — one logical change per commit
+- Commit message format: `type(scope): description`
+  - Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
+  - Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
+  - Example: `feat(ingestion): implement tick buffer with periodic flush`
+
+## 8. Dependencies
+
+- Prefer standard library over third-party when feasible
+- Pin all dependency versions in `requirements.txt`
+- Add new deps via `pip install` (latest version), then pin immediately
+- Document WHY a dependency was added in the commit message
+
+## 9. Docker
+
+- Every service has its own Dockerfile
+- `docker-compose.yml` for production-like setup
+- `docker-compose.dev.yml` for development overrides (hot reload, debug)
+- Healthchecks on every service
+- Resource limits defined for all containers
+
+## 10. Plan Compliance
+
+- Class names, method signatures, and docstrings in the plan are prescriptive — implement them exactly
+- Database table names, column names, types, and constraints must match `developmantPlan.md` Section 14
+- REST endpoints, request/response formats must match `developmantPlan.md` Section 15
+- WebSocket channels and message formats must match `developmantPlan.md` Section 16
+- MCP tools must match `developmantPlan.md` Section 17
+- SDK interface must match `developmantPlan.md` Section 18
+- If you find a conflict between the plan and what makes technical sense, STOP and ask the user
+
+## 11. Communication Protocol
+
+- When you encounter ambiguity, ask ONE concise clarifying question — don't guess
+- If a task is blocked, explain the blocker and suggest alternatives
+- When proposing a design choice, state the trade-offs briefly
+- Never silently skip a task or requirement

@@ -1,0 +1,25 @@
+# Prometheus scrape configuration for AgentExchange Platform
+# Phase 1: scrape the API service health metrics only.
+# Phase 5 will add custom metrics endpoints for all services.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: agentexchange
+    env: production
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  - job_name: ingestion
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ingestion:9100"]

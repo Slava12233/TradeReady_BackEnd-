@@ -1,0 +1,52 @@
+# Celery Worker + Beat Scheduler
+#
+# This image is used for two services in docker-compose:
+#   celery      — task worker  (CMD override: celery ... worker)
+#   celery-beat — beat scheduler (CMD override: celery ... beat)
+#
+# Default CMD runs the worker.  docker-compose overrides the command for beat.
+#
+# The high_priority queue (limit-order-monitor, fires every 1 s) and the
+# default queue (snapshots, cleanup, candle refresh) are both consumed by the
+# worker.  Pass -Q default,high_priority in the compose command to consume both.
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# gcc + libpq-dev required by asyncpg C extensions; curl used for healthcheck probes
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Cache dependencies independently of application source changes
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Application source — tasks import from src.* so the full package is needed
+COPY src/ ./src/
+# Alembic is not invoked by Celery tasks, but snapshot/cleanup tasks import
+# src.database.session which transitively imports alembic at startup validation.
+COPY alembic/ ./alembic/
+COPY alembic.ini .
+
+# Runtime env vars are injected by docker-compose env_file; .env is optional here
+COPY .env* ./
+
+# Healthcheck: verify the Celery app can be imported and the broker is reachable.
+# `celery inspect ping` sends a ping to all workers and exits 0 if at least one
+# responds within 5 seconds.  For beat, there is no built-in inspect endpoint so
+# we check that the process is alive via a simple Python import probe instead.
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=20s \
+    CMD celery -A src.tasks.celery_app inspect ping -d celery@$$HOSTNAME --timeout 5 \
+        || python -c "from src.tasks.celery_app import app; print('celery app ok')"
+
+# Default: start the worker consuming both queues.
+# celery-beat in docker-compose overrides this to:
+#   celery -A src.tasks.celery_app beat --loglevel=info
+CMD ["celery", "-A", "src.tasks.celery_app", "worker", \
+     "--loglevel=info", \
+     "--concurrency=4", \
+     "-Q", "default,high_priority"]

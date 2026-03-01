@@ -1,0 +1,16 @@
+# Phase 1 compose override — disables services that are implemented in later phases.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.phase1.yml up --build
+#
+# Disables: celery, celery-beat  (Phase 3)
+# Keeps:    timescaledb, redis, api, ingestion, prometheus, grafana
+
+services:
+  celery:
+    profiles:
+      - phase3
+
+  celery-beat:
+    profiles:
+      - phase3
