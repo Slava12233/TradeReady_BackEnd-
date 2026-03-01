@@ -61,12 +61,13 @@ from decimal import Decimal
 from typing import Sequence
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.accounts.balance_manager import BalanceManager
 from src.cache.price_cache import PriceCache
-from src.database.models import Order, Trade
+from src.database.models import Order, Position, Trade
 from src.database.repositories.order_repo import OrderRepository
 from src.database.repositories.trade_repo import TradeRepository
 from src.order_engine.slippage import SlippageCalculator
@@ -460,6 +461,14 @@ class OrderEngine:
             )
         )
 
+        await self._upsert_position(
+            account_id=order.account_id,
+            symbol=order.symbol,
+            side=order.side,
+            fill_qty=Decimal(str(order.quantity)),
+            fill_price=slippage.execution_price,
+        )
+
         try:
             await self._session.commit()
         except SQLAlchemyError as exc:
@@ -604,6 +613,14 @@ class OrderEngine:
             )
         )
 
+        await self._upsert_position(
+            account_id=account_id,
+            symbol=order.symbol,
+            side=order.side,
+            fill_qty=order.quantity,
+            fill_price=slippage.execution_price,
+        )
+
         try:
             await self._session.commit()
         except SQLAlchemyError as exc:
@@ -746,6 +763,79 @@ class OrderEngine:
             fee=None,
             timestamp=datetime.now(tz=timezone.utc),
         )
+
+    async def _upsert_position(
+        self,
+        account_id: UUID,
+        symbol: str,
+        side: str,
+        fill_qty: Decimal,
+        fill_price: Decimal,
+    ) -> None:
+        """Create or update the Position row for *account_id* / *symbol* after a fill.
+
+        For buy fills the weighted-average entry price is recalculated and the
+        quantity is increased.  For sell fills the quantity is reduced and the
+        realised PnL portion for the closed quantity is accumulated.  Positions
+        with ``quantity <= 0`` are zeroed out rather than deleted so that the
+        realised-PnL history is preserved on the row.
+
+        This method must be called **before** the surrounding transaction
+        commits so that the position update is atomic with the balance and
+        trade writes.
+
+        Args:
+            account_id: Owning account UUID.
+            symbol:     Trading pair (e.g. ``"BTCUSDT"``).
+            side:       ``"buy"`` or ``"sell"``.
+            fill_qty:   Quantity filled in base asset.
+            fill_price: Effective execution price (post-slippage).
+        """
+        stmt = select(Position).where(
+            Position.account_id == account_id,
+            Position.symbol == symbol,
+        )
+        result = await self._session.execute(stmt)
+        pos: Position | None = result.scalar_one_or_none()
+
+        if side == "buy":
+            if pos is None:
+                pos = Position(
+                    account_id=account_id,
+                    symbol=symbol,
+                    side="long",
+                    quantity=fill_qty,
+                    avg_entry_price=fill_price,
+                    total_cost=fill_qty * fill_price,
+                    realized_pnl=Decimal("0"),
+                )
+                self._session.add(pos)
+            else:
+                old_qty = Decimal(str(pos.quantity))
+                old_cost = Decimal(str(pos.total_cost))
+                fill_cost = fill_qty * fill_price
+                new_qty = old_qty + fill_qty
+                new_total_cost = old_cost + fill_cost
+                new_avg_entry = new_total_cost / new_qty if new_qty else fill_price
+                pos.quantity = new_qty
+                pos.avg_entry_price = new_avg_entry
+                pos.total_cost = new_total_cost
+        else:  # sell
+            if pos is None:
+                logger.warning(
+                    "engine.upsert_position.sell_no_position",
+                    extra={"account_id": str(account_id), "symbol": symbol},
+                )
+                return
+            old_qty = Decimal(str(pos.quantity))
+            avg_entry = Decimal(str(pos.avg_entry_price))
+            realised_increment = (fill_price - avg_entry) * fill_qty
+            new_qty = old_qty - fill_qty
+            new_qty = max(new_qty, Decimal("0"))
+            new_total_cost = new_qty * avg_entry
+            pos.quantity = new_qty
+            pos.total_cost = new_total_cost
+            pos.realized_pnl = Decimal(str(pos.realized_pnl)) + realised_increment
 
     async def _release_locked_funds(
         self,

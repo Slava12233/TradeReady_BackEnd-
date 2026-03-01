@@ -9,7 +9,25 @@
       "Bash(docker exec aitradingagent-timescaledb-1 psql -U postgres -c \"SELECT extversion FROM pg_extension WHERE extname=''timescaledb'';\")",
       "Bash(docker exec aitradingagent-timescaledb-1 psql -U agentexchange -d agentexchange -c \"SELECT extversion FROM pg_extension WHERE extname=''timescaledb'';\")",
       "Bash(docker compose up -d timescaledb)",
-      "Bash(docker compose up -d api)"
+      "Bash(docker compose up -d api)",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U postgres -d trading_db -c \"SELECT COUNT\\(*\\) as trade_count FROM trades;\")",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U postgres -d trading_db -c \"\\\\dt\")",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U agentexchange -d agentexchange -c \"SELECT COUNT\\(*\\) as trade_count FROM trades; SELECT COUNT\\(*\\) as position_count FROM positions; SELECT COUNT\\(*\\) as balance_count FROM balances WHERE asset != ''USDT'';\")",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U agentexchange -d agentexchange -c \"SELECT COUNT\\(*\\) as trade_count FROM trades;\")",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U agentexchange -d agentexchange -c \"SELECT COUNT\\(*\\) FROM positions;\")",
+      "Bash(docker port aitradingagent-timescaledb-1)",
+      "Bash(DATABASE_URL=\"postgresql+asyncpg://agentexchange:agentexchange_dev_pw@localhost:5432/agentexchange\" python scripts/backfill_positions.py)",
+      "Bash(docker exec aitradingagent-api-1 python scripts/backfill_positions.py)",
+      "Bash(docker exec aitradingagent-api-1 ls /app/scripts/)",
+      "Bash(docker exec aitradingagent-api-1 sh -c \"ls /app/scripts/\")",
+      "Bash(docker cp \"C:/Users/Shalom Boy/Desktop/AiTradingAgent/scripts/backfill_positions.py\" aitradingagent-api-1:/app/scripts/backfill_positions.py)",
+      "Bash(docker exec aitradingagent-api-1 sh -c \"cd /app && python scripts/backfill_positions.py\")",
+      "Bash(docker exec aitradingagent-timescaledb-1 psql -U agentexchange -d agentexchange -c \"SELECT symbol, quantity, avg_entry_price, total_cost, realized_pnl FROM positions ORDER BY symbol;\")",
+      "Bash(docker exec aitradingagent-api-1 sh -c \"grep -n ''_upsert_position'' /app/src/order_engine/engine.py | head -5\")",
+      "Bash(docker cp \"C:/Users/Shalom Boy/Desktop/AiTradingAgent/src/order_engine/engine.py\" aitradingagent-api-1:/app/src/order_engine/engine.py)",
+      "Bash(docker exec aitradingagent-api-1 sh -c \"grep -n ''_upsert_position'' /app/src/order_engine/engine.py | head -3\")",
+      "Bash(docker compose restart api)",
+      "Bash(docker exec aitradingagent-api-1 sh -c \"curl -s http://localhost:8000/health 2>/dev/null || sleep 3 && curl -s http://localhost:8000/health 2>/dev/null\")"
     ]
   }
 }
