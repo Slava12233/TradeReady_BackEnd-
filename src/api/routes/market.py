@@ -53,6 +53,7 @@ from src.cache.price_cache import PriceCache
 from src.cache.types import TickerData
 from src.database.models import Tick, TradingPair
 from src.dependencies import DbSessionDep, PriceCacheDep
+from src.price_ingestion.binance_klines import fetch_binance_klines
 from src.utils.exceptions import InvalidSymbolError, PriceNotAvailableError
 
 logger = logging.getLogger(__name__)
@@ -503,6 +504,39 @@ async def get_candles(
         )
         for row in reversed(rows)
     ]
+
+    # ── Binance klines fallback ──
+    # When local TimescaleDB history is insufficient (e.g. platform just
+    # started, user asks for 1Y of data), fetch from Binance public API.
+    if len(candles) < limit:
+        binance_candles = await fetch_binance_klines(
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if binance_candles:
+            local_times = {c.time for c in candles}
+            merged = list(candles)
+            for bc in binance_candles:
+                if bc["time"] not in local_times:
+                    merged.append(
+                        CandleResponse(
+                            time=bc["time"],
+                            open=bc["open"],
+                            high=bc["high"],
+                            low=bc["low"],
+                            close=bc["close"],
+                            volume=bc["volume"],
+                            trade_count=bc["trade_count"],
+                        )
+                    )
+            candles = sorted(merged, key=lambda c: c.time)[:limit]
+            logger.debug(
+                "market.candles.binance_fallback",
+                extra={"symbol": symbol, "interval": interval, "local": len(rows), "total": len(candles)},
+            )
 
     logger.debug(
         "market.candles.fetched",

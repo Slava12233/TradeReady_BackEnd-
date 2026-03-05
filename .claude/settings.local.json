@@ -27,7 +27,12 @@
       "Bash(docker cp \"C:/Users/Shalom Boy/Desktop/AiTradingAgent/src/order_engine/engine.py\" aitradingagent-api-1:/app/src/order_engine/engine.py)",
       "Bash(docker exec aitradingagent-api-1 sh -c \"grep -n ''_upsert_position'' /app/src/order_engine/engine.py | head -3\")",
       "Bash(docker compose restart api)",
-      "Bash(docker exec aitradingagent-api-1 sh -c \"curl -s http://localhost:8000/health 2>/dev/null || sleep 3 && curl -s http://localhost:8000/health 2>/dev/null\")"
+      "Bash(docker exec aitradingagent-api-1 sh -c \"curl -s http://localhost:8000/health 2>/dev/null || sleep 3 && curl -s http://localhost:8000/health 2>/dev/null\")",
+      "Bash(docker compose build api)",
+      "Bash(docker compose up -d celery celery-beat)",
+      "Bash(curl -s \"http://localhost:8000/api/v1/analytics/performance?period=7d\" -H \"X-API-Key: ak_live_9AIlbr2dd22DknRucnQHDoB4R7ECwEbR9SNrN77VPwbX7VCCA5MJzv5xa_FsVbas\")",
+      "Bash(curl -s \"http://localhost:8000/api/v1/analytics/portfolio/history?interval=1h&limit=10\" -H \"X-API-Key: ak_live_9AIlbr2dd22DknRucnQHDoB4R7ECwEbR9SNrN77VPwbX7VCCA5MJzv5xa_FsVbas\")",
+      "Bash(npx tsc --noEmit)"
     ]
   }
 }

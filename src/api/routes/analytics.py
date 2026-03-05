@@ -260,6 +260,7 @@ async def get_performance(
 async def get_portfolio_history(
     account: CurrentAccountDep,
     snapshot_svc: SnapshotServiceDep,
+    db: DbSessionDep,
     interval: Annotated[
         SnapshotInterval,
         Query(
@@ -284,11 +285,14 @@ async def get_portfolio_history(
 
     Queries the ``portfolio_snapshots`` table for the requested resolution,
     returns the most recent ``limit`` rows, and reverses them to oldest-first
-    order for charting.
+    order for charting.  If no snapshots of the requested type exist yet
+    (e.g. Celery beat has not run), captures one on-demand so the analytics
+    charts are populated immediately on first load.
 
     Args:
         account:      Injected authenticated account.
         snapshot_svc: Injected :class:`~src.portfolio.snapshots.SnapshotService`.
+        db:           Injected async session (shared with snapshot_svc).
         interval:     Snapshot resolution — ``"1m"``, ``"1h"``, or ``"1d"``.
                       Defaults to ``"1h"``.
         limit:        Maximum number of data points returned (1–1000).
@@ -324,6 +328,29 @@ async def get_portfolio_history(
         snapshot_type=snapshot_type,
         limit=limit,
     )
+
+    # If no snapshots exist yet (Celery beat hasn't run), seed one on-demand
+    # so the analytics charts have at least one data point immediately.
+    if not raw_snapshots:
+        try:
+            if snapshot_type == "minute":
+                await snapshot_svc.capture_minute_snapshot(account.id)
+            elif snapshot_type == "daily":
+                await snapshot_svc.capture_daily_snapshot(account.id)
+            else:
+                await snapshot_svc.capture_hourly_snapshot(account.id)
+            await db.flush()
+            raw_snapshots = await snapshot_svc.get_snapshot_history(
+                account.id,
+                snapshot_type=snapshot_type,
+                limit=limit,
+            )
+        except Exception:
+            logger.warning(
+                "analytics.portfolio_history.seed_failed",
+                extra={"account_id": str(account.id), "interval": interval},
+            )
+
     snapshots_oldest_first = list(reversed(raw_snapshots))
 
     snapshot_items = [_snapshot_to_item(s) for s in snapshots_oldest_first]
