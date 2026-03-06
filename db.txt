@@ -1,0 +1,13 @@
+pgAdmin is Ready
+URL: http://localhost:5050
+
+Login credentials:
+
+Email: admin@agentexchange.dev
+Password: admin1234
+After logging in:
+
+In the left sidebar, expand Servers > AgentExchange TimescaleDB
+It will ask for the database password: agentexchange_dev_pw
+Expand Databases > agentexchange > Schemas > public > Tables
+You'll see all 11 tables — right-click any table and choose View/Edit Data to browse rows

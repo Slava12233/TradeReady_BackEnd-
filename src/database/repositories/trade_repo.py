@@ -245,6 +245,43 @@ class TradeRepository:
             )
             raise DatabaseError("Failed to list trades for account.") from exc
 
+    async def count_by_account(
+        self,
+        account_id: UUID,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+    ) -> int:
+        """Return the total number of trades for an account (with optional filters).
+
+        Args:
+            account_id: The owning account's UUID.
+            symbol:     Optional symbol filter.
+            side:       Optional side filter.
+
+        Returns:
+            Integer count of matching trades.
+
+        Raises:
+            DatabaseError: On any SQLAlchemy / database error.
+        """
+        try:
+            stmt = select(sa_func.count()).select_from(Trade).where(
+                Trade.account_id == account_id,
+            )
+            if symbol is not None:
+                stmt = stmt.where(Trade.symbol == symbol)
+            if side is not None:
+                stmt = stmt.where(Trade.side == side)
+            result = await self._session.execute(stmt)
+            return result.scalar_one()
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "trade.count_by_account.db_error",
+                extra={"account_id": str(account_id), "error": str(exc)},
+            )
+            raise DatabaseError("Failed to count trades for account.") from exc
+
     async def list_by_symbol(
         self,
         symbol: str,

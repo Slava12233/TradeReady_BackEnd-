@@ -660,16 +660,22 @@ async def trade_history(
         →  HTTP 200
         {"trades": [...], "total": 120, "limit": 20, "offset": 0}
     """
+    sym = symbol.upper() if symbol else None
     trades = await trade_repo.list_by_account(
         account.id,
-        symbol=symbol.upper() if symbol else None,
+        symbol=sym,
         side=side,
         limit=limit,
         offset=offset,
     )
+    total = await trade_repo.count_by_account(
+        account.id,
+        symbol=sym,
+        side=side,
+    )
     return TradeHistoryResponse(
         trades=[_trade_to_item(t) for t in trades],
-        total=len(trades),
+        total=total,
         limit=limit,
         offset=offset,
     )

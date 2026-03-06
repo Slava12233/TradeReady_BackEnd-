@@ -317,6 +317,33 @@ async def get_balance(
 
     portfolio = await tracker.get_portfolio(account.id)
 
+    # Defensive sync: ensure every asset with an open position appears in
+    # the balance list.  The order engine's atomic_execute_buy should always
+    # create balance rows, but if a row is missing (e.g. due to a past
+    # partial failure or manual DB edit) we surface a zero-balance entry so
+    # the frontend wallet never silently hides a held asset.
+    balance_asset_set = {item.asset for item in balance_items}
+    for pos in portfolio.positions:
+        asset = pos.symbol.removesuffix("USDT")
+        if asset and asset not in balance_asset_set:
+            balance_items.append(
+                BalanceItem(
+                    asset=asset,
+                    available=Decimal(str(pos.quantity)),
+                    locked=Decimal("0"),
+                    total=Decimal(str(pos.quantity)),
+                )
+            )
+            balance_asset_set.add(asset)
+            logger.warning(
+                "account.balance.position_without_balance_row",
+                extra={
+                    "account_id": str(account.id),
+                    "asset": asset,
+                    "position_qty": str(pos.quantity),
+                },
+            )
+
     logger.info(
         "account.get_balance",
         extra={
@@ -567,7 +594,12 @@ async def get_pnl(
         for t in period_trades
         if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) < 0
     )
-    total_trades_with_pnl = winning_trades + losing_trades
+    breakeven_trades = sum(
+        1
+        for t in period_trades
+        if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) == 0
+    )
+    total_trades_with_pnl = winning_trades + losing_trades + breakeven_trades
     win_rate = (
         Decimal(str(winning_trades)) / Decimal(str(total_trades_with_pnl)) * Decimal("100")
         if total_trades_with_pnl > 0

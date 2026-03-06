@@ -447,27 +447,28 @@ class OrderEngine:
             },
         )
 
-        await self._trade_repo.create(
-            Trade(
-                account_id=order.account_id,
-                order_id=order.id,
-                session_id=order.session_id,
-                symbol=order.symbol,
-                side=order.side,
-                quantity=Decimal(str(order.quantity)),
-                price=slippage.execution_price,
-                quote_amount=settlement.quote_amount,
-                fee=settlement.fee_charged,
-            )
+        trade = Trade(
+            account_id=order.account_id,
+            order_id=order.id,
+            session_id=order.session_id,
+            symbol=order.symbol,
+            side=order.side,
+            quantity=Decimal(str(order.quantity)),
+            price=slippage.execution_price,
+            quote_amount=settlement.quote_amount,
+            fee=settlement.fee_charged,
         )
+        await self._trade_repo.create(trade)
 
-        await self._upsert_position(
+        rpnl = await self._upsert_position(
             account_id=order.account_id,
             symbol=order.symbol,
             side=order.side,
             fill_qty=Decimal(str(order.quantity)),
             fill_price=slippage.execution_price,
         )
+        if rpnl is not None:
+            trade.realized_pnl = rpnl
 
         try:
             await self._session.commit()
@@ -600,26 +601,27 @@ class OrderEngine:
             },
         )
 
-        await self._trade_repo.create(
-            Trade(
-                account_id=account_id,
-                order_id=db_order.id,
-                symbol=order.symbol,
-                side=order.side,
-                quantity=order.quantity,
-                price=slippage.execution_price,
-                quote_amount=settlement.quote_amount,
-                fee=settlement.fee_charged,
-            )
+        trade = Trade(
+            account_id=account_id,
+            order_id=db_order.id,
+            symbol=order.symbol,
+            side=order.side,
+            quantity=order.quantity,
+            price=slippage.execution_price,
+            quote_amount=settlement.quote_amount,
+            fee=settlement.fee_charged,
         )
+        await self._trade_repo.create(trade)
 
-        await self._upsert_position(
+        rpnl = await self._upsert_position(
             account_id=account_id,
             symbol=order.symbol,
             side=order.side,
             fill_qty=order.quantity,
             fill_price=slippage.execution_price,
         )
+        if rpnl is not None:
+            trade.realized_pnl = rpnl
 
         try:
             await self._session.commit()
@@ -771,7 +773,7 @@ class OrderEngine:
         side: str,
         fill_qty: Decimal,
         fill_price: Decimal,
-    ) -> None:
+    ) -> Decimal | None:
         """Create or update the Position row for *account_id* / *symbol* after a fill.
 
         For buy fills the weighted-average entry price is recalculated and the
@@ -790,6 +792,10 @@ class OrderEngine:
             side:       ``"buy"`` or ``"sell"``.
             fill_qty:   Quantity filled in base asset.
             fill_price: Effective execution price (post-slippage).
+
+        Returns:
+            The realized PnL for this fill (sell side only), or ``None``
+            for buy fills and sells with no existing position.
         """
         stmt = select(Position).where(
             Position.account_id == account_id,
@@ -820,13 +826,14 @@ class OrderEngine:
                 pos.quantity = new_qty
                 pos.avg_entry_price = new_avg_entry
                 pos.total_cost = new_total_cost
+            return None
         else:  # sell
             if pos is None:
                 logger.warning(
                     "engine.upsert_position.sell_no_position",
                     extra={"account_id": str(account_id), "symbol": symbol},
                 )
-                return
+                return None
             old_qty = Decimal(str(pos.quantity))
             avg_entry = Decimal(str(pos.avg_entry_price))
             realised_increment = (fill_price - avg_entry) * fill_qty
@@ -836,6 +843,7 @@ class OrderEngine:
             pos.quantity = new_qty
             pos.total_cost = new_total_cost
             pos.realized_pnl = Decimal(str(pos.realized_pnl)) + realised_increment
+            return realised_increment
 
     async def _release_locked_funds(
         self,

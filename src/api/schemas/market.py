@@ -140,6 +140,8 @@ class PricesMapResponse(_BaseSchema):
         prices:    Mapping of symbol → current price string.
         timestamp: UTC datetime when the snapshot was taken.
         count:     Number of symbols included in the response.
+        stale:     True when the newest price is older than 60 seconds.
+        data_age_seconds: Age of the freshest price in seconds (null if unknown).
     """
 
     prices: dict[str, str] = Field(
@@ -149,6 +151,14 @@ class PricesMapResponse(_BaseSchema):
     )
     timestamp: datetime = Field(..., description="UTC snapshot timestamp.")
     count: int = Field(..., description="Number of symbols in the response.", examples=[647])
+    stale: bool = Field(
+        False,
+        description="True when price data is older than 60 seconds (ingestion may be down).",
+    )
+    data_age_seconds: float | None = Field(
+        None,
+        description="Age of the freshest price in seconds. Null if no metadata available.",
+    )
 
 
 # ---------------------------------------------------------------------------

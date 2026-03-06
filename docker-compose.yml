@@ -1,8 +1,8 @@
 # AgentExchange Platform — Production Docker Compose
 #
-# Services:   api · ingestion · celery · celery-beat · redis · timescaledb · prometheus · grafana
+# Services:   api · ingestion · celery · celery-beat · redis · timescaledb · pgadmin · prometheus · grafana
 # Network:    internal (bridge, no external routing required)
-# Volumes:    timescaledb_data · redis_data · grafana_data
+# Volumes:    timescaledb_data · redis_data · grafana_data · pgadmin_data
 # Env vars:   loaded from .env (see .env.example)
 #
 # Minimum requirements: ~8 CPU cores, ~10 GB RAM
@@ -131,11 +131,11 @@ services:
       REDIS_URL: ${REDIS_URL}
       BINANCE_WS_URL: ${BINANCE_WS_URL}
     healthcheck:
-      test: ["CMD", "python", "-c", "import redis, os, sys; r=redis.from_url(os.environ['REDIS_URL']); sys.exit(0 if r.hlen('prices') > 0 else 1)"]
+      test: ["CMD", "python", "-c", "import redis,os,sys,datetime as dt; r=redis.from_url(os.environ['REDIS_URL']); ts=r.hget('prices:meta','BTCUSDT'); sys.exit(1) if not ts else sys.exit(0 if (dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(ts.decode())).total_seconds()<120 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     networks:
       - internal
     depends_on:
@@ -225,6 +225,37 @@ services:
         max-file: "3"
 
   # ─────────────────────────────────────────────────────────────
+  # Database Admin: pgAdmin 4 (web UI for PostgreSQL/TimescaleDB)
+  # ─────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@agentexchange.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin1234}
+      PGADMIN_LISTEN_PORT: 5050
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5050:5050"
+    networks:
+      - internal
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────────────────────────
   # Monitoring: Prometheus
   # ─────────────────────────────────────────────────────────────
   prometheus:
@@ -293,6 +324,7 @@ volumes:
   timescaledb_data:
   redis_data:
   grafana_data:
+  pgadmin_data:
 
 # ─────────────────────────────────────────────────────────────
 # Networks

@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "AgentExchange TimescaleDB",
+      "Group": "Servers",
+      "Host": "timescaledb",
+      "Port": 5432,
+      "MaintenanceDB": "agentexchange",
+      "Username": "agentexchange",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/pgpassfile"
+    }
+  }
+}

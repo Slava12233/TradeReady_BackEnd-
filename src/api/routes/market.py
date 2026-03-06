@@ -249,12 +249,17 @@ async def get_prices(
 
     prices_str: dict[str, str] = {sym: str(p) for sym, p in all_prices.items()}
 
-    logger.debug("market.prices.fetched", extra={"count": len(prices_str)})
+    now = datetime.now(UTC)
+    stale, data_age = await _compute_staleness(cache, now)
+
+    logger.debug("market.prices.fetched", extra={"count": len(prices_str), "stale": stale})
 
     return PricesMapResponse(
         prices=prices_str,
-        timestamp=datetime.now(UTC),
+        timestamp=now,
         count=len(prices_str),
+        stale=stale,
+        data_age_seconds=data_age,
     )
 
 
@@ -735,6 +740,57 @@ async def _get_price_timestamp(cache: PriceCache, symbol: str) -> datetime:
         return datetime.fromisoformat(raw)
     except (ValueError, OverflowError):
         return datetime.now(UTC)
+
+
+_STALE_THRESHOLD_SECONDS = 60
+
+
+async def _compute_staleness(
+    cache: PriceCache,
+    now: datetime,
+) -> tuple[bool, float | None]:
+    """Check if price data is stale by examining ``prices:meta`` timestamps.
+
+    Looks at the BTCUSDT timestamp as a representative probe. Falls back to
+    scanning the full ``prices:meta`` hash when BTCUSDT is absent.
+
+    Args:
+        cache: :class:`~src.cache.price_cache.PriceCache` instance.
+        now:   Current UTC datetime.
+
+    Returns:
+        Tuple of ``(is_stale, freshest_age_seconds)``.  ``freshest_age_seconds``
+        is ``None`` when no metadata is available.
+    """
+    try:
+        # Fast path: check BTCUSDT as a representative pair
+        raw: str | None = await cache._redis.hget("prices:meta", "BTCUSDT")  # noqa: SLF001
+        if raw:
+            ts = datetime.fromisoformat(raw)
+            age = max(0.0, (now - ts).total_seconds())
+            return age > _STALE_THRESHOLD_SECONDS, round(age, 1)
+
+        # Fallback: scan all pairs for the freshest timestamp
+        meta: dict[str, str] = await cache._redis.hgetall("prices:meta")  # noqa: SLF001
+        if not meta:
+            return True, None
+
+        freshest_age: float | None = None
+        for ts_str in meta.values():
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                age = max(0.0, (now - ts).total_seconds())
+                if freshest_age is None or age < freshest_age:
+                    freshest_age = age
+            except (ValueError, OverflowError):
+                continue
+
+        if freshest_age is None:
+            return True, None
+        return freshest_age > _STALE_THRESHOLD_SECONDS, round(freshest_age, 1)
+    except Exception:
+        logger.warning("staleness_check_failed", exc_info=True)
+        return False, None
 
 
 def _build_orderbook(
