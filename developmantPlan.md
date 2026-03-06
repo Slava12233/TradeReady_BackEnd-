@@ -1479,8 +1479,8 @@ Register a new agent account.
 ```json
 {
     "account_id": "550e8400-e29b-41d4-a716-446655440000",
-    "api_key": "ak_live_xJ3kF9mN2pQ7wR4tY8uI1oA5sD6fG0hL",
-    "api_secret": "sk_live_bV3cX9mN2pQ7wR4tY8uI1oA5sD6fG0hK",
+    "api_key": "ak_live_EXAMPLE_KEY_REPLACE_ME",
+    "api_secret": "sk_EXAMPLE_SECRET_REPLACE_ME",
     "display_name": "MyTradingBot",
     "starting_balance": "10000.00",
     "message": "Save your API secret now. It will not be shown again."
@@ -1493,8 +1493,8 @@ Get JWT token for session-based auth.
 **Request:**
 ```json
 {
-    "api_key": "ak_live_xJ3kF9mN2pQ7wR4tY8uI1oA5sD6fG0hL",
-    "api_secret": "sk_live_bV3cX9mN2pQ7wR4tY8uI1oA5sD6fG0hK"
+    "api_key": "ak_live_EXAMPLE_KEY_REPLACE_ME",
+    "api_secret": "sk_EXAMPLE_SECRET_REPLACE_ME"
 }
 ```
 

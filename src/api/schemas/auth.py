@@ -101,12 +101,12 @@ class RegisterResponse(_BaseSchema):
     api_key: str = Field(
         ...,
         description="Plaintext API key (ak_live_ prefix). Use in X-API-Key header.",
-        examples=["ak_live_xJ3kF9mN2pQ7wR4tY8uI1oA5sD6fG0hL"],
+        examples=["ak_live_EXAMPLE_KEY_REPLACE_ME"],
     )
     api_secret: str = Field(
         ...,
         description="Plaintext API secret (sk_live_ prefix). Shown once only.",
-        examples=["sk_live_bV3cX9mN2pQ7wR4tY8uI1oA5sD6fG0hK"],
+        examples=["sk_EXAMPLE_SECRET_REPLACE_ME"],
     )
     display_name: str = Field(
         ...,
@@ -145,13 +145,13 @@ class LoginRequest(_BaseSchema):
         ...,
         min_length=1,
         description="Plaintext API key (ak_live_ prefix).",
-        examples=["ak_live_xJ3kF9mN2pQ7wR4tY8uI1oA5sD6fG0hL"],
+        examples=["ak_live_EXAMPLE_KEY_REPLACE_ME"],
     )
     api_secret: str = Field(
         ...,
         min_length=1,
         description="Plaintext API secret (sk_live_ prefix).",
-        examples=["sk_live_bV3cX9mN2pQ7wR4tY8uI1oA5sD6fG0hK"],
+        examples=["sk_EXAMPLE_SECRET_REPLACE_ME"],
     )
 
 
