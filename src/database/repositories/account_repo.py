@@ -277,6 +277,45 @@ class AccountRepository:
             )
             raise DatabaseError("Failed to fetch account by API key.") from exc
 
+    async def get_by_email(self, email: str) -> Account:
+        """Fetch a single account by its email address.
+
+        Used during password-based authentication to look up the account before
+        verifying the password hash.  The ``email`` column has a unique index so
+        this query is O(1).
+
+        Args:
+            email: The account's email address (case-sensitive).
+
+        Returns:
+            The matching :class:`Account` instance.
+
+        Raises:
+            AccountNotFoundError: If no account is registered with ``email``.
+            DatabaseError: On any SQLAlchemy / database error.
+
+        Example::
+
+            account = await repo.get_by_email("user@example.com")
+        """
+        try:
+            stmt = select(Account).where(Account.email == email)
+            result = await self._session.execute(stmt)
+            account = result.scalars().first()
+            if account is None:
+                raise AccountNotFoundError(
+                    "No account found for the provided email address."
+                )
+            return account
+        except AccountNotFoundError:
+            raise
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "account.get_by_email.db_error",
+                extra={"error": str(exc)},
+            )
+            raise DatabaseError("Failed to fetch account by email.") from exc
+
     async def list_by_status(
         self,
         status: str,

@@ -35,6 +35,7 @@ from src.api.schemas.auth import (
     RegisterRequest,
     RegisterResponse,
     TokenResponse,
+    UserLoginRequest,
 )
 from src.dependencies import AccountServiceDep, SettingsDep
 from src.utils.exceptions import AuthenticationError
@@ -209,6 +210,90 @@ async def login(
 
     logger.info(
         "auth.login.success",
+        extra={
+            "account_id": str(account.id),
+            "expires_at": jwt_payload.expires_at.isoformat(),
+        },
+    )
+
+    return TokenResponse(
+        token=token_str,
+        expires_at=jwt_payload.expires_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/auth/user-login
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/user-login",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Authenticate a human user with email + password",
+    description=(
+        "Exchanges a valid email + password pair for a signed HS256 JWT token. "
+        "Intended for human users accessing the platform via a browser; AI agents "
+        "should continue using ``POST /api/v1/auth/login`` with API key + secret. "
+        "Include the returned token in subsequent requests as "
+        "``Authorization: Bearer <token>``."
+    ),
+)
+async def user_login(
+    body: UserLoginRequest,
+    svc: AccountServiceDep,
+    settings: SettingsDep,
+) -> TokenResponse:
+    """Authenticate a human user with email and password, returning a JWT token.
+
+    Steps:
+    1. Look up the account by ``email`` and verify the bcrypt password hash
+       (delegates to :meth:`~src.accounts.service.AccountService.authenticate_with_password`).
+    2. Issue a signed JWT with ``expiry_hours`` from settings.
+
+    Args:
+        body:     Validated login payload (email, password).
+        svc:      Injected :class:`~src.accounts.service.AccountService`.
+        settings: Injected :class:`~src.config.Settings` (provides
+                  ``jwt_secret`` and ``jwt_expiry_hours``).
+
+    Returns:
+        :class:`~src.api.schemas.auth.TokenResponse` with the signed JWT,
+        its expiry datetime, and token type ``"Bearer"``.
+
+    Raises:
+        :exc:`~src.utils.exceptions.AuthenticationError`: If the email is not
+            registered, the account has no password set, or the password is
+            incorrect (HTTP 401).
+        :exc:`~src.utils.exceptions.AccountSuspendedError`: If the account is
+            suspended or archived (HTTP 403).
+
+    Example::
+
+        POST /api/v1/auth/user-login
+        {"email": "alice@example.com", "password": "s3cur3P@ssw0rd"}
+        →  HTTP 200
+        {
+            "token": "eyJhbGci...",
+            "expires_at": "2026-02-24T13:00:00Z",
+            "token_type": "Bearer"
+        }
+    """
+    account = await svc.authenticate_with_password(str(body.email), body.password)
+
+    token_str = create_jwt(
+        account_id=account.id,
+        jwt_secret=settings.jwt_secret,
+        expiry_hours=settings.jwt_expiry_hours,
+    )
+
+    from src.accounts.auth import verify_jwt  # noqa: PLC0415
+
+    jwt_payload = verify_jwt(token_str, settings.jwt_secret)
+
+    logger.info(
+        "auth.user_login.success",
         extra={
             "account_id": str(account.id),
             "expires_at": jwt_payload.expires_at.isoformat(),

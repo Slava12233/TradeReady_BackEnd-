@@ -28,6 +28,7 @@ from src.api.routes.analytics import router as analytics_router
 from src.api.routes.auth import router as auth_router
 from src.api.routes.market import router as market_router
 from src.api.routes.trading import router as trading_router
+from src.api.routes.waitlist import router as waitlist_router
 from src.api.websocket.handlers import (
     handle_message,
     start_redis_bridge,
@@ -224,6 +225,7 @@ def create_app() -> FastAPI:
     application.include_router(trading_router)
     application.include_router(account_router)
     application.include_router(analytics_router)
+    application.include_router(waitlist_router)
 
     # ── WebSocket endpoint ────────────────────────────────────────────────────
     @application.websocket("/ws/v1")

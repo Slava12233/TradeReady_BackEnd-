@@ -150,6 +150,47 @@ def _bcrypt_hash(plaintext: str) -> str:
     return hashed.decode()
 
 
+def hash_password(plaintext: str) -> str:
+    """Return a bcrypt hash for a user-supplied password.
+
+    Delegates to :func:`_bcrypt_hash` so the same cost factor (``BCRYPT_ROUNDS=12``)
+    is used consistently across all hashed values in this module.
+
+    Args:
+        plaintext: The raw password provided by the user at registration.
+
+    Returns:
+        A 60-character bcrypt hash string (``$2b$`` prefix) safe to store in the
+        ``accounts.password_hash`` column.
+
+    Example::
+
+        account.password_hash = hash_password(request.password)
+    """
+    return _bcrypt_hash(plaintext)
+
+
+def verify_password(plaintext: str, stored_hash: str) -> bool:
+    """Verify a plaintext password against its stored bcrypt hash.
+
+    Args:
+        plaintext:   The raw password submitted at login.
+        stored_hash: The bcrypt hash stored in ``accounts.password_hash``.
+
+    Returns:
+        ``True`` if the password matches, ``False`` otherwise.
+
+    Example::
+
+        if not verify_password(body.password, account.password_hash):
+            raise AuthenticationError("Invalid email or password.")
+    """
+    try:
+        return bcrypt.checkpw(plaintext.encode(), stored_hash.encode())
+    except ValueError:
+        return False
+
+
 def verify_api_key(plaintext: str, stored_hash: str) -> bool:
     """Verify a plaintext API key against its stored bcrypt hash.
 
@@ -325,6 +366,8 @@ __all__ = [
     "ApiCredentials",
     "JwtPayload",
     "generate_api_credentials",
+    "hash_password",
+    "verify_password",
     "verify_api_key",
     "verify_api_secret",
     "create_jwt",

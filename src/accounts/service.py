@@ -45,6 +45,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.accounts.auth import (
     authenticate_api_key,
     generate_api_credentials,
+    hash_password,
+    verify_password,
 )
 from src.config import Settings
 from src.database.models import Account, Balance, Order, TradingSession
@@ -53,6 +55,7 @@ from src.database.repositories.balance_repo import BalanceRepository
 from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,
+    AuthenticationError,
     DatabaseError,
     DuplicateAccountError,
 )
@@ -133,6 +136,7 @@ class AccountService:
         display_name: str,
         email: str | None = None,
         starting_balance: Decimal | None = None,
+        password: str | None = None,
     ) -> AccountCredentials:
         """Register a new agent account with an initial USDT balance.
 
@@ -149,6 +153,10 @@ class AccountService:
             email:            Optional contact email.  Must be unique if provided.
             starting_balance: USDT balance to credit.  Defaults to
                               ``Settings.default_starting_balance`` (10 000 USDT).
+            password:         Optional plaintext password for human users.  When
+                              provided it is bcrypt-hashed and stored in
+                              ``accounts.password_hash``.  Human users can then
+                              authenticate via :meth:`authenticate_with_password`.
 
         Returns:
             :class:`AccountCredentials` containing the plaintext API key and
@@ -165,9 +173,12 @@ class AccountService:
         """
         balance_amount = starting_balance if starting_balance is not None else self._settings.default_starting_balance
 
-        # generate_api_credentials() runs bcrypt (CPU-bound) — offload to thread pool
         loop = asyncio.get_event_loop()
+        # generate_api_credentials() and hash_password() are CPU-bound — offload to thread pool
         creds = await loop.run_in_executor(None, generate_api_credentials)
+        password_hash: str | None = None
+        if password is not None:
+            password_hash = await loop.run_in_executor(None, hash_password, password)
 
         try:
             account = Account(
@@ -176,6 +187,7 @@ class AccountService:
                 api_secret_hash=creds.api_secret_hash,
                 display_name=display_name,
                 email=email,
+                password_hash=password_hash,
                 starting_balance=balance_amount,
                 status="active",
                 risk_profile={},
@@ -272,6 +284,59 @@ class AccountService:
             raise AccountSuspendedError(account_id=account.id)
 
         log.debug("account.authenticated", account_id=str(account.id))
+        return account
+
+    async def authenticate_with_password(self, email: str, password: str) -> Account:
+        """Authenticate a human user by email and password.
+
+        Looks up the account by ``email``, verifies the plaintext ``password``
+        against the stored bcrypt hash, and checks the account is ``active``.
+
+        Args:
+            email:    The user's registered email address.
+            password: The plaintext password submitted at login.
+
+        Returns:
+            The matching :class:`~src.database.models.Account` instance.
+
+        Raises:
+            AuthenticationError:   If the email is not registered, the account
+                                   has no password set, or the password does not
+                                   match the stored hash.
+            AccountSuspendedError: If the account is ``suspended`` or
+                                   ``archived``.
+            DatabaseError:         On any unexpected database failure.
+
+        Example::
+
+            account = await svc.authenticate_with_password("user@example.com", "s3cr3t!")
+            # account.status is always "active" here
+        """
+        try:
+            account = await self._account_repo.get_by_email(email)
+        except AccountNotFoundError:
+            raise AuthenticationError("Invalid email or password.")
+
+        if not account.password_hash:
+            raise AuthenticationError("Invalid email or password.")
+
+        loop = asyncio.get_event_loop()
+        password_matches: bool = await loop.run_in_executor(
+            None, verify_password, password, account.password_hash
+        )
+        if not password_matches:
+            log.warning("account.password_auth.invalid", email=email)
+            raise AuthenticationError("Invalid email or password.")
+
+        if account.status != "active":
+            log.warning(
+                "account.password_auth.rejected_non_active",
+                account_id=str(account.id),
+                status=account.status,
+            )
+            raise AccountSuspendedError(account_id=account.id)
+
+        log.debug("account.password_authenticated", account_id=str(account.id))
         return account
 
     # ------------------------------------------------------------------

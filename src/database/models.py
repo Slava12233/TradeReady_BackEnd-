@@ -200,13 +200,18 @@ class Account(Base):
     hash is persisted.  ``risk_profile`` holds per-account overrides for the
     default risk limits (serialized as JSONB).
 
+    Human users authenticate via email + password; ``password_hash`` stores the
+    bcrypt hash of their password (nullable so existing agent-only accounts are
+    unaffected).
+
     Attributes:
         id:               Primary key (UUID v4, server-generated).
         api_key:          Plaintext key used as lookup token (prefixed ``ak_live_``).
         api_key_hash:     bcrypt hash of ``api_key`` for verification.
         api_secret_hash:  bcrypt hash of the secret (prefixed ``sk_live_``).
+        password_hash:    bcrypt hash of the human user's password (nullable).
         display_name:     Human-readable name for the agent.
-        email:            Optional contact email.
+        email:            Optional contact email; unique when set (login identifier).
         starting_balance: Virtual USDT balance credited at registration.
         status:           Lifecycle state: ``active``, ``suspended``, or ``archived``.
         risk_profile:     JSON dict with optional per-account risk limit overrides.
@@ -233,6 +238,10 @@ class Account(Base):
     api_secret_hash: Mapped[str] = mapped_column(
         VARCHAR(128),
         nullable=False,
+    )
+    password_hash: Mapped[str | None] = mapped_column(
+        VARCHAR(128),
+        nullable=True,
     )
     display_name: Mapped[str] = mapped_column(
         VARCHAR(100),
@@ -290,6 +299,12 @@ class Account(Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'suspended', 'archived')", name="ck_accounts_status"),
+        Index(
+            "uq_accounts_email",
+            "email",
+            unique=True,
+            postgresql_where="email IS NOT NULL",
+        ),
     )
 
     def __repr__(self) -> str:
@@ -936,3 +951,47 @@ class AuditLog(Base):
             f"<AuditLog id={self.id} account={self.account_id} "
             f"action={self.action!r} at={self.created_at}>"
         )
+
+
+# ── WaitlistEntry ─────────────────────────────────────────────────────────
+
+
+class WaitlistEntry(Base):
+    """An email collected from the landing page waitlist form.
+
+    Attributes:
+        id:         Primary key (UUID v4, server-generated).
+        email:      Email address (unique, case-sensitive).
+        source:     Which form submitted the entry (e.g. ``"hero"``, ``"cta"``).
+        created_at: UTC timestamp of submission.
+    """
+
+    __tablename__ = "waitlist_entries"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    email: Mapped[str] = mapped_column(
+        VARCHAR(255),
+        unique=True,
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(
+        VARCHAR(50),
+        nullable=False,
+        server_default="'landing'",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index("idx_waitlist_created", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<WaitlistEntry email={self.email!r} source={self.source!r}>"

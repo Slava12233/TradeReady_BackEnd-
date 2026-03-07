@@ -50,6 +50,9 @@ class RegisterRequest(_BaseSchema):
         display_name:     Human-readable name for the agent account (required).
         email:            Optional contact email; stored but not validated for
                           uniqueness at this layer.
+        password:         Optional plaintext password (min 8 chars). When provided,
+                          a bcrypt hash is stored and the account can authenticate
+                          via ``POST /api/v1/auth/user-login``.
         starting_balance: Initial virtual USDT balance.  Defaults to 10 000 USDT.
     """
 
@@ -64,6 +67,12 @@ class RegisterRequest(_BaseSchema):
         default=None,
         description="Optional contact email address.",
         examples=["dev@example.com"],
+    )
+    password: str | None = Field(
+        default=None,
+        min_length=8,
+        description="Optional password (min 8 chars) for human user login.",
+        examples=["s3cur3P@ssw0rd"],
     )
     starting_balance: Decimal = Field(
         default=Decimal("10000.00"),
@@ -152,6 +161,31 @@ class LoginRequest(_BaseSchema):
         min_length=1,
         description="Plaintext API secret (sk_live_ prefix).",
         examples=["sk_EXAMPLE_SECRET_REPLACE_ME"],
+    )
+
+
+class UserLoginRequest(_BaseSchema):
+    """Request body for ``POST /api/v1/auth/user-login``.
+
+    Used by human users authenticating with email + password instead of
+    API key / secret.  On success the endpoint returns a ``TokenResponse``
+    identical to the agent login flow.
+
+    Attributes:
+        email:    Registered email address of the human user account.
+        password: Plaintext password (min 8 chars).
+    """
+
+    email: EmailStr = Field(
+        ...,
+        description="Registered email address.",
+        examples=["alice@example.com"],
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        description="Plaintext password (min 8 chars).",
+        examples=["s3cur3P@ssw0rd"],
     )
 
 
