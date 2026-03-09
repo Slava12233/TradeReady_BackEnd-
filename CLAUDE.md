@@ -178,3 +178,35 @@ Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
 **MCP Server** (`src/mcp/`): 12 trading tools over stdio transport. Env vars: `MCP_API_KEY` (required), `API_BASE_URL` (default `http://localhost:8000`), `MCP_JWT_TOKEN` (optional).
 
 **Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. Development plans in `UiDevelopmentPlan.md` and `UIdevelopmentProgress.md`.
+
+### Frontend Commands
+
+```bash
+cd Frontend
+pnpm dev              # Dev server at http://localhost:3000
+pnpm build            # Production build (zero TS/lint errors required)
+pnpm test             # Unit tests (vitest)
+pnpm test:e2e         # Playwright E2E tests
+pnpm dlx shadcn@latest add <component-name>  # Add shadcn/ui component
+```
+
+Frontend has its own `CLAUDE.md` at `Frontend/CLAUDE.md` with full UI conventions. Key points:
+- `UiDevelopmentPlan.md` is the authority for frontend (like `developmantPlan.md` is for backend)
+- Read `UIcontext.md`, `UItasks.md`, `UIdevelopmentProgress.md` before frontend tasks
+- Tailwind v4 configured via `@theme inline` in `src/app/globals.css` (no `tailwind.config.ts`)
+- State: Zustand (WS/streaming), TanStack Query (REST), React state (local UI)
+- `@/*` path alias maps to `./src/*`
+
+## Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | TimescaleDB async connection string |
+| `REDIS_URL` | Redis connection string |
+| `BINANCE_WS_URL` | Binance WebSocket base URL |
+| `JWT_SECRET` | JWT signing secret (64+ chars) |
+| `TRADING_FEE_PCT` | Simulated fee (default 0.1%) |
+| `DEFAULT_STARTING_BALANCE` | New account balance (default 10000 USDT) |
+| `DEFAULT_SLIPPAGE_FACTOR` | Base slippage factor (default 0.1) |
+| `NEXT_PUBLIC_API_BASE_URL` | Frontend: backend REST API base URL |
+| `NEXT_PUBLIC_WS_URL` | Frontend: backend WebSocket URL |
