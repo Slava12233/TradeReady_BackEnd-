@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -263,7 +264,7 @@ class Account(Base):
         nullable=False,
         server_default="'active'",
     )
-    risk_profile: Mapped[dict] = mapped_column(
+    risk_profile: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         server_default="'{}'",
@@ -857,11 +858,11 @@ class PortfolioSnapshot(Base):
         Numeric(20, 8),
         nullable=False,
     )
-    positions: Mapped[dict | None] = mapped_column(
+    positions: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
     )
-    metrics: Mapped[dict | None] = mapped_column(
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
     )
@@ -924,7 +925,7 @@ class AuditLog(Base):
         VARCHAR(50),
         nullable=False,
     )
-    details: Mapped[dict | None] = mapped_column(
+    details: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
     )
@@ -1062,7 +1063,7 @@ class BacktestSession(Base):
         Numeric(20, 8),
         nullable=False,
     )
-    pairs: Mapped[list | None] = mapped_column(
+    pairs: Mapped[list[str] | None] = mapped_column(
         JSONB,
         nullable=True,
     )
@@ -1107,7 +1108,7 @@ class BacktestSession(Base):
         nullable=False,
         server_default="0",
     )
-    metrics: Mapped[dict | None] = mapped_column(
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
     )
@@ -1320,7 +1321,7 @@ class BacktestSnapshot(Base):
         Numeric(20, 8),
         nullable=False,
     )
-    positions: Mapped[dict | None] = mapped_column(
+    positions: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
     )

@@ -44,7 +44,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -133,7 +133,7 @@ def _build_risk_profile_info(account: Account) -> RiskProfileInfo:
     Returns:
         A :class:`RiskProfileInfo` with the effective limits for this account.
     """
-    profile: dict = account.risk_profile or {}
+    profile: dict[str, Any] = account.risk_profile or {}
     return RiskProfileInfo(
         max_position_size_pct=int(profile.get("max_position_size_pct", _DEFAULT_MAX_POSITION_PCT)),
         daily_loss_limit_pct=int(profile.get("daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_PCT)),

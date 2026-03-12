@@ -37,7 +37,7 @@ async def fetch_binance_klines(
     limit: int = 500,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """Fetch klines from Binance public REST API.
 
     Args:
@@ -80,7 +80,7 @@ async def fetch_binance_klines(
         )
         return []
 
-    candles: list[dict] = []
+    candles: list[dict[str, object]] = []
     for kline in raw:
         candles.append(
             {

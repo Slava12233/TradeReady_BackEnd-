@@ -276,7 +276,7 @@ async def _call_api(
     return response.json()  # type: ignore[no-any-return]
 
 
-def _error_content(exc: Exception) -> list[types.TextContent]:
+def _error_content(exc: Exception) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Format an exception as a single MCP TextContent error message.
 
     Args:
@@ -295,7 +295,9 @@ def _error_content(exc: Exception) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=f"Error: {exc}")]
 
 
-def _json_content(data: dict[str, Any] | list[Any]) -> list[types.TextContent]:
+def _json_content(
+    data: dict[str, Any] | list[Any],
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Wrap a JSON-serialisable value as MCP TextContent.
 
     Args:
@@ -328,12 +330,12 @@ def register_tools(server: Server, http_client: httpx.AsyncClient) -> None:
             ``base_url`` and ``X-API-Key`` / ``Authorization`` headers.
     """
 
-    @server.list_tools()
+    @server.list_tools()  # type: ignore[misc,no-untyped-call]
     async def list_tools() -> list[types.Tool]:
         """Return all available trading tools."""
         return _TOOL_DEFINITIONS
 
-    @server.call_tool()
+    @server.call_tool()  # type: ignore[misc]
     async def call_tool(
         name: str, arguments: dict[str, Any]
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
@@ -362,7 +364,7 @@ async def _dispatch(
     name: str,
     args: dict[str, Any],
     client: httpx.AsyncClient,
-) -> list[types.TextContent]:
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Route a validated tool call to the appropriate REST endpoint.
 
     Args:

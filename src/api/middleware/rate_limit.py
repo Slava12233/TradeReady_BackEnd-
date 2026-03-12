@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Final
+from typing import Any, Final
 
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -231,7 +231,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
             return response
 
-        response = await call_next(request)
+        response = await call_next(request)  # type: ignore[assignment]
 
         # Inject rate-limit headers on successful responses.
         for header_name, header_value in rate_headers.items():
@@ -274,7 +274,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return 0
 
     @staticmethod
-    def _get_redis(request: Request):  # type: ignore[return]  # noqa: ANN205
+    def _get_redis(request: Request) -> Any:  # noqa: ANN401
         """Extract the Redis client from application state.
 
         The Redis client is stored on ``request.app.state.redis`` during

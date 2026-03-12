@@ -7,6 +7,8 @@ Two database handles are provided:
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 import asyncpg
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -21,7 +23,7 @@ from src.config import get_settings
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
-_asyncpg_pool: asyncpg.Pool | None = None  # type: ignore[type-arg]
+_asyncpg_pool: asyncpg.Pool | None = None
 
 
 def _build_engine() -> AsyncEngine:
@@ -75,7 +77,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
-async def get_async_session() -> AsyncSession:
+async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """Async generator that yields a single :class:`AsyncSession` per request.
 
     Intended for use as a FastAPI dependency (via :mod:`src.dependencies`).
@@ -95,7 +97,7 @@ async def get_async_session() -> AsyncSession:
         yield session
 
 
-async def get_asyncpg_pool() -> asyncpg.Pool:  # type: ignore[type-arg]
+async def get_asyncpg_pool() -> asyncpg.Pool:
     """Return the module-level ``asyncpg`` connection pool for raw COPY operations.
 
     The pool is shared across the process lifetime and supports the

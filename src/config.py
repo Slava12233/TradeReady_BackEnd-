@@ -114,4 +114,4 @@ def get_settings() -> Settings:
         settings = get_settings()
         print(settings.redis_url)
     """
-    return Settings()
+    return Settings()  # type: ignore[call-arg]

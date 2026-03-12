@@ -77,7 +77,7 @@ _ACCOUNT_BATCH_SIZE: int = 500
 # ---------------------------------------------------------------------------
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.cleanup.cleanup_old_data",
     bind=True,
     max_retries=0,
@@ -255,7 +255,7 @@ async def _expire_stale_orders(session_factory: Any) -> int:  # noqa: ANN401
             )
         )
         result = await session.execute(stmt)
-        expired_count: int = result.rowcount  # type: ignore[assignment]
+        expired_count: int = result.rowcount
         await session.commit()
 
     logger.info(
@@ -377,7 +377,7 @@ async def _archive_audit_log(session_factory: Any) -> int:  # noqa: ANN401
     async with session_factory() as session:
         stmt = sa_delete(AuditLog).where(AuditLog.created_at < cutoff)
         result = await session.execute(stmt)
-        deleted_count: int = result.rowcount  # type: ignore[assignment]
+        deleted_count: int = result.rowcount
         await session.commit()
 
     logger.info(

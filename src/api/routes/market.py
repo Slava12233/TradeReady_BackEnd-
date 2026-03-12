@@ -522,13 +522,13 @@ async def get_candles(
                 if bc["time"] not in local_times:
                     merged.append(
                         CandleResponse(
-                            time=bc["time"],
-                            open=bc["open"],
-                            high=bc["high"],
-                            low=bc["low"],
-                            close=bc["close"],
-                            volume=bc["volume"],
-                            trade_count=bc["trade_count"],
+                            time=bc["time"],  # type: ignore[arg-type]
+                            open=bc["open"],  # type: ignore[arg-type]
+                            high=bc["high"],  # type: ignore[arg-type]
+                            low=bc["low"],  # type: ignore[arg-type]
+                            close=bc["close"],  # type: ignore[arg-type]
+                            volume=bc["volume"],  # type: ignore[arg-type]
+                            trade_count=bc["trade_count"],  # type: ignore[arg-type]
                         )
                     )
             candles = sorted(merged, key=lambda c: c.time)[:limit]

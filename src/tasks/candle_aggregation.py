@@ -63,7 +63,7 @@ _CANDLE_VIEWS: list[tuple[str, str, str]] = [
 # ---------------------------------------------------------------------------
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.candle_aggregation.refresh_candle_aggregates",
     bind=True,
     max_retries=0,

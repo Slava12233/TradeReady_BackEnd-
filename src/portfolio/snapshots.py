@@ -348,7 +348,7 @@ class SnapshotService:
 
 
 def _serialise_positions(
-    positions: list,
+    positions: list[Any],  # noqa: ANN401
 ) -> list[dict[str, Any]]:
     """Convert a list of :class:`~src.portfolio.tracker.PositionView` objects
     to a JSON-serialisable list of dicts.
@@ -436,7 +436,7 @@ def _orm_to_snapshot(row: PortfolioSnapshot) -> Snapshot:
         position_value=Decimal(str(row.position_value)),
         unrealized_pnl=Decimal(str(row.unrealized_pnl)),
         realized_pnl=Decimal(str(row.realized_pnl)),
-        positions=row.positions,
+        positions=row.positions,  # type: ignore[arg-type]
         metrics=row.metrics,
         created_at=row.created_at,
     )

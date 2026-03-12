@@ -124,7 +124,7 @@ def _build_http_client() -> httpx.AsyncClient:
 
 
 @asynccontextmanager
-async def _lifespan(server: Server) -> AsyncIterator[dict[str, httpx.AsyncClient]]:  # type: ignore[type-arg]
+async def _lifespan(server: Server) -> AsyncIterator[dict[str, httpx.AsyncClient]]:
     """Async context manager that manages the httpx client lifecycle.
 
     Yields a dict that is stored as the server's lifespan context.  The
@@ -152,7 +152,7 @@ async def _lifespan(server: Server) -> AsyncIterator[dict[str, httpx.AsyncClient
 # ---------------------------------------------------------------------------
 
 
-def create_server() -> tuple[Server, httpx.AsyncClient]:  # type: ignore[type-arg]
+def create_server() -> tuple[Server, httpx.AsyncClient]:
     """Instantiate the MCP server and register all 12 tools.
 
     The HTTP client is created here (before the lifespan runs) so that it
@@ -169,7 +169,7 @@ def create_server() -> tuple[Server, httpx.AsyncClient]:  # type: ignore[type-ar
     """
     http_client = _build_http_client()
 
-    server: Server = Server(  # type: ignore[type-arg]
+    server: Server = Server(
         name=_SERVER_NAME,
         version=_SERVER_VERSION,
         instructions=_SERVER_INSTRUCTIONS,

@@ -617,7 +617,7 @@ class BalanceRepository:
                 .returning(Balance)
             )
             base_result = await self._session.execute(base_stmt)
-            base_bal = base_result.scalars().first()
+            base_bal = base_result.scalars().first()  # type: ignore[assignment]
             if base_bal is None:
                 raise DatabaseError(f"Balance row not found for account={account_id} asset={base_asset!r}.")
 

@@ -16,7 +16,7 @@ from src.tasks.celery_app import app
 logger = logging.getLogger(__name__)
 
 
-@app.task(name="src.tasks.backtest_cleanup.cancel_stale_backtests")
+@app.task(name="src.tasks.backtest_cleanup.cancel_stale_backtests")  # type: ignore[misc]
 def cancel_stale_backtests() -> dict[str, int]:
     """Auto-cancel backtest sessions that have been idle for >1 hour.
 
@@ -56,7 +56,7 @@ async def _cancel_stale_backtests_async() -> dict[str, int]:
         return {"cancelled": cancelled}
 
 
-@app.task(name="src.tasks.backtest_cleanup.cleanup_backtest_detail_data")
+@app.task(name="src.tasks.backtest_cleanup.cleanup_backtest_detail_data")  # type: ignore[misc]
 def cleanup_backtest_detail_data() -> dict[str, int]:
     """Delete backtest trades and snapshots older than 90 days.
 

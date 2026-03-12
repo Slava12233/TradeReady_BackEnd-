@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any, TypeAlias
 
 from fastapi import Depends
 from redis.asyncio import Redis
@@ -58,7 +58,7 @@ def get_settings() -> Settings:
     return _get_settings()
 
 
-SettingsDep = Annotated[Settings, Depends(get_settings)]
+SettingsDep: TypeAlias = Annotated[Settings, Depends(get_settings)]
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +96,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
+DbSessionDep: TypeAlias = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ DbSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 # ---------------------------------------------------------------------------
 
 
-async def get_redis() -> AsyncGenerator[Redis, None]:
+async def get_redis() -> AsyncGenerator[Redis[Any], None]:
     """Yield a Redis client from the shared connection pool.
 
     The pool is created lazily on the first call and reused across requests.
@@ -130,7 +130,7 @@ async def get_redis() -> AsyncGenerator[Redis, None]:
         pass  # pool manages connection lifecycle; do not close here
 
 
-RedisDep = Annotated[Redis, Depends(get_redis)]
+RedisDep: TypeAlias = Annotated[Redis[Any], Depends(get_redis)]
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ RedisDep = Annotated[Redis, Depends(get_redis)]
 
 async def get_price_cache(
     redis: RedisDep,
-) -> PriceCacheDep:  # type: ignore[name-defined]
+) -> PriceCacheDep:
     """Return a ``PriceCache`` instance bound to the current Redis client.
 
     Example::
@@ -160,9 +160,9 @@ async def get_price_cache(
 try:
     from src.cache.price_cache import PriceCache as _PriceCache
 
-    PriceCacheDep = Annotated[_PriceCache, Depends(get_price_cache)]
+    PriceCacheDep: TypeAlias = Annotated[_PriceCache, Depends(get_price_cache)]
 except ImportError:
-    PriceCacheDep = None  # type: ignore[assignment]
+    PriceCacheDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ except ImportError:
 
 async def get_account_repo(
     db: DbSessionDep,
-) -> AccountRepoDep:  # type: ignore[name-defined]
+) -> AccountRepoDep:
     """Return an ``AccountRepository`` wired to the current session."""
     from src.database.repositories.account_repo import AccountRepository  # noqa: PLC0415
 
@@ -181,7 +181,7 @@ async def get_account_repo(
 
 async def get_balance_repo(
     db: DbSessionDep,
-) -> BalanceRepoDep:  # type: ignore[name-defined]
+) -> BalanceRepoDep:
     """Return a ``BalanceRepository`` wired to the current session."""
     from src.database.repositories.balance_repo import BalanceRepository  # noqa: PLC0415
 
@@ -190,7 +190,7 @@ async def get_balance_repo(
 
 async def get_order_repo(
     db: DbSessionDep,
-) -> OrderRepoDep:  # type: ignore[name-defined]
+) -> OrderRepoDep:
     """Return an ``OrderRepository`` wired to the current session."""
     from src.database.repositories.order_repo import OrderRepository  # noqa: PLC0415
 
@@ -199,7 +199,7 @@ async def get_order_repo(
 
 async def get_trade_repo(
     db: DbSessionDep,
-) -> TradeRepoDep:  # type: ignore[name-defined]
+) -> TradeRepoDep:
     """Return a ``TradeRepository`` wired to the current session."""
     from src.database.repositories.trade_repo import TradeRepository  # noqa: PLC0415
 
@@ -208,7 +208,7 @@ async def get_trade_repo(
 
 async def get_tick_repo(
     db: DbSessionDep,
-) -> TickRepoDep:  # type: ignore[name-defined]
+) -> TickRepoDep:
     """Return a ``TickRepository`` wired to the current session."""
     from src.database.repositories.tick_repo import TickRepository  # noqa: PLC0415
 
@@ -217,7 +217,7 @@ async def get_tick_repo(
 
 async def get_snapshot_repo(
     db: DbSessionDep,
-) -> SnapshotRepoDep:  # type: ignore[name-defined]
+) -> SnapshotRepoDep:
     """Return a ``SnapshotRepository`` wired to the current session."""
     from src.database.repositories.snapshot_repo import SnapshotRepository  # noqa: PLC0415
 
@@ -233,19 +233,19 @@ try:
     from src.database.repositories.tick_repo import TickRepository as _TickRepo
     from src.database.repositories.trade_repo import TradeRepository as _TradeRepo
 
-    AccountRepoDep = Annotated[_AccountRepo, Depends(get_account_repo)]
-    BalanceRepoDep = Annotated[_BalanceRepo, Depends(get_balance_repo)]
-    OrderRepoDep = Annotated[_OrderRepo, Depends(get_order_repo)]
-    TradeRepoDep = Annotated[_TradeRepo, Depends(get_trade_repo)]
-    TickRepoDep = Annotated[_TickRepo, Depends(get_tick_repo)]
-    SnapshotRepoDep = Annotated[_SnapshotRepo, Depends(get_snapshot_repo)]
+    AccountRepoDep: TypeAlias = Annotated[_AccountRepo, Depends(get_account_repo)]
+    BalanceRepoDep: TypeAlias = Annotated[_BalanceRepo, Depends(get_balance_repo)]
+    OrderRepoDep: TypeAlias = Annotated[_OrderRepo, Depends(get_order_repo)]
+    TradeRepoDep: TypeAlias = Annotated[_TradeRepo, Depends(get_trade_repo)]
+    TickRepoDep: TypeAlias = Annotated[_TickRepo, Depends(get_tick_repo)]
+    SnapshotRepoDep: TypeAlias = Annotated[_SnapshotRepo, Depends(get_snapshot_repo)]
 except ImportError:
-    AccountRepoDep = None  # type: ignore[assignment]
-    BalanceRepoDep = None  # type: ignore[assignment]
-    OrderRepoDep = None  # type: ignore[assignment]
-    TradeRepoDep = None  # type: ignore[assignment]
-    TickRepoDep = None  # type: ignore[assignment]
-    SnapshotRepoDep = None  # type: ignore[assignment]
+    AccountRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+    BalanceRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+    OrderRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+    TradeRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+    TickRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+    SnapshotRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ except ImportError:
 async def get_balance_manager(
     db: DbSessionDep,
     settings: SettingsDep,
-) -> BalanceManagerDep:  # type: ignore[name-defined]
+) -> BalanceManagerDep:
     """Return a ``BalanceManager`` wired to the current session and settings.
 
     Example::
@@ -277,9 +277,9 @@ async def get_balance_manager(
 try:
     from src.accounts.balance_manager import BalanceManager as _BalanceManager
 
-    BalanceManagerDep = Annotated[_BalanceManager, Depends(get_balance_manager)]
+    BalanceManagerDep: TypeAlias = Annotated[_BalanceManager, Depends(get_balance_manager)]
 except ImportError:
-    BalanceManagerDep = None  # type: ignore[assignment]
+    BalanceManagerDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +290,7 @@ except ImportError:
 async def get_account_service(
     db: DbSessionDep,
     settings: SettingsDep,
-) -> AccountServiceDep:  # type: ignore[name-defined]
+) -> AccountServiceDep:
     """Return an ``AccountService`` wired to the current session and settings.
 
     Example::
@@ -311,9 +311,9 @@ async def get_account_service(
 try:
     from src.accounts.service import AccountService as _AccountService
 
-    AccountServiceDep = Annotated[_AccountService, Depends(get_account_service)]
+    AccountServiceDep: TypeAlias = Annotated[_AccountService, Depends(get_account_service)]
 except ImportError:
-    AccountServiceDep = None  # type: ignore[assignment]
+    AccountServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +322,9 @@ except ImportError:
 
 
 async def get_slippage_calculator(
-    price_cache: PriceCacheDep,  # type: ignore[valid-type]
+    price_cache: PriceCacheDep,
     settings: SettingsDep,
-) -> SlippageCalcDep:  # type: ignore[name-defined]
+) -> SlippageCalcDep:
     """Return a ``SlippageCalculator`` wired to the current price cache.
 
     The ``default_factor`` is drawn from ``settings.default_slippage_factor``.
@@ -340,9 +340,9 @@ async def get_slippage_calculator(
 try:
     from src.order_engine.slippage import SlippageCalculator as _SlippageCalc
 
-    SlippageCalcDep = Annotated[_SlippageCalc, Depends(get_slippage_calculator)]
+    SlippageCalcDep: TypeAlias = Annotated[_SlippageCalc, Depends(get_slippage_calculator)]
 except ImportError:
-    SlippageCalcDep = None  # type: ignore[assignment]
+    SlippageCalcDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -352,12 +352,12 @@ except ImportError:
 
 async def get_order_engine(
     db: DbSessionDep,
-    price_cache: PriceCacheDep,  # type: ignore[valid-type]
-    balance_manager: BalanceManagerDep,  # type: ignore[valid-type]
-    slippage_calc: SlippageCalcDep,  # type: ignore[valid-type]
-    order_repo: OrderRepoDep,  # type: ignore[valid-type]
-    trade_repo: TradeRepoDep,  # type: ignore[valid-type]
-) -> OrderEngineDep:  # type: ignore[name-defined]
+    price_cache: PriceCacheDep,
+    balance_manager: BalanceManagerDep,
+    slippage_calc: SlippageCalcDep,
+    order_repo: OrderRepoDep,
+    trade_repo: TradeRepoDep,
+) -> OrderEngineDep:
     """Return an ``OrderEngine`` wired to all required collaborators.
 
     Example::
@@ -385,9 +385,9 @@ async def get_order_engine(
 try:
     from src.order_engine.engine import OrderEngine as _OrderEngine
 
-    OrderEngineDep = Annotated[_OrderEngine, Depends(get_order_engine)]
+    OrderEngineDep: TypeAlias = Annotated[_OrderEngine, Depends(get_order_engine)]
 except ImportError:
-    OrderEngineDep = None  # type: ignore[assignment]
+    OrderEngineDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -397,13 +397,13 @@ except ImportError:
 
 async def get_risk_manager(
     redis: RedisDep,
-    price_cache: PriceCacheDep,  # type: ignore[valid-type]
-    balance_manager: BalanceManagerDep,  # type: ignore[valid-type]
-    account_repo: AccountRepoDep,  # type: ignore[valid-type]
-    order_repo: OrderRepoDep,  # type: ignore[valid-type]
-    trade_repo: TradeRepoDep,  # type: ignore[valid-type]
+    price_cache: PriceCacheDep,
+    balance_manager: BalanceManagerDep,
+    account_repo: AccountRepoDep,
+    order_repo: OrderRepoDep,
+    trade_repo: TradeRepoDep,
     settings: SettingsDep,
-) -> RiskManagerDep:  # type: ignore[name-defined]
+) -> RiskManagerDep:
     """Return a ``RiskManager`` wired to all required collaborators.
 
     Example::
@@ -436,9 +436,9 @@ async def get_risk_manager(
 try:
     from src.risk.manager import RiskManager as _RiskManager
 
-    RiskManagerDep = Annotated[_RiskManager, Depends(get_risk_manager)]
+    RiskManagerDep: TypeAlias = Annotated[_RiskManager, Depends(get_risk_manager)]
 except ImportError:
-    RiskManagerDep = None  # type: ignore[assignment]
+    RiskManagerDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +462,7 @@ except ImportError:
 
 async def get_circuit_breaker_redis(
     redis: RedisDep,
-) -> CircuitBreakerRedisDep:  # type: ignore[name-defined]
+) -> CircuitBreakerRedisDep:
     """Return (redis,) tuple for use in Celery tasks that call reset_all.
 
     Routes that need a fully configured CircuitBreaker for a specific account
@@ -477,7 +477,7 @@ async def get_circuit_breaker_redis(
     return redis
 
 
-CircuitBreakerRedisDep = Annotated[Redis, Depends(get_circuit_breaker_redis)]
+CircuitBreakerRedisDep: TypeAlias = Annotated[Redis[Any], Depends(get_circuit_breaker_redis)]
 
 
 # ---------------------------------------------------------------------------
@@ -487,9 +487,9 @@ CircuitBreakerRedisDep = Annotated[Redis, Depends(get_circuit_breaker_redis)]
 
 async def get_portfolio_tracker(
     db: DbSessionDep,
-    price_cache: PriceCacheDep,  # type: ignore[valid-type]
+    price_cache: PriceCacheDep,
     settings: SettingsDep,
-) -> PortfolioTrackerDep:  # type: ignore[name-defined]
+) -> PortfolioTrackerDep:
     """Return a ``PortfolioTracker`` wired to the current session.
 
     Example::
@@ -509,9 +509,9 @@ async def get_portfolio_tracker(
 try:
     from src.portfolio.tracker import PortfolioTracker as _PortfolioTracker
 
-    PortfolioTrackerDep = Annotated[_PortfolioTracker, Depends(get_portfolio_tracker)]
+    PortfolioTrackerDep: TypeAlias = Annotated[_PortfolioTracker, Depends(get_portfolio_tracker)]
 except ImportError:
-    PortfolioTrackerDep = None  # type: ignore[assignment]
+    PortfolioTrackerDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +521,7 @@ except ImportError:
 
 async def get_performance_metrics(
     db: DbSessionDep,
-) -> PerformanceMetricsDep:  # type: ignore[name-defined]
+) -> PerformanceMetricsDep:
     """Return a ``PerformanceMetrics`` instance wired to the current session.
 
     Example::
@@ -542,9 +542,9 @@ async def get_performance_metrics(
 try:
     from src.portfolio.metrics import PerformanceMetrics as _PerformanceMetrics
 
-    PerformanceMetricsDep = Annotated[_PerformanceMetrics, Depends(get_performance_metrics)]
+    PerformanceMetricsDep: TypeAlias = Annotated[_PerformanceMetrics, Depends(get_performance_metrics)]
 except ImportError:
-    PerformanceMetricsDep = None  # type: ignore[assignment]
+    PerformanceMetricsDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -554,9 +554,9 @@ except ImportError:
 
 async def get_snapshot_service(
     db: DbSessionDep,
-    price_cache: PriceCacheDep,  # type: ignore[valid-type]
+    price_cache: PriceCacheDep,
     settings: SettingsDep,
-) -> SnapshotServiceDep:  # type: ignore[name-defined]
+) -> SnapshotServiceDep:
     """Return a ``SnapshotService`` wired to the current session.
 
     Example::
@@ -576,9 +576,9 @@ async def get_snapshot_service(
 try:
     from src.portfolio.snapshots import SnapshotService as _SnapshotService
 
-    SnapshotServiceDep = Annotated[_SnapshotService, Depends(get_snapshot_service)]
+    SnapshotServiceDep: TypeAlias = Annotated[_SnapshotService, Depends(get_snapshot_service)]
 except ImportError:
-    SnapshotServiceDep = None  # type: ignore[assignment]
+    SnapshotServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -586,10 +586,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # The BacktestEngine is a singleton — it holds active sessions in memory.
-_backtest_engine_instance: BacktestEngine | None = None  # type: ignore[name-defined]  # noqa: F821
+_backtest_engine_instance: Any | None = None
 
 
-def get_backtest_engine() -> BacktestEngineDep:  # type: ignore[name-defined]
+def get_backtest_engine() -> BacktestEngineDep:
     """Return the singleton ``BacktestEngine`` instance.
 
     The engine is created lazily on the first call.  It holds active
@@ -607,9 +607,9 @@ def get_backtest_engine() -> BacktestEngineDep:  # type: ignore[name-defined]
 try:
     from src.backtesting.engine import BacktestEngine as _BacktestEngine
 
-    BacktestEngineDep = Annotated[_BacktestEngine, Depends(get_backtest_engine)]
+    BacktestEngineDep: TypeAlias = Annotated[_BacktestEngine, Depends(get_backtest_engine)]
 except ImportError:
-    BacktestEngineDep = None  # type: ignore[assignment]
+    BacktestEngineDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +619,7 @@ except ImportError:
 
 async def get_backtest_repo(
     db: DbSessionDep,
-) -> BacktestRepoDep:  # type: ignore[name-defined]
+) -> BacktestRepoDep:
     """Return a ``BacktestRepository`` wired to the current session."""
     from src.database.repositories.backtest_repo import BacktestRepository  # noqa: PLC0415
 
@@ -629,6 +629,6 @@ async def get_backtest_repo(
 try:
     from src.database.repositories.backtest_repo import BacktestRepository as _BacktestRepo
 
-    BacktestRepoDep = Annotated[_BacktestRepo, Depends(get_backtest_repo)]
+    BacktestRepoDep: TypeAlias = Annotated[_BacktestRepo, Depends(get_backtest_repo)]
 except ImportError:
-    BacktestRepoDep = None  # type: ignore[assignment]
+    BacktestRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]

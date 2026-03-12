@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,7 +126,7 @@ class DataReplayer:
             Number of data points loaded.
         """
         pair_filter = ""
-        params: dict = {"start": start_time, "end": end_time}
+        params: dict[str, Any] = {"start": start_time, "end": end_time}
         if self._pairs:
             pair_filter = "AND symbol = ANY(:pairs)"
             params["pairs"] = self._pairs
@@ -186,7 +187,7 @@ class DataReplayer:
             return self._load_prices_from_cache(timestamp)
 
         pair_filter = ""
-        params: dict = {"ts": timestamp}
+        params: dict[str, Any] = {"ts": timestamp}
         if self._pairs:
             pair_filter = "AND symbol = ANY(:pairs)"
             params["pairs"] = self._pairs
@@ -396,7 +397,7 @@ class DataReplayer:
             Sorted list of symbol strings.
         """
         pair_filter = ""
-        params: dict = {"ts": timestamp}
+        params: dict[str, Any] = {"ts": timestamp}
         if self._pairs:
             pair_filter = "AND symbol = ANY(:pairs)"
             params["pairs"] = self._pairs

@@ -69,7 +69,7 @@ async def close_redis_client() -> None:
     global _redis_singleton
     async with _redis_lock:
         if _redis_singleton is not None:
-            await _redis_singleton.aclose()
+            await _redis_singleton.aclose()  # type: ignore[attr-defined]
             _redis_singleton = None
             logger.info("redis_singleton_closed")
 
@@ -93,7 +93,7 @@ class RedisClient:
     def __init__(self, url: str, max_connections: int = _MAX_CONNECTIONS) -> None:
         self._url = url
         self._max_connections = max_connections
-        self._pool: ConnectionPool | None = None
+        self._pool: ConnectionPool | None = None  # type: ignore[type-arg]
         self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
 
     async def connect(self) -> None:
@@ -130,7 +130,7 @@ class RedisClient:
         been removed to avoid double-close confusion (C1-6).
         """
         if self._redis is not None:
-            await self._redis.aclose()
+            await self._redis.aclose()  # type: ignore[attr-defined]
             self._redis = None
         # Pool is already closed by redis.aclose(); just drop the reference.
         if self._pool is not None:

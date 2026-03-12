@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -166,7 +167,7 @@ async def health_check() -> JSONResponse:
         status = "ok"
         http_status = 200
 
-    body: dict = {
+    body: dict[str, Any] = {
         "status": status,
         "redis_connected": redis_ok,
         "db_connected": db_ok,

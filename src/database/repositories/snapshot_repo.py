@@ -358,7 +358,7 @@ class SnapshotRepository:
                 PortfolioSnapshot.created_at < cutoff,
             )
             result = await self._session.execute(stmt)
-            deleted: int = result.rowcount  # type: ignore[assignment]
+            deleted: int = result.rowcount
             logger.info(
                 "snapshot.delete_before.done",
                 extra={

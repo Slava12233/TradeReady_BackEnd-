@@ -104,7 +104,20 @@
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -m pytest tests/unit/ --tb=short --no-header 2>&1 | tail -5)",
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/ tests/ 2>&1 | tail -5)",
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && rm Deploy.yml test.yml)",
-      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff format --check src/ tests/ 2>&1 | tail -3)"
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff format --check src/ tests/ 2>&1 | tail -3)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/ --ignore-missing-imports 2>&1 | tail -5)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/ --ignore-missing-imports 2>&1 | grep \"error:\" | sed 's/:.*//g' | sort | uniq -c | sort -rn)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/dependencies.py --ignore-missing-imports 2>&1 | head -30)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/ --ignore-missing-imports 2>&1 | grep \"error:\" 2>&1)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/portfolio/snapshots.py --ignore-missing-imports 2>&1 | grep \"error:\")",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/ --ignore-missing-imports 2>&1)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff format src/ tests/ 2>&1 | tail -3)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/ tests/ 2>&1 | head -50)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/ tests/ 2>&1 | grep \"error\" | sed 's/  |.*//g' | sort | uniq -c | sort -rn)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/ tests/ 2>&1 | grep \": \" | grep -oP '[A-Z]+\\\\d+' | sort | uniq -c | sort -rn)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/dependencies.py 2>&1 | grep UP040 | wc -l)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/ --ignore-missing-imports 2>&1 | tail -3)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && pytest tests/unit/ -q --tb=line 2>&1 | tail -5)"
     ]
   }
 }

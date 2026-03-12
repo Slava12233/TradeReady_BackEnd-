@@ -191,7 +191,7 @@ class CircuitBreaker:
             # Pass str(pnl) to avoid float precision loss — Redis HINCRBYFLOAT
             # accepts string representations of numeric values.
             async with self._redis.pipeline(transaction=False) as pipe:
-                pipe.hincrbyfloat(key, _FIELD_DAILY_PNL, str(pnl))
+                pipe.hincrbyfloat(key, _FIELD_DAILY_PNL, float(pnl))
                 pipe.expire(key, ttl)
                 results = await pipe.execute()
 
@@ -355,7 +355,7 @@ class CircuitBreaker:
 
         try:
             async with self._redis.pipeline(transaction=False) as pipe:
-                pipe.hset(  # type: ignore[misc]
+                pipe.hset(
                     key,
                     mapping={
                         _FIELD_TRIPPED: "1",

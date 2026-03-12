@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.portfolio_snapshots.capture_minute_snapshots",
     bind=True,
     max_retries=0,
@@ -75,7 +75,7 @@ def capture_minute_snapshots(self: Any) -> dict[str, Any]:  # noqa: ANN401
     return asyncio.run(_run_snapshots("minute"))
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.portfolio_snapshots.capture_hourly_snapshots",
     bind=True,
     max_retries=0,
@@ -105,7 +105,7 @@ def capture_hourly_snapshots(self: Any) -> dict[str, Any]:  # noqa: ANN401
     return asyncio.run(_run_snapshots("hourly"))
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.portfolio_snapshots.capture_daily_snapshots",
     bind=True,
     max_retries=0,
@@ -140,7 +140,7 @@ def capture_daily_snapshots(self: Any) -> dict[str, Any]:  # noqa: ANN401
     return asyncio.run(_run_snapshots("daily"))
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.portfolio_snapshots.reset_circuit_breakers",
     bind=True,
     max_retries=0,

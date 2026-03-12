@@ -459,7 +459,7 @@ class RedisPubSubBridge:
         finally:
             try:
                 await pubsub.unsubscribe(_PRICE_UPDATES_CHANNEL)
-                await pubsub.aclose()
+                await pubsub.aclose()  # type: ignore[attr-defined]
             except Exception:  # noqa: BLE001, S110
                 pass
 

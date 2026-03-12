@@ -35,7 +35,7 @@ from src.tasks.celery_app import app
 logger = logging.getLogger(__name__)
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.limit_order_monitor.run_limit_order_monitor",
     bind=True,
     max_retries=0,  # Do not retry on failure — beat will fire again in 1 s.

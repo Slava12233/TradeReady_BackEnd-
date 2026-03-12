@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api/v1", tags=["backtest"])
 
 def _get_account_id(request: Request) -> UUID:
     """Extract account_id from auth middleware state."""
-    return request.state.account.id
+    return cast(UUID, request.state.account.id)
 
 
 def _step_to_response(result: Any) -> StepResponse:  # noqa: ANN401
@@ -112,7 +112,7 @@ async def get_data_range(db: DbSessionDep) -> DataRangeResponse:
 async def create_backtest(
     request: Request,
     body: BacktestCreateRequest,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> BacktestCreateResponse:
     """Create a new backtest session."""
@@ -145,7 +145,7 @@ async def create_backtest(
 async def start_backtest(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> dict[str, str]:
     """Start a created backtest session."""
@@ -157,7 +157,7 @@ async def start_backtest(
 async def step_backtest(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> StepResponse:
     """Advance one candle step."""
@@ -170,7 +170,7 @@ async def step_batch_backtest(
     request: Request,
     session_id: str,
     body: BacktestStepBatchRequest,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> StepResponse:
     """Advance N candle steps."""
@@ -182,7 +182,7 @@ async def step_batch_backtest(
 async def cancel_backtest(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> dict[str, Any]:
     """Cancel a running backtest and save partial results."""
@@ -203,7 +203,7 @@ async def backtest_place_order(
     request: Request,
     session_id: str,
     body: BacktestOrderRequest,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Place an order in the backtest sandbox."""
     result = await engine.execute_order(
@@ -228,7 +228,7 @@ async def backtest_place_order(
 async def backtest_list_orders(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """List all orders in the backtest sandbox."""
     active = engine._get_active(session_id)
@@ -256,7 +256,7 @@ async def backtest_list_orders(
 async def backtest_open_orders(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """List pending orders in the backtest sandbox."""
     active = engine._get_active(session_id)
@@ -283,7 +283,7 @@ async def backtest_cancel_order(
     request: Request,
     session_id: str,
     order_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Cancel a pending order in the backtest sandbox."""
     cancelled = await engine.cancel_order(session_id, order_id)
@@ -294,7 +294,7 @@ async def backtest_cancel_order(
 async def backtest_trade_history(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get trade history from the backtest sandbox."""
     active = engine._get_active(session_id)
@@ -328,7 +328,7 @@ async def backtest_price(
     request: Request,
     session_id: str,
     symbol: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get price for a symbol at the current virtual time."""
     result = await engine.get_price(session_id, symbol)
@@ -343,7 +343,7 @@ async def backtest_price(
 async def backtest_prices(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get all prices at the current virtual time."""
     active = engine._get_active(session_id)
@@ -358,7 +358,7 @@ async def backtest_ticker(
     request: Request,
     session_id: str,
     symbol: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> dict[str, Any]:
     """Get 24h ticker stats at the current virtual time."""
@@ -387,7 +387,7 @@ async def backtest_candles(
     request: Request,
     session_id: str,
     symbol: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
     interval: int = Query(default=60, description="Interval in seconds"),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> dict[str, Any]:
@@ -419,7 +419,7 @@ async def backtest_candles(
 async def backtest_balance(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get sandbox balances."""
     balances = await engine.get_balance(session_id)
@@ -432,7 +432,7 @@ async def backtest_balance(
 async def backtest_positions(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get sandbox positions."""
     positions = await engine.get_positions(session_id)
@@ -453,7 +453,7 @@ async def backtest_positions(
 async def backtest_portfolio(
     request: Request,
     session_id: str,
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get sandbox portfolio summary."""
     portfolio = await engine.get_portfolio(session_id)
@@ -474,8 +474,8 @@ async def backtest_portfolio(
 async def get_backtest_status(
     request: Request,
     session_id: str,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
+    engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> BacktestListItem:
     """Get current status/progress of a backtest session.
@@ -504,6 +504,8 @@ async def get_backtest_status(
         await db.commit()
         # Re-fetch the updated session
         s = await repo.get_session(UUID(session_id), account_id)
+        if s is None:
+            raise BacktestNotFoundError(session_id=UUID(session_id))
 
     return BacktestListItem(
         session_id=str(s.id),
@@ -528,7 +530,7 @@ async def get_backtest_status(
         created_at=s.created_at,
         started_at=s.started_at,
         completed_at=s.completed_at,
-        duration_real_sec=s.duration_real_sec,
+        duration_real_sec=(float(s.duration_real_sec) if s.duration_real_sec is not None else None),
     )
 
 
@@ -539,7 +541,7 @@ async def get_backtest_status(
 async def get_backtest_results(
     request: Request,
     session_id: str,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
 ) -> BacktestResultsResponse:
     """Get full results of a completed backtest."""
     account_id = _get_account_id(request)
@@ -593,7 +595,7 @@ async def get_backtest_results(
 async def get_equity_curve(
     request: Request,
     session_id: str,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
     interval: int = Query(default=1, ge=1),
 ) -> dict[str, Any]:
     """Get equity curve data for a completed backtest."""
@@ -620,7 +622,7 @@ async def get_equity_curve(
 async def get_backtest_trades(
     request: Request,
     session_id: str,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
     limit: int = Query(default=1000, ge=1, le=10000),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -652,8 +654,8 @@ async def get_backtest_trades(
 @router.get("/backtest/list", response_model=BacktestListResponse)
 async def list_backtests(
     request: Request,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
-    engine: BacktestEngineDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
+    engine: BacktestEngineDep,
     db: DbSessionDep,
     strategy_label: str | None = Query(default=None),
     status: str | None = Query(default=None),
@@ -716,7 +718,7 @@ async def list_backtests(
             created_at=s.created_at,
             started_at=s.started_at,
             completed_at=s.completed_at,
-            duration_real_sec=s.duration_real_sec,
+            duration_real_sec=(float(s.duration_real_sec) if s.duration_real_sec is not None else None),
         )
         for s in sessions
     ]
@@ -726,17 +728,17 @@ async def list_backtests(
 @router.get("/backtest/compare", response_model=BacktestCompareResponse)
 async def compare_backtests(
     request: Request,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
     sessions: str = Query(description="Comma-separated session IDs"),
 ) -> BacktestCompareResponse:
     """Compare multiple backtest sessions side-by-side."""
     session_ids = [UUID(s.strip()) for s in sessions.split(",") if s.strip()]
     bt_sessions = await repo.get_sessions_for_compare(session_ids)
 
-    comparisons = []
-    best_roi = (None, Decimal("-999999"))
-    best_sharpe = (None, Decimal("-999999"))
-    best_dd = (None, Decimal("999999"))
+    comparisons: list[dict[str, Any]] = []
+    best_roi: tuple[str | None, Decimal] = (None, Decimal("-999999"))
+    best_sharpe: tuple[str | None, Decimal] = (None, Decimal("-999999"))
+    best_dd: tuple[str | None, Decimal] = (None, Decimal("999999"))
 
     for s in bt_sessions:
         roi = s.roi_pct or Decimal("0")
@@ -774,7 +776,7 @@ async def compare_backtests(
 @router.get("/backtest/best", response_model=BacktestBestResponse)
 async def get_best_backtest(
     request: Request,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
     metric: str = Query(default="roi_pct"),
     strategy_label: str | None = Query(default=None),
 ) -> BacktestBestResponse:
@@ -800,7 +802,7 @@ async def get_best_backtest(
 @router.get("/account/mode", response_model=AccountModeResponse)
 async def get_account_mode(
     request: Request,
-    repo: BacktestRepoDep,  # type: ignore[valid-type]
+    repo: BacktestRepoDep,
     db: DbSessionDep,
 ) -> AccountModeResponse:
     """Get the current account operating mode."""

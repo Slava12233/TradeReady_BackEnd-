@@ -105,11 +105,11 @@ def calculate_metrics(
 
     win_rate = (Decimal(len(wins)) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2) if pnls else _ZERO
 
-    avg_win = (sum(wins) / Decimal(len(wins))).quantize(_QUANT8) if wins else _ZERO
-    avg_loss = (sum(losses) / Decimal(len(losses))).quantize(_QUANT8) if losses else _ZERO
+    avg_win = (sum(wins, _ZERO) / Decimal(len(wins))).quantize(_QUANT8) if wins else _ZERO
+    avg_loss = (sum(losses, _ZERO) / Decimal(len(losses))).quantize(_QUANT8) if losses else _ZERO
 
-    gross_profit = sum(wins) if wins else _ZERO
-    gross_loss = abs(sum(losses)) if losses else _ZERO
+    gross_profit = sum(wins, _ZERO)
+    gross_loss = abs(sum(losses, _ZERO))
     profit_factor = (gross_profit / gross_loss).quantize(_QUANT4) if gross_loss > _ZERO else None
 
     best_trade = max(pnls) if pnls else _ZERO
@@ -123,7 +123,7 @@ def calculate_metrics(
             dt = (trades[i].simulated_at - trades[i - 1].simulated_at).total_seconds()
             durations.append(Decimal(str(dt)) / Decimal("60"))
         if durations:
-            avg_trade_duration = (sum(durations) / Decimal(len(durations))).quantize(_QUANT2)
+            avg_trade_duration = (sum(durations, _ZERO) / Decimal(len(durations))).quantize(_QUANT2)
 
     trades_per_day = (Decimal(len(trades)) / duration_days).quantize(_QUANT2) if duration_days > _ZERO else _ZERO
 
@@ -190,9 +190,9 @@ def calculate_per_pair_stats(trades: list[SandboxTrade]) -> list[PairStats]:
         pnls = [t.realized_pnl for t in symbol_trades if t.realized_pnl is not None]
         wins = sum(1 for p in pnls if p > _ZERO)
         losses_count = sum(1 for p in pnls if p < _ZERO)
-        net_pnl = sum(pnls) if pnls else _ZERO
+        net_pnl = sum(pnls, _ZERO)
         wr = (Decimal(wins) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2) if pnls else _ZERO
-        total_vol = sum(t.quote_amount for t in symbol_trades)
+        total_vol = sum((t.quote_amount for t in symbol_trades), _ZERO)
 
         results.append(
             PairStats(

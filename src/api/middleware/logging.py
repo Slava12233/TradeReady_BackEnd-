@@ -167,4 +167,4 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             else:
                 logger.info("http.request", **log_kwargs)
 
-        return response  # type: ignore[return-value]
+        return response

@@ -70,7 +70,7 @@ class TickBuffer:
 
     def __init__(
         self,
-        db_pool: asyncpg.Pool,  # type: ignore[type-arg]
+        db_pool: asyncpg.Pool,
         flush_interval: float = 1.0,
         max_size: int = 5000,
         broadcaster: PriceBroadcaster | None = None,
