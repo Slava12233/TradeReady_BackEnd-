@@ -330,7 +330,7 @@ def register_tools(server: Server, http_client: httpx.AsyncClient) -> None:
             ``base_url`` and ``X-API-Key`` / ``Authorization`` headers.
     """
 
-    @server.list_tools()  # type: ignore[misc,no-untyped-call]
+    @server.list_tools()  # type: ignore[misc]
     async def list_tools() -> list[types.Tool]:
         """Return all available trading tools."""
         return _TOOL_DEFINITIONS
