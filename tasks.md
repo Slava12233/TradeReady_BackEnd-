@@ -1,4 +1,4 @@
-# Tasks — AI Agent Crypto Trading Platform
+# Tasks — AI Agent Crypto Trading Platform !
 
 > **Last Updated:** 2026-03-12
 > **Status Legend:** `[ ]` To Do · `[~]` In Progress · `[x]` Done · `[-]` Blocked · `[!]` Needs Review
