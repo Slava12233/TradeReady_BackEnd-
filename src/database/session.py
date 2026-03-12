@@ -109,9 +109,7 @@ async def get_asyncpg_pool() -> asyncpg.Pool:  # type: ignore[type-arg]
     """
     global _asyncpg_pool
     if _asyncpg_pool is None:
-        raise RuntimeError(
-            "asyncpg pool is not initialised. Call init_db() at application startup."
-        )
+        raise RuntimeError("asyncpg pool is not initialised. Call init_db() at application startup.")
     return _asyncpg_pool
 
 

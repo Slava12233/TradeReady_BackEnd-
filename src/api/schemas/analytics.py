@@ -45,7 +45,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-
 # ---------------------------------------------------------------------------
 # Shared config base
 # ---------------------------------------------------------------------------
@@ -171,8 +170,7 @@ class PerformanceResponse(_BaseSchema):
     current_streak: int = Field(
         ...,
         description=(
-            "Consecutive winning (positive) or losing (negative) trades "
-            "ending with the most recent closed trade."
+            "Consecutive winning (positive) or losing (negative) trades ending with the most recent closed trade."
         ),
         examples=[3],
     )

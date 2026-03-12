@@ -19,8 +19,7 @@ import pytest
 
 from src.cache.price_cache import PriceCache
 from src.order_engine.slippage import SlippageCalculator, SlippageResult
-from src.utils.exceptions import PriceNotAvailableError
-
+from src.utils.exceptions import InputValidationError, PriceNotAvailableError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -204,7 +203,7 @@ async def test_invalid_side_raises_value_error():
     cache = AsyncMock(spec=PriceCache)
     calc = SlippageCalculator(cache)
 
-    with pytest.raises(ValueError, match="Invalid order side"):
+    with pytest.raises(InputValidationError, match="Invalid order side"):
         await calc.calculate("BTCUSDT", "short", Decimal("1"), Decimal("60000"))
 
 

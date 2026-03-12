@@ -118,7 +118,7 @@ async def _run_refresh() -> dict[str, Any]:
     from src.database.session import get_session_factory
 
     task_start = time.monotonic()
-    settings = get_settings()
+    _settings = get_settings()
 
     session_factory = get_session_factory()
 
@@ -190,7 +190,7 @@ async def _run_refresh() -> dict[str, Any]:
 
 
 async def _refresh_view(
-    session: Any,
+    session: Any,  # noqa: ANN401
     view_name: str,
     start_offset: str,
     end_offset: str,

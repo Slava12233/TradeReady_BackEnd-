@@ -30,8 +30,8 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 from src.accounts.auth import create_jwt
 from src.config import Settings
@@ -41,7 +41,6 @@ from src.utils.exceptions import (
     InsufficientBalanceError,
     OrderNotCancellableError,
     OrderNotFoundError,
-    OrderRejectedError,
     PriceNotAvailableError,
 )
 
@@ -433,9 +432,7 @@ class TestPlaceOrder:
 
     # --- Market order happy path ---
 
-    def test_market_buy_returns_201(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_market_buy_returns_201(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Valid market buy order → HTTP 201."""
         mock_order_engine.place_order = AsyncMock(return_value=_make_order_result(status="filled"))
 
@@ -448,9 +445,7 @@ class TestPlaceOrder:
 
         assert resp.status_code == 201
 
-    def test_market_sell_returns_201(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_market_sell_returns_201(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Valid market sell order → HTTP 201."""
         mock_order_engine.place_order = AsyncMock(return_value=_make_order_result(status="filled"))
 
@@ -482,9 +477,7 @@ class TestPlaceOrder:
         for field in ("order_id", "status", "symbol", "side", "type"):
             assert field in body, f"Missing field: {field}"
 
-    def test_market_order_status_is_filled(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_market_order_status_is_filled(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Market order response has ``status='filled'``."""
         mock_order_engine.place_order = AsyncMock(return_value=_make_order_result(status="filled"))
 
@@ -497,9 +490,7 @@ class TestPlaceOrder:
 
         assert resp.json()["status"] == "filled"
 
-    def test_market_order_symbol_uppercased(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_market_order_symbol_uppercased(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Symbol in response is always uppercase."""
         mock_order_engine.place_order = AsyncMock(return_value=_make_order_result(status="filled"))
 
@@ -530,14 +521,10 @@ class TestPlaceOrder:
             if body.get(field) is not None:
                 assert isinstance(body[field], str), f"Field {field!r} is not a string"
 
-    def test_market_order_order_id_is_uuid(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_market_order_order_id_is_uuid(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """``order_id`` in response is a valid UUID string."""
         oid = uuid4()
-        mock_order_engine.place_order = AsyncMock(
-            return_value=_make_order_result(order_id=oid, status="filled")
-        )
+        mock_order_engine.place_order = AsyncMock(return_value=_make_order_result(order_id=oid, status="filled"))
 
         client = _build_client(order_engine=mock_order_engine, risk_manager=mock_risk_manager)
         resp = _authed_post(
@@ -550,9 +537,7 @@ class TestPlaceOrder:
 
     # --- Limit order happy path ---
 
-    def test_limit_buy_returns_201(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_limit_buy_returns_201(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Valid limit buy order → HTTP 201 with ``status='pending'``."""
         mock_order_engine.place_order = AsyncMock(
             return_value=_make_order_result(
@@ -580,9 +565,7 @@ class TestPlaceOrder:
         assert resp.status_code == 201
         assert resp.json()["status"] == "pending"
 
-    def test_limit_sell_returns_201(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_limit_sell_returns_201(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Valid limit sell order → HTTP 201 with ``status='pending'``."""
         mock_order_engine.place_order = AsyncMock(
             return_value=_make_order_result(
@@ -610,9 +593,7 @@ class TestPlaceOrder:
         assert resp.status_code == 201
         assert resp.json()["status"] == "pending"
 
-    def test_stop_loss_order_returns_201(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_stop_loss_order_returns_201(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Valid stop-loss order → HTTP 201."""
         mock_order_engine.place_order = AsyncMock(
             return_value=_make_order_result(
@@ -639,9 +620,7 @@ class TestPlaceOrder:
 
         assert resp.status_code == 201
 
-    def test_take_profit_order_returns_201(
-        self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_take_profit_order_returns_201(self, mock_risk_manager: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Valid take-profit order → HTTP 201."""
         mock_order_engine.place_order = AsyncMock(
             return_value=_make_order_result(
@@ -804,9 +783,7 @@ class TestPlaceOrder:
 
     # --- Service-layer error handling ---
 
-    def test_risk_rejected_order_returns_400(
-        self, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_risk_rejected_order_returns_400(self, mock_order_engine: AsyncMock) -> None:
         """Risk manager rejects → HTTP 400 with ``ORDER_REJECTED`` code."""
         risk_result = MagicMock()
         risk_result.approved = False
@@ -826,14 +803,10 @@ class TestPlaceOrder:
         assert "error" in body
         assert body["error"]["code"] == "ORDER_REJECTED"
 
-    def test_insufficient_balance_returns_400(
-        self, mock_risk_manager: AsyncMock
-    ) -> None:
+    def test_insufficient_balance_returns_400(self, mock_risk_manager: AsyncMock) -> None:
         """Engine raises ``InsufficientBalanceError`` → HTTP 400."""
         engine = AsyncMock()
-        engine.place_order = AsyncMock(
-            side_effect=InsufficientBalanceError("Insufficient USDT balance.")
-        )
+        engine.place_order = AsyncMock(side_effect=InsufficientBalanceError("Insufficient USDT balance."))
 
         client = _build_client(order_engine=engine, risk_manager=mock_risk_manager)
         resp = _authed_post(
@@ -846,14 +819,10 @@ class TestPlaceOrder:
         body = resp.json()
         assert body["error"]["code"] == "INSUFFICIENT_BALANCE"
 
-    def test_price_not_available_returns_503(
-        self, mock_risk_manager: AsyncMock
-    ) -> None:
+    def test_price_not_available_returns_503(self, mock_risk_manager: AsyncMock) -> None:
         """Engine raises ``PriceNotAvailableError`` → HTTP 503."""
         engine = AsyncMock()
-        engine.place_order = AsyncMock(
-            side_effect=PriceNotAvailableError("BTCUSDT has no live price.")
-        )
+        engine.place_order = AsyncMock(side_effect=PriceNotAvailableError("BTCUSDT has no live price."))
 
         client = _build_client(order_engine=engine, risk_manager=mock_risk_manager)
         resp = _authed_post(
@@ -900,9 +869,7 @@ class TestPlaceOrder:
 class TestGetOrder:
     """Tests for ``GET /api/v1/trade/order/{order_id}``."""
 
-    def test_get_order_success_returns_200(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_get_order_success_returns_200(self, mock_order_repo: AsyncMock) -> None:
         """Known order UUID → HTTP 200 with order detail."""
         order = _make_order_mock()
         mock_order_repo.get_by_id = AsyncMock(return_value=order)
@@ -912,9 +879,7 @@ class TestGetOrder:
 
         assert resp.status_code == 200
 
-    def test_get_order_response_has_required_fields(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_get_order_response_has_required_fields(self, mock_order_repo: AsyncMock) -> None:
         """Response includes all expected fields for a filled order."""
         order = _make_order_mock(status="filled")
         mock_order_repo.get_by_id = AsyncMock(return_value=order)
@@ -934,9 +899,7 @@ class TestGetOrder:
         ):
             assert field in body, f"Missing field: {field}"
 
-    def test_get_order_decimal_fields_are_strings(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_get_order_decimal_fields_are_strings(self, mock_order_repo: AsyncMock) -> None:
         """All Decimal fields in order detail are serialized as strings."""
         order = _make_order_mock(status="filled")
         mock_order_repo.get_by_id = AsyncMock(return_value=order)
@@ -951,13 +914,9 @@ class TestGetOrder:
         if body.get("fee") is not None:
             assert isinstance(body["fee"], str)
 
-    def test_get_order_not_found_returns_404(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_get_order_not_found_returns_404(self, mock_order_repo: AsyncMock) -> None:
         """Unknown order UUID → ``OrderNotFoundError`` → HTTP 404."""
-        mock_order_repo.get_by_id = AsyncMock(
-            side_effect=OrderNotFoundError("Order not found.")
-        )
+        mock_order_repo.get_by_id = AsyncMock(side_effect=OrderNotFoundError("Order not found."))
 
         unknown_id = uuid4()
         client = _build_client(order_repo=mock_order_repo)
@@ -974,9 +933,7 @@ class TestGetOrder:
         resp = _authed_get(client, "/api/v1/trade/order/not-a-uuid")
         assert resp.status_code == 422
 
-    def test_get_order_correct_id_in_response(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_get_order_correct_id_in_response(self, mock_order_repo: AsyncMock) -> None:
         """``order_id`` in response matches the queried UUID."""
         order = _make_order_mock()
         mock_order_repo.get_by_id = AsyncMock(return_value=order)
@@ -992,9 +949,7 @@ class TestGetOrder:
         resp = client.get(f"/api/v1/trade/order/{uuid4()}")
         assert resp.status_code == 401
 
-    def test_get_pending_order_has_no_executed_price(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_get_pending_order_has_no_executed_price(self, mock_order_repo: AsyncMock) -> None:
         """Pending limit order has ``executed_price=null`` in response."""
         order = _make_order_mock(
             order_type="limit",
@@ -1034,9 +989,7 @@ class TestListOrders:
 
         assert resp.status_code == 200
 
-    def test_list_orders_response_has_required_fields(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_orders_response_has_required_fields(self, mock_order_repo: AsyncMock) -> None:
         """Response body includes ``orders``, ``total``, ``limit``, ``offset``."""
         mock_order_repo.list_by_account = AsyncMock(return_value=[])
 
@@ -1058,9 +1011,7 @@ class TestListOrders:
         assert body["orders"] == []
         assert body["total"] == 0
 
-    def test_list_orders_total_matches_list_length(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_orders_total_matches_list_length(self, mock_order_repo: AsyncMock) -> None:
         """``total`` matches the count of returned ``orders``."""
         orders = [_make_order_mock() for _ in range(3)]
         mock_order_repo.list_by_account = AsyncMock(return_value=orders)
@@ -1117,9 +1068,7 @@ class TestListOrders:
         assert body["limit"] == 25
         assert body["offset"] == 50
 
-    def test_list_orders_limit_too_high_returns_422(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_orders_limit_too_high_returns_422(self, mock_order_repo: AsyncMock) -> None:
         """``limit`` > 500 violates Query constraint → HTTP 422."""
         mock_order_repo.list_by_account = AsyncMock(return_value=[])
 
@@ -1128,9 +1077,7 @@ class TestListOrders:
 
         assert resp.status_code == 422
 
-    def test_list_orders_negative_offset_returns_422(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_orders_negative_offset_returns_422(self, mock_order_repo: AsyncMock) -> None:
         """Negative ``offset`` violates ``ge=0`` constraint → HTTP 422."""
         mock_order_repo.list_by_account = AsyncMock(return_value=[])
 
@@ -1164,9 +1111,7 @@ class TestListOpenOrders:
 
         assert resp.status_code == 200
 
-    def test_list_open_orders_response_structure(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_open_orders_response_structure(self, mock_order_repo: AsyncMock) -> None:
         """Response includes ``orders``, ``total``, ``limit``, ``offset``."""
         mock_order_repo.list_open_by_account = AsyncMock(return_value=[])
 
@@ -1177,9 +1122,7 @@ class TestListOpenOrders:
         for field in ("orders", "total", "limit", "offset"):
             assert field in body, f"Missing field: {field}"
 
-    def test_list_open_orders_only_pending_returned(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_open_orders_only_pending_returned(self, mock_order_repo: AsyncMock) -> None:
         """Only pending/partially-filled orders are returned by the repo mock."""
         pending = _make_order_mock(
             status="pending",
@@ -1196,9 +1139,7 @@ class TestListOpenOrders:
         assert body["total"] == 1
         assert body["orders"][0]["status"] == "pending"
 
-    def test_list_open_orders_empty_returns_200(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_open_orders_empty_returns_200(self, mock_order_repo: AsyncMock) -> None:
         """No open orders → 200 with empty list."""
         mock_order_repo.list_open_by_account = AsyncMock(return_value=[])
 
@@ -1219,9 +1160,7 @@ class TestListOpenOrders:
         assert resp.status_code == 200
         assert resp.json()["limit"] == 10
 
-    def test_list_open_orders_limit_too_high_returns_422(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_list_open_orders_limit_too_high_returns_422(self, mock_order_repo: AsyncMock) -> None:
         """``limit`` > 200 violates Query constraint → HTTP 422."""
         mock_order_repo.list_open_by_account = AsyncMock(return_value=[])
 
@@ -1245,9 +1184,7 @@ class TestListOpenOrders:
 class TestCancelOrder:
     """Tests for ``DELETE /api/v1/trade/order/{order_id}``."""
 
-    def test_cancel_order_returns_200(
-        self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_order_returns_200(self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Pending order cancelled → HTTP 200."""
         order = _make_order_mock(
             order_type="limit",
@@ -1283,9 +1220,7 @@ class TestCancelOrder:
         for field in ("order_id", "status", "unlocked_amount", "cancelled_at"):
             assert field in body, f"Missing field: {field}"
 
-    def test_cancel_order_status_is_cancelled(
-        self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_order_status_is_cancelled(self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """``status`` in response is always ``'cancelled'``."""
         order = _make_order_mock(
             order_type="limit",
@@ -1301,9 +1236,7 @@ class TestCancelOrder:
 
         assert resp.json()["status"] == "cancelled"
 
-    def test_cancel_order_order_id_matches(
-        self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_order_order_id_matches(self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """``order_id`` in response matches the requested UUID."""
         order = _make_order_mock(
             order_type="limit",
@@ -1397,9 +1330,7 @@ class TestCancelOrder:
 
         assert Decimal(resp.json()["unlocked_amount"]) == Decimal("0")
 
-    def test_cancel_order_not_found_returns_404(
-        self, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_order_not_found_returns_404(self, mock_order_engine: AsyncMock) -> None:
         """Unknown order UUID → ``OrderNotFoundError`` → HTTP 404."""
         repo = AsyncMock()
         repo.get_by_id = AsyncMock(side_effect=OrderNotFoundError("Order not found."))
@@ -1410,17 +1341,13 @@ class TestCancelOrder:
         assert resp.status_code == 404
         assert resp.json()["error"]["code"] == "ORDER_NOT_FOUND"
 
-    def test_cancel_non_cancellable_order_returns_400(
-        self, mock_order_repo: AsyncMock
-    ) -> None:
+    def test_cancel_non_cancellable_order_returns_400(self, mock_order_repo: AsyncMock) -> None:
         """Engine raises ``OrderNotCancellableError`` → HTTP 400 with ``ORDER_NOT_CANCELLABLE`` code."""
         order = _make_order_mock(status="filled")
         mock_order_repo.get_by_id = AsyncMock(return_value=order)
 
         engine = AsyncMock()
-        engine.cancel_order = AsyncMock(
-            side_effect=OrderNotCancellableError("Cannot cancel a filled order.")
-        )
+        engine.cancel_order = AsyncMock(side_effect=OrderNotCancellableError("Cannot cancel a filled order."))
 
         client = _build_client(order_repo=mock_order_repo, order_engine=engine)
         resp = _authed_delete(client, f"/api/v1/trade/order/{order.id}")
@@ -1449,9 +1376,7 @@ class TestCancelOrder:
 class TestCancelAllOrders:
     """Tests for ``DELETE /api/v1/trade/orders/open``."""
 
-    def test_cancel_all_returns_200(
-        self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_all_returns_200(self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """No open orders → HTTP 200 with zero count."""
         mock_order_repo.list_open_by_account = AsyncMock(return_value=[])
         mock_order_engine.cancel_all_orders = AsyncMock(return_value=0)
@@ -1475,9 +1400,7 @@ class TestCancelAllOrders:
         assert "cancelled_count" in body
         assert "total_unlocked" in body
 
-    def test_cancel_all_zero_open_orders(
-        self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_all_zero_open_orders(self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """No open orders → ``cancelled_count=0``, ``total_unlocked='0'``."""
         mock_order_repo.list_open_by_account = AsyncMock(return_value=[])
         mock_order_engine.cancel_all_orders = AsyncMock(return_value=0)
@@ -1489,9 +1412,7 @@ class TestCancelAllOrders:
         assert body["cancelled_count"] == 0
         assert Decimal(body["total_unlocked"]) == Decimal("0")
 
-    def test_cancel_all_multiple_orders(
-        self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock
-    ) -> None:
+    def test_cancel_all_multiple_orders(self, mock_order_repo: AsyncMock, mock_order_engine: AsyncMock) -> None:
         """Three open limit orders → ``cancelled_count=3``, unlocked sums correctly."""
         qty = Decimal("0.5")
         price = Decimal("63000.00")
@@ -1554,9 +1475,7 @@ class TestTradeHistory:
 
         assert resp.status_code == 200
 
-    def test_history_response_has_required_fields(
-        self, mock_trade_repo: AsyncMock
-    ) -> None:
+    def test_history_response_has_required_fields(self, mock_trade_repo: AsyncMock) -> None:
         """Response body includes ``trades``, ``total``, ``limit``, ``offset``."""
         mock_trade_repo.list_by_account = AsyncMock(return_value=[])
 
@@ -1567,9 +1486,7 @@ class TestTradeHistory:
         for field in ("trades", "total", "limit", "offset"):
             assert field in body, f"Missing field: {field}"
 
-    def test_history_trade_item_has_required_fields(
-        self, mock_trade_repo: AsyncMock
-    ) -> None:
+    def test_history_trade_item_has_required_fields(self, mock_trade_repo: AsyncMock) -> None:
         """Each trade item includes all expected fields."""
         trade = _make_trade_mock()
         mock_trade_repo.list_by_account = AsyncMock(return_value=[trade])
@@ -1591,9 +1508,7 @@ class TestTradeHistory:
         ):
             assert field in item, f"Missing field: {field}"
 
-    def test_history_decimal_fields_are_strings(
-        self, mock_trade_repo: AsyncMock
-    ) -> None:
+    def test_history_decimal_fields_are_strings(self, mock_trade_repo: AsyncMock) -> None:
         """All Decimal fields in trade items are serialized as strings."""
         trade = _make_trade_mock()
         mock_trade_repo.list_by_account = AsyncMock(return_value=[trade])
@@ -1616,9 +1531,7 @@ class TestTradeHistory:
         assert body["trades"] == []
         assert body["total"] == 0
 
-    def test_history_total_matches_list_length(
-        self, mock_trade_repo: AsyncMock
-    ) -> None:
+    def test_history_total_matches_list_length(self, mock_trade_repo: AsyncMock) -> None:
         """``total`` equals the number of trades returned."""
         trades = [_make_trade_mock() for _ in range(4)]
         mock_trade_repo.list_by_account = AsyncMock(return_value=trades)
@@ -1681,9 +1594,7 @@ class TestTradeHistory:
 
         assert resp.json()["limit"] == 20
 
-    def test_history_limit_too_high_returns_422(
-        self, mock_trade_repo: AsyncMock
-    ) -> None:
+    def test_history_limit_too_high_returns_422(self, mock_trade_repo: AsyncMock) -> None:
         """``limit`` > 500 → HTTP 422."""
         mock_trade_repo.list_by_account = AsyncMock(return_value=[])
 
@@ -1692,9 +1603,7 @@ class TestTradeHistory:
 
         assert resp.status_code == 422
 
-    def test_history_negative_offset_returns_422(
-        self, mock_trade_repo: AsyncMock
-    ) -> None:
+    def test_history_negative_offset_returns_422(self, mock_trade_repo: AsyncMock) -> None:
         """Negative ``offset`` → HTTP 422."""
         mock_trade_repo.list_by_account = AsyncMock(return_value=[])
 

@@ -37,12 +37,12 @@ Example::
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 import logging
 import math
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,7 +141,7 @@ class Metrics:
     current_streak: int
 
     @classmethod
-    def empty(cls, period: str) -> "Metrics":
+    def empty(cls, period: str) -> Metrics:
         """Return a zeroed-out :class:`Metrics` for the given *period*.
 
         Used when there are no trades or no snapshots to compute from.
@@ -345,9 +345,7 @@ class PerformanceMetrics:
                 "metrics.load_closed_trades.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to load trade history for metrics (account '{account_id}')."
-            ) from exc
+            raise DatabaseError(f"Failed to load trade history for metrics (account '{account_id}').") from exc
 
     async def _load_snapshots(
         self,
@@ -393,9 +391,7 @@ class PerformanceMetrics:
                 "metrics.load_snapshots.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to load snapshot history for metrics (account '{account_id}')."
-            ) from exc
+            raise DatabaseError(f"Failed to load snapshot history for metrics (account '{account_id}').") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +416,7 @@ def _period_to_since(period: str) -> datetime | None:
     days = _PERIOD_DAYS.get(period)
     if days is None:
         return None
-    return datetime.now(tz=timezone.utc) - timedelta(days=days)
+    return datetime.now(tz=UTC) - timedelta(days=days)
 
 
 def _extract_pnl(trades: Sequence[Trade]) -> list[Decimal]:
@@ -709,7 +705,7 @@ def _avg_trades_per_day(total_trades: int, since: datetime | None) -> float:
     """
     if since is None or total_trades == 0:
         return 0.0
-    elapsed = datetime.now(tz=timezone.utc) - since
+    elapsed = datetime.now(tz=UTC) - since
     days = elapsed.total_seconds() / 86_400.0
     if days < 1 / 24:
         return 0.0

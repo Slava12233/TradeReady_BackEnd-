@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
 from httpx import AsyncClient
+import pytest
 
 from src.main import create_app
 
@@ -28,16 +28,17 @@ async def client():
 
 @pytest.fixture
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
-    resp = await client.post("/api/v1/auth/register", json={
-        "display_name": "lookahead_test_agent",
-    })
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "display_name": "lookahead_test_agent",
+        },
+    )
     data = resp.json()
     return {"X-API-Key": data["api_key"]}
 
 
-async def test_no_future_data_in_candles(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_no_future_data_in_candles(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     """Candles returned during backtest must all be at or before virtual_clock."""
 
     # Check data range
@@ -48,13 +49,17 @@ async def test_no_future_data_in_candles(
         pytest.skip("No historical data available")
 
     # Create backtest in the middle of available data
-    resp = await client.post("/api/v1/backtest/create", headers=auth_headers, json={
-        "start_time": data_range["earliest"],
-        "end_time": data_range["latest"],
-        "starting_balance": "10000",
-        "candle_interval": 60,
-        "strategy_label": "lookahead_test",
-    })
+    resp = await client.post(
+        "/api/v1/backtest/create",
+        headers=auth_headers,
+        json={
+            "start_time": data_range["earliest"],
+            "end_time": data_range["latest"],
+            "starting_balance": "10000",
+            "candle_interval": 60,
+            "strategy_label": "lookahead_test",
+        },
+    )
     session_id = resp.json()["session_id"]
 
     # Start
@@ -62,9 +67,7 @@ async def test_no_future_data_in_candles(
 
     # Step 5 times
     for _ in range(5):
-        step_resp = await client.post(
-            f"/api/v1/backtest/{session_id}/step", headers=auth_headers
-        )
+        step_resp = await client.post(f"/api/v1/backtest/{session_id}/step", headers=auth_headers)
 
     virtual_time_str = step_resp.json()["virtual_time"]
     virtual_time = datetime.fromisoformat(virtual_time_str)
@@ -85,9 +88,7 @@ async def test_no_future_data_in_candles(
 
     # Step forward 5 more
     for _ in range(5):
-        step_resp = await client.post(
-            f"/api/v1/backtest/{session_id}/step", headers=auth_headers
-        )
+        step_resp = await client.post(f"/api/v1/backtest/{session_id}/step", headers=auth_headers)
 
     new_virtual_time_str = step_resp.json()["virtual_time"]
     new_virtual_time = datetime.fromisoformat(new_virtual_time_str)
@@ -103,6 +104,5 @@ async def test_no_future_data_in_candles(
         for candle in candles:
             candle_time = datetime.fromisoformat(candle["bucket"])
             assert candle_time <= new_virtual_time, (
-                f"Look-ahead bias after step: candle at {candle_time} > "
-                f"virtual_clock {new_virtual_time}"
+                f"Look-ahead bias after step: candle at {candle_time} > virtual_clock {new_virtual_time}"
             )

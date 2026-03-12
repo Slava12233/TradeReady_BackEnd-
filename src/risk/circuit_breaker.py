@@ -41,13 +41,13 @@ Example::
 
 from __future__ import annotations
 
-import structlog
-from datetime import datetime, timedelta, timezone
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import AsyncIterator
 from uuid import UUID
 
 import redis.asyncio as aioredis
+import structlog
 
 from src.utils.exceptions import CacheError
 
@@ -89,7 +89,7 @@ def _seconds_until_midnight_utc() -> int:
     Returns:
         Seconds until midnight UTC (always ≥ 1).
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     next_midnight = midnight + timedelta(days=1)
     delta = next_midnight - now
@@ -178,9 +178,7 @@ class CircuitBreaker:
                 daily_loss_limit_pct=Decimal("20"),
             )
         """
-        loss_threshold = (starting_balance * daily_loss_limit_pct / _HUNDRED).quantize(
-            _QUANTIZE
-        )
+        loss_threshold = (starting_balance * daily_loss_limit_pct / _HUNDRED).quantize(_QUANTIZE)
         key = _cb_key(account_id)
         ttl = _seconds_until_midnight_utc()
 
@@ -297,9 +295,7 @@ class CircuitBreaker:
                 account_id=str(account_id),
                 raw_value=str(value),
             )
-            raise CacheError(
-                f"Failed to parse daily PnL value from Redis: {value!r}"
-            ) from exc
+            raise CacheError(f"Failed to parse daily PnL value from Redis: {value!r}") from exc
 
     async def reset_all(self) -> None:
         """Delete all ``circuit_breaker:*`` keys, resetting every account.
@@ -345,9 +341,7 @@ class CircuitBreaker:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _trip(
-        self, account_id: UUID, daily_pnl: Decimal, loss_threshold: Decimal
-    ) -> None:
+    async def _trip(self, account_id: UUID, daily_pnl: Decimal, loss_threshold: Decimal) -> None:
         """Mark the breaker as tripped in Redis.
 
         Args:
@@ -356,7 +350,7 @@ class CircuitBreaker:
             loss_threshold: The absolute loss threshold that was breached.
         """
         key = _cb_key(account_id)
-        tripped_at = datetime.now(tz=timezone.utc).isoformat()
+        tripped_at = datetime.now(tz=UTC).isoformat()
         ttl = _seconds_until_midnight_utc()
 
         try:
@@ -401,9 +395,7 @@ class CircuitBreaker:
         cursor: int = 0
         while True:
             try:
-                cursor, keys = await self._redis.scan(
-                    cursor=cursor, match=pattern, count=1000
-                )
+                cursor, keys = await self._redis.scan(cursor=cursor, match=pattern, count=1000)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "circuit_breaker.scan_keys.redis_error",

@@ -17,13 +17,13 @@ Run with::
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 from src.accounts.service import AccountCredentials
 from src.config import Settings
@@ -34,7 +34,6 @@ from src.utils.exceptions import (
     AuthenticationError,
     DuplicateAccountError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test settings — no real infra
@@ -279,9 +278,7 @@ class TestRegister:
 
     def test_register_duplicate_account_returns_409(self, mock_svc: AsyncMock) -> None:
         """Service raises DuplicateAccountError → HTTP 409."""
-        mock_svc.register = AsyncMock(
-            side_effect=DuplicateAccountError("Email already registered.")
-        )
+        mock_svc.register = AsyncMock(side_effect=DuplicateAccountError("Email already registered."))
 
         client = _build_client(mock_svc)
         resp = client.post(
@@ -421,9 +418,7 @@ class TestLogin:
 
         AuthenticationError has error code ``INVALID_API_KEY``.
         """
-        mock_svc.authenticate = AsyncMock(
-            side_effect=AuthenticationError("API key is invalid.")
-        )
+        mock_svc.authenticate = AsyncMock(side_effect=AuthenticationError("API key is invalid."))
 
         client = _build_client(mock_svc)
         resp = client.post(
@@ -455,9 +450,7 @@ class TestLogin:
 
     def test_login_suspended_account_returns_403(self, mock_svc: AsyncMock) -> None:
         """Suspended account → HTTP 403."""
-        mock_svc.authenticate = AsyncMock(
-            side_effect=AccountSuspendedError("Account is suspended.")
-        )
+        mock_svc.authenticate = AsyncMock(side_effect=AccountSuspendedError("Account is suspended."))
 
         client = _build_client(mock_svc)
         resp = client.post(
@@ -471,9 +464,7 @@ class TestLogin:
 
     def test_login_account_not_found_returns_404(self, mock_svc: AsyncMock) -> None:
         """Account not found by api_key → HTTP 404."""
-        mock_svc.authenticate = AsyncMock(
-            side_effect=AccountNotFoundError("Account not found.")
-        )
+        mock_svc.authenticate = AsyncMock(side_effect=AccountNotFoundError("Account not found."))
 
         client = _build_client(mock_svc)
         resp = client.post(
@@ -548,7 +539,7 @@ class TestLogin:
         assert resp.status_code == 200
         expires_at_str = resp.json()["expires_at"]
         expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-        assert expires_at > datetime.now(tz=timezone.utc)
+        assert expires_at > datetime.now(tz=UTC)
 
 
 # ===========================================================================
@@ -640,7 +631,7 @@ class TestJwtBearerAuth:
         whose ``AccountRepository`` raises ``AccountNotFoundError``.
         """
         from src.database.repositories.account_repo import AccountRepository
-        from src.utils.exceptions import AccountNotFoundError as _ANF
+        from src.utils.exceptions import AccountNotFoundError as _ANF  # noqa: N814
 
         mock_repo = AsyncMock(spec=AccountRepository)
         mock_repo.get_by_api_key = AsyncMock(side_effect=_ANF("not found"))

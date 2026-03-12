@@ -15,14 +15,14 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
-from datetime import datetime, timezone
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import PortfolioSnapshot
 from src.utils.exceptions import DatabaseError
@@ -112,9 +112,7 @@ class SnapshotRepository:
                     "account_id": str(snapshot.account_id),
                     "snapshot_type": snapshot.snapshot_type,
                     "total_equity": str(snapshot.total_equity),
-                    "created_at": snapshot.created_at.isoformat()
-                    if snapshot.created_at
-                    else None,
+                    "created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
                 },
             )
             return snapshot
@@ -128,9 +126,7 @@ class SnapshotRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Integrity error while creating portfolio snapshot: {exc}"
-            ) from exc
+            raise DatabaseError(f"Integrity error while creating portfolio snapshot: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception(
@@ -222,9 +218,7 @@ class SnapshotRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to fetch snapshot history for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch snapshot history for account '{account_id}'.") from exc
 
     async def get_latest(
         self,
@@ -275,9 +269,7 @@ class SnapshotRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to fetch latest snapshot for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch latest snapshot for account '{account_id}'.") from exc
 
     async def list_by_account(
         self,
@@ -323,9 +315,7 @@ class SnapshotRepository:
                 "snapshot.list_by_account.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to list snapshots for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to list snapshots for account '{account_id}'.") from exc
 
     async def delete_before(
         self,
@@ -390,6 +380,4 @@ class SnapshotRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to prune snapshots for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to prune snapshots for account '{account_id}'.") from exc

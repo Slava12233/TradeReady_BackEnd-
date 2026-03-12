@@ -44,10 +44,10 @@ Example::
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -59,7 +59,6 @@ from src.database.models import PortfolioSnapshot
 from src.database.repositories.snapshot_repo import SnapshotRepository
 from src.portfolio.metrics import PerformanceMetrics
 from src.portfolio.tracker import PortfolioTracker
-from src.utils.exceptions import AccountNotFoundError, CacheError, DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -383,7 +382,7 @@ def _serialise_positions(
     return result
 
 
-def _serialise_metrics(m: Any) -> dict[str, Any]:
+def _serialise_metrics(m: Any) -> dict[str, Any]:  # noqa: ANN401
     """Convert a :class:`~src.portfolio.metrics.Metrics` dataclass to a
     JSON-serialisable dict.
 

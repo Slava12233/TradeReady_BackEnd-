@@ -54,10 +54,10 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import logging
-import uuid
 from dataclasses import dataclass, field
+import logging
 from typing import Any
+import uuid
 from uuid import UUID
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -268,14 +268,14 @@ class ConnectionManager:
             conn.heartbeat_task.cancel()
             try:
                 await conn.heartbeat_task
-            except (asyncio.CancelledError, Exception):
+            except (asyncio.CancelledError, Exception):  # noqa: S110
                 pass
 
         # Close the WebSocket if still open
         if conn.websocket.client_state == WebSocketState.CONNECTED:
             try:
                 await conn.websocket.close(code=_WS_CLOSE_NORMAL)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
 
         logger.info(
@@ -350,11 +350,7 @@ class ConnectionManager:
             The number of connections the message was successfully sent to.
         """
         async with self._lock:
-            targets = [
-                conn_id
-                for conn_id, conn in self._connections.items()
-                if channel in conn.subscriptions
-            ]
+            targets = [conn_id for conn_id, conn in self._connections.items() if channel in conn.subscriptions]
 
         sent = 0
         for connection_id in targets:
@@ -573,7 +569,7 @@ class ConnectionManager:
                         asyncio.shield(conn._pong_event.wait()),
                         timeout=_PONG_TIMEOUT,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         "ws.heartbeat_timeout",
                         extra={

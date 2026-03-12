@@ -25,9 +25,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from src.accounts.auth import create_jwt, verify_api_secret
 from src.api.schemas.auth import (

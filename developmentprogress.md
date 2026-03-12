@@ -1,6 +1,6 @@
 # Development Progress — AI Agent Crypto Trading Platform
 
-> **Last Updated:** 2026-02-26
+> **Last Updated:** 2026-03-12
 > **Current Phase:** Phase 4 — Agent Connectivity
 > **Overall Progress:** 2 / 5 phases complete (Phase 4 in progress)
 
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | Phase 1: Foundation | Complete | 100% | Weeks 1–3 | All services live, ticks flowing, 441 pairs seeded, /health ok, stability test pending user run |
 | Phase 2: Trading Engine | Complete | 100% | Weeks 4–6 | All components done: DB schema, repos, accounts, order engine, risk, portfolio, full test suite |
-| Phase 3: API Layer | In Progress | 85% | Weeks 7–9 | Package scaffold + all 5 schemas + 3 middleware + all 5 REST routes + WebSocket + Celery tasks + utilities + rate-limiting tests done |
+| Phase 3: API Layer | In Progress | 90% | Weeks 7–9 | Package scaffold + all 5 schemas + 3 middleware + all 5 REST routes + WebSocket + Celery tasks + utilities + rate-limiting tests done; test coverage gap analysis complete (169 tests across 14 files) |
 | Phase 4: Agent Connectivity | Not Started | 0% | Weeks 10–11 | — |
 | Phase 5: Polish & Launch | Not Started | 0% | Weeks 12–14 | — |
 
@@ -266,6 +266,7 @@
 || 2026-02-26 | Phase 4 Step 18 complete: docs/framework_guides/agent_zero.md — Agent Zero integration guide; covers skill.md drop-in (copy/symlink/hosted-URL options), credential injection via system_note + system prompt template variable substitution, one-shot / multi-step / autonomous-loop usage prompts, 8 Python Tool subclasses (GetPrice/GetBalance/PlaceOrder/GetPortfolio/GetPerformance/GetPositions/CancelOrder/ResetAccount) using the SDK with typed error handling per typed exception class, tool registration snippet for initialize.py, WebSocket background thread price feed with GetStreamedPrice tool, system prompt additions for rules and error handling, environment variable table, error code handling table, troubleshooting section | Phase 4 |
 
 || 2026-02-26 | Phase 4 Step 20 complete: tests/integration/test_agent_connectivity.py — 24 integration tests: TestConcurrentAsyncAgents (3 tests: 10 concurrent get_price calls, JWT isolation across 5 agents, 10 independent results from 5 symbols); TestMcpToolDiscovery (6 tests: list_tools returns 12, all expected names present, _TOOL_DEFINITIONS count, names match, non-empty descriptions, object input schemas); TestMcpToolExecution (8 tests: get_price TextContent, price field in JSON, call_tool handler routing, get_all_prices, get_balance, place_order, unknown tool error, all 12 tools callable); TestSkillMdValidation (7 tests: file exists, non-empty, declares /api/v1 base, no bad absolute paths, all 9 core MCP endpoint fragments present, auth mentioned, error handling mentioned); respx 0.22.0 + mcp package installed; 24/24 pass | Phase 4 |
+| 2026-03-12 | Test coverage gap analysis complete: created 10 new unit test files and expanded 3 existing ones (14 files total, 169 tests all passing, zero ruff errors). P0 files: test_exceptions.py (13), test_config.py (8), test_auth.py (21), test_order_validators.py (15), test_circuit_breaker.py (12), test_account_service.py (12). P1 files: test_order_matching.py (13), test_portfolio_tracker.py (8), test_redis_client.py (8), test_health.py (10). Expanded: test_backtest_engine.py (+8, now 13; fixed MagicMock→AsyncMock for preload_range), test_backtest_sandbox.py (+6, now 20), test_backtest_results.py (+5, now 16). New: test_snapshot_service.py (4). Phase 3 progress updated to 90%. | Phase 3 |
 
 ---
 

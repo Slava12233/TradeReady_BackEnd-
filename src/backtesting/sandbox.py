@@ -7,13 +7,13 @@ are made — all state lives in dicts and lists, then exported at completion.
 
 from __future__ import annotations
 
-import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+import uuid
 
-from src.utils.exceptions import InsufficientBalanceError, OrderNotFoundError
+from src.utils.exceptions import InsufficientBalanceError
 
 # ── Constants (match live order engine) ──────────────────────────────────────
 
@@ -196,17 +196,20 @@ class BacktestSandbox:
 
         if ref_price is None:
             order = SandboxOrder(
-                id=order_id, symbol=symbol, side=side, type=order_type,
-                quantity=quantity, price=price, status="rejected",
+                id=order_id,
+                symbol=symbol,
+                side=side,
+                type=order_type,
+                quantity=quantity,
+                price=price,
+                status="rejected",
                 created_at=virtual_time,
             )
             self._orders.append(order)
             return OrderResult(order_id=order_id, status="rejected")
 
         if order_type == "market":
-            return self._execute_market_order(
-                order_id, symbol, side, order_type, quantity, ref_price, virtual_time
-            )
+            return self._execute_market_order(order_id, symbol, side, order_type, quantity, ref_price, virtual_time)
 
         # Non-market: validate balance and queue
         self._validate_balance_for_order(symbol, side, quantity, ref_price)
@@ -217,8 +220,13 @@ class BacktestSandbox:
             self._lock_balance(symbol.replace("USDT", ""), quantity)
 
         order = SandboxOrder(
-            id=order_id, symbol=symbol, side=side, type=order_type,
-            quantity=quantity, price=price, status="pending",
+            id=order_id,
+            symbol=symbol,
+            side=side,
+            type=order_type,
+            quantity=quantity,
+            price=price,
+            status="pending",
             created_at=virtual_time,
         )
         self._orders.append(order)
@@ -247,16 +255,19 @@ class BacktestSandbox:
         for i, o in enumerate(self._orders):
             if o.id == order_id:
                 self._orders[i] = SandboxOrder(
-                    id=o.id, symbol=o.symbol, side=o.side, type=o.type,
-                    quantity=o.quantity, price=o.price, status="cancelled",
+                    id=o.id,
+                    symbol=o.symbol,
+                    side=o.side,
+                    type=o.type,
+                    quantity=o.quantity,
+                    price=o.price,
+                    status="cancelled",
                     created_at=o.created_at,
                 )
                 break
         return True
 
-    def check_pending_orders(
-        self, current_prices: dict[str, Decimal], virtual_time: datetime
-    ) -> list[OrderResult]:
+    def check_pending_orders(self, current_prices: dict[str, Decimal], virtual_time: datetime) -> list[OrderResult]:
         """Check all pending orders against current prices and fill triggered ones.
 
         Returns:
@@ -297,8 +308,13 @@ class BacktestSandbox:
                     self._unlock_balance(base_asset, order.quantity)
 
                 result = self._execute_market_order(
-                    order.id, order.symbol, order.side, order.type,
-                    order.quantity, ref_price, virtual_time,
+                    order.id,
+                    order.symbol,
+                    order.side,
+                    order.type,
+                    order.quantity,
+                    ref_price,
+                    virtual_time,
                 )
                 filled.append(result)
                 to_remove.append(order_id)
@@ -335,14 +351,16 @@ class BacktestSandbox:
             unreal = market_value - pos.total_cost
             position_value += market_value
             unrealized_pnl += unreal
-            positions_list.append({
-                "symbol": pos.symbol,
-                "quantity": str(pos.quantity),
-                "avg_entry_price": str(pos.avg_entry_price),
-                "current_price": str(price),
-                "market_value": str(market_value),
-                "unrealized_pnl": str(unreal),
-            })
+            positions_list.append(
+                {
+                    "symbol": pos.symbol,
+                    "quantity": str(pos.quantity),
+                    "avg_entry_price": str(pos.avg_entry_price),
+                    "current_price": str(price),
+                    "market_value": str(market_value),
+                    "unrealized_pnl": str(unreal),
+                }
+            )
 
         total_equity = available_cash + position_value
 
@@ -365,9 +383,7 @@ class BacktestSandbox:
         """Return all executed trades."""
         return list(self._trades)
 
-    def capture_snapshot(
-        self, current_prices: dict[str, Decimal], virtual_time: datetime
-    ) -> SandboxSnapshot:
+    def capture_snapshot(self, current_prices: dict[str, Decimal], virtual_time: datetime) -> SandboxSnapshot:
         """Record an equity snapshot at the current virtual time."""
         portfolio = self.get_portfolio(current_prices)
         snapshot = SandboxSnapshot(
@@ -382,9 +398,7 @@ class BacktestSandbox:
         self._snapshots.append(snapshot)
         return snapshot
 
-    def close_all_positions(
-        self, current_prices: dict[str, Decimal], virtual_time: datetime
-    ) -> list[SandboxTrade]:
+    def close_all_positions(self, current_prices: dict[str, Decimal], virtual_time: datetime) -> list[SandboxTrade]:
         """Close all open positions at current prices.
 
         Returns:
@@ -398,8 +412,13 @@ class BacktestSandbox:
             if ref_price is None:
                 continue
             result = self._execute_market_order(
-                str(uuid.uuid4()), pos.symbol, "sell", "market",
-                pos.quantity, ref_price, virtual_time,
+                str(uuid.uuid4()),
+                pos.symbol,
+                "sell",
+                "market",
+                pos.quantity,
+                ref_price,
+                virtual_time,
             )
             if result.status == "filled":
                 closing_trades.append(self._trades[-1])
@@ -410,9 +429,13 @@ class BacktestSandbox:
         return {
             "trades": [
                 {
-                    "symbol": t.symbol, "side": t.side, "type": t.type,
-                    "quantity": str(t.quantity), "price": str(t.price),
-                    "quote_amount": str(t.quote_amount), "fee": str(t.fee),
+                    "symbol": t.symbol,
+                    "side": t.side,
+                    "type": t.type,
+                    "quantity": str(t.quantity),
+                    "price": str(t.price),
+                    "quote_amount": str(t.quote_amount),
+                    "fee": str(t.fee),
                     "slippage_pct": str(t.slippage_pct),
                     "realized_pnl": str(t.realized_pnl) if t.realized_pnl is not None else None,
                     "simulated_at": t.simulated_at.isoformat(),
@@ -492,17 +515,13 @@ class BacktestSandbox:
             total_cost = quote_amount + fee
             usdt = self._balances.get("USDT", SandboxBalance(asset="USDT"))
             if usdt.available < total_cost:
-                raise InsufficientBalanceError(
-                    asset="USDT", required=total_cost, available=usdt.available
-                )
+                raise InsufficientBalanceError(asset="USDT", required=total_cost, available=usdt.available)
         else:
             pos = self._positions.get(symbol)
             base_bal = self._balances.get(base_asset, SandboxBalance(asset=base_asset))
             available_qty = base_bal.available
             if pos and pos.quantity < quantity and available_qty < quantity:
-                raise InsufficientBalanceError(
-                    asset=base_asset, required=quantity, available=available_qty
-                )
+                raise InsufficientBalanceError(asset=base_asset, required=quantity, available=available_qty)
 
         # Execute balance changes
         realized_pnl: Decimal | None = None
@@ -522,9 +541,13 @@ class BacktestSandbox:
         # Record trade
         trade = SandboxTrade(
             id=str(uuid.uuid4()),
-            symbol=symbol, side=side, type=order_type,
-            quantity=quantity, price=exec_price,
-            quote_amount=quote_amount, fee=fee,
+            symbol=symbol,
+            side=side,
+            type=order_type,
+            quantity=quantity,
+            price=exec_price,
+            quote_amount=quote_amount,
+            fee=fee,
             slippage_pct=slippage_pct,
             realized_pnl=realized_pnl,
             simulated_at=virtual_time,
@@ -533,11 +556,19 @@ class BacktestSandbox:
 
         # Update order record
         filled_order = SandboxOrder(
-            id=order_id, symbol=symbol, side=side, type=order_type,
-            quantity=quantity, price=None, status="filled",
-            created_at=virtual_time, filled_at=virtual_time,
-            executed_price=exec_price, executed_qty=quantity,
-            slippage_pct=slippage_pct, fee=fee,
+            id=order_id,
+            symbol=symbol,
+            side=side,
+            type=order_type,
+            quantity=quantity,
+            price=None,
+            status="filled",
+            created_at=virtual_time,
+            filled_at=virtual_time,
+            executed_price=exec_price,
+            executed_qty=quantity,
+            slippage_pct=slippage_pct,
+            fee=fee,
         )
         # Replace existing order if present, or append new
         replaced = False
@@ -550,30 +581,27 @@ class BacktestSandbox:
             self._orders.append(filled_order)
 
         return OrderResult(
-            order_id=order_id, status="filled",
-            executed_price=exec_price, executed_qty=quantity,
-            slippage_pct=slippage_pct, fee=fee,
+            order_id=order_id,
+            status="filled",
+            executed_price=exec_price,
+            executed_qty=quantity,
+            slippage_pct=slippage_pct,
+            fee=fee,
             realized_pnl=realized_pnl,
         )
 
-    def _validate_balance_for_order(
-        self, symbol: str, side: str, quantity: Decimal, ref_price: Decimal
-    ) -> None:
+    def _validate_balance_for_order(self, symbol: str, side: str, quantity: Decimal, ref_price: Decimal) -> None:
         """Raise if insufficient balance for the order."""
         if side == "buy":
             cost = quantity * ref_price
             usdt = self._balances.get("USDT", SandboxBalance(asset="USDT"))
             if usdt.available < cost:
-                raise InsufficientBalanceError(
-                    asset="USDT", required=cost, available=usdt.available
-                )
+                raise InsufficientBalanceError(asset="USDT", required=cost, available=usdt.available)
         else:
             base_asset = symbol.replace("USDT", "")
             bal = self._balances.get(base_asset, SandboxBalance(asset=base_asset))
             if bal.available < quantity:
-                raise InsufficientBalanceError(
-                    asset=base_asset, required=quantity, available=bal.available
-                )
+                raise InsufficientBalanceError(asset=base_asset, required=quantity, available=bal.available)
 
     def _credit_balance(self, asset: str, amount: Decimal) -> None:
         if asset not in self._balances:
@@ -599,9 +627,7 @@ class BacktestSandbox:
         bal.locked -= amount
         bal.available += amount
 
-    def _update_position_buy(
-        self, symbol: str, quantity: Decimal, price: Decimal
-    ) -> None:
+    def _update_position_buy(self, symbol: str, quantity: Decimal, price: Decimal) -> None:
         """Add to or create a long position."""
         pos = self._positions.get(symbol)
         if pos is None or pos.quantity <= 0:
@@ -616,13 +642,9 @@ class BacktestSandbox:
             new_cost = pos.total_cost + quantity * price
             pos.quantity = new_qty
             pos.total_cost = new_cost
-            pos.avg_entry_price = (new_cost / new_qty).quantize(
-                _QUANT8, rounding=ROUND_HALF_UP
-            )
+            pos.avg_entry_price = (new_cost / new_qty).quantize(_QUANT8, rounding=ROUND_HALF_UP)
 
-    def _update_position_sell(
-        self, symbol: str, quantity: Decimal, price: Decimal
-    ) -> Decimal | None:
+    def _update_position_sell(self, symbol: str, quantity: Decimal, price: Decimal) -> Decimal | None:
         """Reduce a position and compute realized PnL."""
         pos = self._positions.get(symbol)
         if pos is None or pos.quantity <= 0:

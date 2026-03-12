@@ -14,9 +14,8 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -28,8 +27,7 @@ from src.database.repositories.trade_repo import TradeRepository
 from src.order_engine.engine import OrderEngine, OrderResult
 from src.order_engine.slippage import SlippageCalculator, SlippageResult
 from src.order_engine.validators import OrderRequest, OrderValidator
-from src.utils.exceptions import InsufficientBalanceError, OrderNotFoundError
-
+from src.utils.exceptions import InsufficientBalanceError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -135,9 +133,16 @@ def _build_engine(
     if pair is None:
         pair = _make_trading_pair()
 
+    # Session mock — _upsert_position calls self._session.execute(stmt) then
+    # result.scalar_one_or_none().  We need execute() to return an object whose
+    # scalar_one_or_none() returns None (no existing position).
     session = AsyncMock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
+    _exec_result = MagicMock()
+    _exec_result.scalar_one_or_none.return_value = None
+    session.execute = AsyncMock(return_value=_exec_result)
+    session.add = MagicMock()
 
     price_cache = AsyncMock()
     price_cache.get_price = AsyncMock(return_value=Decimal(price))
@@ -161,7 +166,9 @@ def _build_engine(
     order_repo.get_by_id = AsyncMock(return_value=created_order)
     order_repo.list_open_by_account = AsyncMock(return_value=[])
     order_repo.update_status = AsyncMock()
-    order_repo.cancel = AsyncMock()
+    # cancel() must return the order object (not a bare AsyncMock) so that
+    # _release_locked_funds can access .price, .quantity, .side as real values.
+    order_repo.cancel = AsyncMock(return_value=created_order)
     order_repo.count_open_by_account = AsyncMock(return_value=0)
 
     # Trade repo
@@ -337,9 +344,7 @@ async def test_take_profit_queued_as_pending():
 @pytest.mark.asyncio
 async def test_cancel_order_returns_true():
     """cancel_order() returns True on success."""
-    pending_order = _make_db_order(
-        side="buy", type_="limit", status="pending", price="59000"
-    )
+    pending_order = _make_db_order(side="buy", type_="limit", status="pending", price="59000")
     engine, mocks = _build_engine(db_order=pending_order)
 
     result = await engine.cancel_order(mocks["account_id"], pending_order.id)
@@ -350,9 +355,7 @@ async def test_cancel_order_returns_true():
 @pytest.mark.asyncio
 async def test_cancel_order_unlocks_funds():
     """cancel_order() calls balance_mgr.unlock for buy limit orders."""
-    pending_order = _make_db_order(
-        side="buy", type_="limit", status="pending", price="59000"
-    )
+    pending_order = _make_db_order(side="buy", type_="limit", status="pending", price="59000")
     engine, mocks = _build_engine(db_order=pending_order)
 
     await engine.cancel_order(mocks["account_id"], pending_order.id)
@@ -369,6 +372,9 @@ async def test_cancel_all_orders_returns_count():
     ]
     engine, mocks = _build_engine()
     mocks["order_repo"].list_open_by_account = AsyncMock(return_value=orders)
+    # cancel() must return the order being cancelled so _release_locked_funds
+    # can access .price/.quantity/.side as real values (not bare AsyncMock).
+    mocks["order_repo"].cancel = AsyncMock(side_effect=orders)
 
     count = await engine.cancel_all_orders(mocks["account_id"])
 
@@ -384,9 +390,7 @@ async def test_cancel_all_orders_returns_count():
 @pytest.mark.asyncio
 async def test_execute_pending_order_returns_filled():
     """execute_pending_order() transitions status to filled."""
-    pending_order = _make_db_order(
-        side="buy", type_="limit", status="pending", price="59000"
-    )
+    pending_order = _make_db_order(side="buy", type_="limit", status="pending", price="59000")
     engine, mocks = _build_engine(db_order=pending_order)
 
     result = await engine.execute_pending_order(pending_order.id, Decimal("59000"))
@@ -398,9 +402,7 @@ async def test_execute_pending_order_returns_filled():
 @pytest.mark.asyncio
 async def test_execute_pending_order_creates_trade_record():
     """execute_pending_order() always creates a Trade row."""
-    pending_order = _make_db_order(
-        side="buy", type_="limit", status="pending", price="59000"
-    )
+    pending_order = _make_db_order(side="buy", type_="limit", status="pending", price="59000")
     engine, mocks = _build_engine(db_order=pending_order)
 
     await engine.execute_pending_order(pending_order.id, Decimal("59000"))

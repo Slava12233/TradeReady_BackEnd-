@@ -28,12 +28,12 @@ Example::
 
 from __future__ import annotations
 
-import structlog
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import TradingPair
 from src.utils.exceptions import (
@@ -55,14 +55,10 @@ _PLATFORM_MIN_QTY: Decimal = Decimal("1E-8")
 
 VALID_SIDES: frozenset[str] = frozenset({"buy", "sell"})
 
-VALID_ORDER_TYPES: frozenset[str] = frozenset(
-    {"market", "limit", "stop_loss", "take_profit"}
-)
+VALID_ORDER_TYPES: frozenset[str] = frozenset({"market", "limit", "stop_loss", "take_profit"})
 
 # Order types that require an explicit price field.
-PRICE_REQUIRED_TYPES: frozenset[str] = frozenset(
-    {"limit", "stop_loss", "take_profit"}
-)
+PRICE_REQUIRED_TYPES: frozenset[str] = frozenset({"limit", "stop_loss", "take_profit"})
 
 
 # ---------------------------------------------------------------------------
@@ -231,8 +227,7 @@ class OrderValidator:
             )
         if order.price <= Decimal("0"):
             raise InputValidationError(
-                f"'price' must be a positive value for '{order.type}' orders; "
-                f"got {order.price}.",
+                f"'price' must be a positive value for '{order.type}' orders; got {order.price}.",
                 field="price",
             )
 
@@ -253,8 +248,7 @@ class OrderValidator:
         """
         if pair.min_qty is not None and order.quantity < pair.min_qty:
             raise InvalidQuantityError(
-                f"Quantity {order.quantity} is below the minimum {pair.min_qty} "
-                f"for {order.symbol}.",
+                f"Quantity {order.quantity} is below the minimum {pair.min_qty} for {order.symbol}.",
                 quantity=order.quantity,
                 min_qty=pair.min_qty,
                 max_qty=pair.max_qty,
@@ -268,8 +262,7 @@ class OrderValidator:
                 notional = order.quantity * reference_price
                 if notional < pair.min_notional:
                     raise InvalidQuantityError(
-                        f"Order notional value {notional} is below the minimum "
-                        f"{pair.min_notional} for {order.symbol}.",
+                        f"Order notional value {notional} is below the minimum {pair.min_notional} for {order.symbol}.",
                         quantity=order.quantity,
                         min_qty=pair.min_qty,
                     )
@@ -283,16 +276,10 @@ class OrderValidator:
             DatabaseError: If the database query fails.
         """
         try:
-            result = await self._session.execute(
-                select(TradingPair).where(TradingPair.symbol == order.symbol)
-            )
+            result = await self._session.execute(select(TradingPair).where(TradingPair.symbol == order.symbol))
         except SQLAlchemyError as exc:
-            logger.exception(
-                "Database error while validating symbol %r", order.symbol
-            )
-            raise DatabaseError(
-                f"Failed to look up trading pair '{order.symbol}'."
-            ) from exc
+            logger.exception("Database error while validating symbol %r", order.symbol)
+            raise DatabaseError(f"Failed to look up trading pair '{order.symbol}'.") from exc
 
         pair: TradingPair | None = result.scalar_one_or_none()
 

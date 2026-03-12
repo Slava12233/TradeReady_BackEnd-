@@ -4,7 +4,7 @@ Uses a mocked AsyncSession to verify query construction and
 look-ahead bias prevention.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,7 +15,13 @@ from src.backtesting.data_replayer import DataReplayer
 
 @pytest.fixture
 def mock_session() -> AsyncMock:
-    return AsyncMock()
+    session = AsyncMock()
+    # execute() is awaited (AsyncMock), but the Result it returns uses sync
+    # methods (.fetchall(), .fetchone(), .scalar(), .scalars()), so we need
+    # a MagicMock as the return value — not another AsyncMock.
+    mock_result = MagicMock()
+    session.execute = AsyncMock(return_value=mock_result)
+    return session
 
 
 @pytest.fixture
@@ -25,12 +31,10 @@ def replayer(mock_session: AsyncMock) -> DataReplayer:
 
 @pytest.fixture
 def timestamp() -> datetime:
-    return datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+    return datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
 
 
-async def test_load_prices_at_timestamp(
-    replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime
-) -> None:
+async def test_load_prices_at_timestamp(replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime) -> None:
     """Verify load_prices returns symbol → price mapping."""
     row1 = MagicMock()
     row1.symbol = "BTCUSDT"
@@ -58,7 +62,7 @@ async def test_candle_range_only_returns_past_data(
 ) -> None:
     """Verify candles query uses bucket <= end_time."""
     row = MagicMock()
-    row.bucket = datetime(2026, 1, 15, 11, 59, tzinfo=timezone.utc)
+    row.bucket = datetime(2026, 1, 15, 11, 59, tzinfo=UTC)
     row.symbol = "BTCUSDT"
     row.open = 49500.0
     row.high = 50100.0
@@ -76,9 +80,7 @@ async def test_candle_range_only_returns_past_data(
     assert candles[0].close == Decimal("50000.0")
 
 
-async def test_no_future_data_leakage(
-    replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime
-) -> None:
+async def test_no_future_data_leakage(replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime) -> None:
     """Critical: verify the WHERE clause prevents look-ahead bias.
 
     The SQL query text must contain 'bucket <= :end_time' or equivalent.
@@ -94,9 +96,7 @@ async def test_no_future_data_leakage(
     assert params.get("end_time") == timestamp or params.get("end_time") is not None
 
 
-async def test_ticker_24h_calculation(
-    replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime
-) -> None:
+async def test_ticker_24h_calculation(replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime) -> None:
     row = MagicMock()
     row.open = 49000.0
     row.high = 51000.0
@@ -116,9 +116,7 @@ async def test_ticker_24h_calculation(
     assert ticker.volume == Decimal("1000.0")
 
 
-async def test_handles_pairs_without_data(
-    replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime
-) -> None:
+async def test_handles_pairs_without_data(replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime) -> None:
     """Should return None when no ticker data exists."""
     row = MagicMock()
     row.open = None
@@ -129,12 +127,10 @@ async def test_handles_pairs_without_data(
     assert ticker is None
 
 
-async def test_get_data_range(
-    replayer: DataReplayer, mock_session: AsyncMock
-) -> None:
+async def test_get_data_range(replayer: DataReplayer, mock_session: AsyncMock) -> None:
     row = MagicMock()
-    row.earliest = datetime(2025, 6, 1, tzinfo=timezone.utc)
-    row.latest = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    row.earliest = datetime(2025, 6, 1, tzinfo=UTC)
+    row.latest = datetime(2026, 3, 1, tzinfo=UTC)
     row.total_pairs = 441
 
     mock_session.execute.return_value.fetchone.return_value = row
@@ -145,9 +141,7 @@ async def test_get_data_range(
     assert data_range.total_pairs == 441
 
 
-async def test_get_data_range_empty(
-    replayer: DataReplayer, mock_session: AsyncMock
-) -> None:
+async def test_get_data_range_empty(replayer: DataReplayer, mock_session: AsyncMock) -> None:
     row = MagicMock()
     row.earliest = None
 
@@ -157,9 +151,7 @@ async def test_get_data_range_empty(
     assert data_range is None
 
 
-async def test_get_available_pairs(
-    replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime
-) -> None:
+async def test_get_available_pairs(replayer: DataReplayer, mock_session: AsyncMock, timestamp: datetime) -> None:
     row1 = MagicMock()
     row1.symbol = "BTCUSDT"
     row2 = MagicMock()

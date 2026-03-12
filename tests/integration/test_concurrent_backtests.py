@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 from httpx import AsyncClient
+import pytest
 
 from src.main import create_app
 
@@ -27,16 +27,17 @@ async def client():
 
 @pytest.fixture
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
-    resp = await client.post("/api/v1/auth/register", json={
-        "display_name": "concurrent_test_agent",
-    })
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "display_name": "concurrent_test_agent",
+        },
+    )
     data = resp.json()
     return {"X-API-Key": data["api_key"]}
 
 
-async def test_concurrent_backtests_isolated(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_concurrent_backtests_isolated(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     """5 concurrent backtests should produce independent results."""
 
     resp = await client.get("/api/v1/market/data-range", headers=auth_headers)
@@ -47,13 +48,17 @@ async def test_concurrent_backtests_isolated(
 
     session_ids = []
     for i in range(5):
-        resp = await client.post("/api/v1/backtest/create", headers=auth_headers, json={
-            "start_time": data_range["earliest"],
-            "end_time": data_range["latest"],
-            "starting_balance": str(10000 + i * 1000),  # Different balances
-            "candle_interval": 60,
-            "strategy_label": f"concurrent_v{i}",
-        })
+        resp = await client.post(
+            "/api/v1/backtest/create",
+            headers=auth_headers,
+            json={
+                "start_time": data_range["earliest"],
+                "end_time": data_range["latest"],
+                "starting_balance": str(10000 + i * 1000),  # Different balances
+                "candle_interval": 60,
+                "strategy_label": f"concurrent_v{i}",
+            },
+        )
         assert resp.status_code == 200
         session_ids.append(resp.json()["session_id"])
 
@@ -66,7 +71,8 @@ async def test_concurrent_backtests_isolated(
     async def step_session(sid: str) -> dict:
         resp = await client.post(
             f"/api/v1/backtest/{sid}/step/batch",
-            headers=auth_headers, json={"steps": 20},
+            headers=auth_headers,
+            json={"steps": 20},
         )
         return resp.json()
 
@@ -77,14 +83,11 @@ async def test_concurrent_backtests_isolated(
         assert result["step"] == 20
 
     # Cancel all and verify independent results
-    final_equities = set()
     for sid in session_ids:
         resp = await client.post(f"/api/v1/backtest/{sid}/cancel", headers=auth_headers)
         assert resp.status_code == 200
 
-        resp = await client.get(
-            f"/api/v1/backtest/{sid}/results", headers=auth_headers
-        )
+        resp = await client.get(f"/api/v1/backtest/{sid}/results", headers=auth_headers)
         assert resp.status_code == 200
 
     # List should show all 5

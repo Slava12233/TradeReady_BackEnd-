@@ -1,6 +1,6 @@
 """Unit tests for src.backtesting.time_simulator.TimeSimulator."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,22 +12,22 @@ from src.backtesting.time_simulator import TimeSimulator
 def sim() -> TimeSimulator:
     """A simulator covering 10 minutes with 1-minute intervals (10 steps)."""
     return TimeSimulator(
-        start_time=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
-        end_time=datetime(2026, 1, 1, 0, 10, tzinfo=timezone.utc),
+        start_time=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        end_time=datetime(2026, 1, 1, 0, 10, tzinfo=UTC),
         interval_seconds=60,
     )
 
 
 def test_step_advances_by_interval(sim: TimeSimulator) -> None:
     t = sim.step()
-    assert t == datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc)
+    assert t == datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
     assert sim.current_step == 1
 
 
 def test_step_does_not_exceed_end_time() -> None:
     sim = TimeSimulator(
-        start_time=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
-        end_time=datetime(2026, 1, 1, 0, 0, 30, tzinfo=timezone.utc),
+        start_time=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        end_time=datetime(2026, 1, 1, 0, 0, 30, tzinfo=UTC),
         interval_seconds=60,
     )
     # total_steps = 0 since 30s < 60s interval
@@ -64,14 +64,14 @@ def test_progress_pct_accurate(sim: TimeSimulator) -> None:
 def test_step_batch_advances_n_intervals(sim: TimeSimulator) -> None:
     t = sim.step_batch(3)
     assert sim.current_step == 3
-    assert t == datetime(2026, 1, 1, 0, 3, tzinfo=timezone.utc)
+    assert t == datetime(2026, 1, 1, 0, 3, tzinfo=UTC)
 
 
 def test_step_batch_stops_at_end(sim: TimeSimulator) -> None:
     t = sim.step_batch(20)  # Request more than available
     assert sim.is_complete
     assert sim.current_step == 10
-    assert t == datetime(2026, 1, 1, 0, 10, tzinfo=timezone.utc)
+    assert t == datetime(2026, 1, 1, 0, 10, tzinfo=UTC)
 
 
 def test_step_raises_when_complete(sim: TimeSimulator) -> None:
@@ -94,16 +94,16 @@ def test_step_batch_invalid_n(sim: TimeSimulator) -> None:
 def test_invalid_time_range() -> None:
     with pytest.raises(ValueError, match="must be after"):
         TimeSimulator(
-            start_time=datetime(2026, 1, 2, tzinfo=timezone.utc),
-            end_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            start_time=datetime(2026, 1, 2, tzinfo=UTC),
+            end_time=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
 
 def test_invalid_interval() -> None:
     with pytest.raises(ValueError, match="positive"):
         TimeSimulator(
-            start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            end_time=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            start_time=datetime(2026, 1, 1, tzinfo=UTC),
+            end_time=datetime(2026, 1, 2, tzinfo=UTC),
             interval_seconds=0,
         )
 
@@ -119,5 +119,5 @@ def test_naive_datetime_gets_utc() -> None:
         start_time=datetime(2026, 1, 1, 0, 0),
         end_time=datetime(2026, 1, 1, 1, 0),
     )
-    assert sim.start_time.tzinfo == timezone.utc
-    assert sim.end_time.tzinfo == timezone.utc
+    assert sim.start_time.tzinfo == UTC
+    assert sim.end_time.tzinfo == UTC

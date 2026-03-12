@@ -46,6 +46,7 @@ Example (manual trigger)::
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 import logging
 import time
 from typing import Any
@@ -142,7 +143,7 @@ async def _run_cleanup() -> dict[str, Any]:
     from src.database.session import get_session_factory
 
     task_start = time.monotonic()
-    settings = get_settings()
+    _settings = get_settings()
     session_factory = get_session_factory()
 
     orders_expired = 0
@@ -161,9 +162,7 @@ async def _run_cleanup() -> dict[str, Any]:
 
     # ── Phase 2: prune old minute snapshots ──────────────────────────────────
     try:
-        snapshots_deleted, accounts_processed, accounts_failed = (
-            await _prune_minute_snapshots(session_factory)
-        )
+        snapshots_deleted, accounts_processed, accounts_failed = await _prune_minute_snapshots(session_factory)
     except Exception:
         phases_failed.append("prune_snapshots")
         logger.exception("cleanup.prune_snapshots.fatal_error")
@@ -208,7 +207,7 @@ async def _run_cleanup() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-async def _expire_stale_orders(session_factory: Any) -> int:
+async def _expire_stale_orders(session_factory: Any) -> int:  # noqa: ANN401
     """Bulk-expire pending/partially_filled orders older than ``_STALE_ORDER_DAYS``.
 
     Executes a single ``UPDATE orders SET status = 'expired' WHERE ...``
@@ -232,13 +231,14 @@ async def _expire_stale_orders(session_factory: Any) -> int:
     Raises:
         sqlalchemy.exc.SQLAlchemyError: Propagated on any database failure.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    from sqlalchemy import and_, update as sa_update
+    from sqlalchemy import and_
+    from sqlalchemy import update as sa_update
 
     from src.database.models import Order
 
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=_STALE_ORDER_DAYS)
+    cutoff = datetime.now(tz=UTC) - timedelta(days=_STALE_ORDER_DAYS)
 
     async with session_factory() as session:
         stmt = (
@@ -251,7 +251,7 @@ async def _expire_stale_orders(session_factory: Any) -> int:
             )
             .values(
                 status="expired",
-                updated_at=datetime.now(tz=timezone.utc),
+                updated_at=datetime.now(tz=UTC),
             )
         )
         result = await session.execute(stmt)
@@ -275,7 +275,7 @@ async def _expire_stale_orders(session_factory: Any) -> int:
 
 
 async def _prune_minute_snapshots(
-    session_factory: Any,
+    session_factory: Any,  # noqa: ANN401
 ) -> tuple[int, int, int]:
     """Delete minute-resolution snapshots older than ``_MINUTE_SNAPSHOT_DAYS``.
 
@@ -295,9 +295,9 @@ async def _prune_minute_snapshots(
         Exception: Propagated only if loading account IDs fails entirely.
             Per-account deletion errors are caught, logged, and counted.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=_MINUTE_SNAPSHOT_DAYS)
+    cutoff = datetime.now(tz=UTC) - timedelta(days=_MINUTE_SNAPSHOT_DAYS)
 
     account_ids = await _load_all_account_ids(session_factory)
 
@@ -348,7 +348,7 @@ async def _prune_minute_snapshots(
 # ---------------------------------------------------------------------------
 
 
-async def _archive_audit_log(session_factory: Any) -> int:
+async def _archive_audit_log(session_factory: Any) -> int:  # noqa: ANN401
     """Bulk-delete audit log entries older than ``_AUDIT_LOG_DAYS``.
 
     The audit log grows without bound as every authenticated request is
@@ -366,13 +366,13 @@ async def _archive_audit_log(session_factory: Any) -> int:
     Raises:
         sqlalchemy.exc.SQLAlchemyError: Propagated on any database failure.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from sqlalchemy import delete as sa_delete
 
     from src.database.models import AuditLog
 
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=_AUDIT_LOG_DAYS)
+    cutoff = datetime.now(tz=UTC) - timedelta(days=_AUDIT_LOG_DAYS)
 
     async with session_factory() as session:
         stmt = sa_delete(AuditLog).where(AuditLog.created_at < cutoff)
@@ -396,7 +396,7 @@ async def _archive_audit_log(session_factory: Any) -> int:
 # ---------------------------------------------------------------------------
 
 
-async def _load_all_account_ids(session_factory: Any) -> list[Any]:
+async def _load_all_account_ids(session_factory: Any) -> list[Any]:  # noqa: ANN401
     """Return UUIDs of all accounts (any status) for snapshot pruning.
 
     Minute snapshots should be pruned for every account, not just active ones,

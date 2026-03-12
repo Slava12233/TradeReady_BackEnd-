@@ -23,7 +23,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 
-
 # ---------------------------------------------------------------------------
 # Shared config mixin
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ All endpoints require authentication (request.state.account).
 
 from __future__ import annotations
 
+from datetime import UTC
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -46,7 +47,7 @@ def _get_account_id(request: Request) -> UUID:
     return request.state.account.id
 
 
-def _step_to_response(result: Any) -> StepResponse:
+def _step_to_response(result: Any) -> StepResponse:  # noqa: ANN401
     """Convert engine StepResult to API response."""
     return StepResponse(
         virtual_time=result.virtual_time,
@@ -56,7 +57,8 @@ def _step_to_response(result: Any) -> StepResponse:
         prices={k: str(v) for k, v in result.prices.items()},
         orders_filled=[
             {
-                "order_id": o.order_id, "status": o.status,
+                "order_id": o.order_id,
+                "status": o.status,
                 "executed_price": str(o.executed_price) if o.executed_price else None,
                 "executed_qty": str(o.executed_qty) if o.executed_qty else None,
                 "fee": str(o.fee) if o.fee else None,
@@ -205,8 +207,12 @@ async def backtest_place_order(
 ) -> dict[str, Any]:
     """Place an order in the backtest sandbox."""
     result = await engine.execute_order(
-        session_id, body.symbol, body.side, body.type,
-        body.quantity, body.price,
+        session_id,
+        body.symbol,
+        body.side,
+        body.type,
+        body.quantity,
+        body.price,
     )
     return {
         "order_id": result.order_id,
@@ -230,8 +236,11 @@ async def backtest_list_orders(
     return {
         "orders": [
             {
-                "id": o.id, "symbol": o.symbol, "side": o.side,
-                "type": o.type, "quantity": str(o.quantity),
+                "id": o.id,
+                "symbol": o.symbol,
+                "side": o.side,
+                "type": o.type,
+                "quantity": str(o.quantity),
                 "price": str(o.price) if o.price else None,
                 "status": o.status,
                 "executed_price": str(o.executed_price) if o.executed_price else None,
@@ -255,8 +264,11 @@ async def backtest_open_orders(
     return {
         "orders": [
             {
-                "id": o.id, "symbol": o.symbol, "side": o.side,
-                "type": o.type, "quantity": str(o.quantity),
+                "id": o.id,
+                "symbol": o.symbol,
+                "side": o.side,
+                "type": o.type,
+                "quantity": str(o.quantity),
                 "price": str(o.price) if o.price else None,
                 "status": o.status,
             }
@@ -290,10 +302,15 @@ async def backtest_trade_history(
     return {
         "trades": [
             {
-                "id": t.id, "symbol": t.symbol, "side": t.side,
-                "type": t.type, "quantity": str(t.quantity),
-                "price": str(t.price), "quote_amount": str(t.quote_amount),
-                "fee": str(t.fee), "slippage_pct": str(t.slippage_pct),
+                "id": t.id,
+                "symbol": t.symbol,
+                "side": t.side,
+                "type": t.type,
+                "quantity": str(t.quantity),
+                "price": str(t.price),
+                "quote_amount": str(t.quote_amount),
+                "fee": str(t.fee),
+                "slippage_pct": str(t.slippage_pct),
                 "realized_pnl": str(t.realized_pnl) if t.realized_pnl else None,
                 "simulated_at": t.simulated_at.isoformat(),
             }
@@ -382,9 +399,12 @@ async def backtest_candles(
         "candles": [
             {
                 "bucket": c.bucket.isoformat(),
-                "open": str(c.open), "high": str(c.high),
-                "low": str(c.low), "close": str(c.close),
-                "volume": str(c.volume), "trade_count": c.trade_count,
+                "open": str(c.open),
+                "high": str(c.high),
+                "low": str(c.low),
+                "close": str(c.close),
+                "volume": str(c.volume),
+                "trade_count": c.trade_count,
             }
             for c in candles
         ],
@@ -404,10 +424,7 @@ async def backtest_balance(
     """Get sandbox balances."""
     balances = await engine.get_balance(session_id)
     return {
-        "balances": [
-            {"asset": b.asset, "available": str(b.available), "locked": str(b.locked)}
-            for b in balances
-        ],
+        "balances": [{"asset": b.asset, "available": str(b.available), "locked": str(b.locked)} for b in balances],
     }
 
 
@@ -422,7 +439,8 @@ async def backtest_positions(
     return {
         "positions": [
             {
-                "symbol": p.symbol, "quantity": str(p.quantity),
+                "symbol": p.symbol,
+                "quantity": str(p.quantity),
                 "avg_entry_price": str(p.avg_entry_price),
                 "realized_pnl": str(p.realized_pnl),
             }
@@ -475,18 +493,13 @@ async def get_backtest_status(
     # Detect orphaned session: DB says running but engine has no active session
     if s.status in ("running", "created") and session_id not in engine._active:
         from datetime import datetime as _dt
-        from datetime import timezone as _tz
 
         from sqlalchemy import update as sa_update
 
         from src.database.models import BacktestSession as BtModel
 
-        now = _dt.now(tz=_tz.utc)
-        stmt = (
-            sa_update(BtModel)
-            .where(BtModel.id == s.id)
-            .values(status="failed", completed_at=now)
-        )
+        now = _dt.now(tz=UTC)
+        stmt = sa_update(BtModel).where(BtModel.id == s.id).values(status="failed", completed_at=now)
         await db.execute(stmt)
         await db.commit()
         # Re-fetch the updated session
@@ -510,12 +523,8 @@ async def get_backtest_status(
         roi_pct=str(s.roi_pct) if s.roi_pct is not None else None,
         total_trades=s.total_trades or 0,
         total_fees=str(s.total_fees) if s.total_fees is not None else None,
-        sharpe_ratio=(
-            s.metrics.get("sharpe_ratio") if s.metrics else None
-        ),
-        max_drawdown_pct=(
-            s.metrics.get("max_drawdown_pct") if s.metrics else None
-        ),
+        sharpe_ratio=(s.metrics.get("sharpe_ratio") if s.metrics else None),
+        max_drawdown_pct=(s.metrics.get("max_drawdown_pct") if s.metrics else None),
         created_at=s.created_at,
         started_at=s.started_at,
         completed_at=s.completed_at,
@@ -621,10 +630,16 @@ async def get_backtest_trades(
         "session_id": session_id,
         "trades": [
             {
-                "id": str(t.id), "session_id": session_id, "symbol": t.symbol,
-                "side": t.side, "type": t.type, "quantity": str(t.quantity),
-                "price": str(t.price), "quote_amount": str(t.quote_amount),
-                "fee": str(t.fee), "slippage_pct": str(t.slippage_pct),
+                "id": str(t.id),
+                "session_id": session_id,
+                "symbol": t.symbol,
+                "side": t.side,
+                "type": t.type,
+                "quantity": str(t.quantity),
+                "price": str(t.price),
+                "quote_amount": str(t.quote_amount),
+                "fee": str(t.fee),
+                "slippage_pct": str(t.slippage_pct),
                 "realized_pnl": str(t.realized_pnl) if t.realized_pnl else "0",
                 "simulated_at": t.simulated_at.isoformat(),
             }
@@ -647,36 +662,34 @@ async def list_backtests(
 ) -> BacktestListResponse:
     """List all backtests for the authenticated account."""
     from datetime import datetime as _dt
-    from datetime import timezone as _tz
 
     account_id = _get_account_id(request)
     sessions = await repo.list_sessions(
-        account_id, strategy_label=strategy_label,
-        status=status, sort_by=sort_by, limit=limit,
+        account_id,
+        strategy_label=strategy_label,
+        status=status,
+        sort_by=sort_by,
+        limit=limit,
     )
 
     # Mark orphaned sessions (running in DB but not in engine memory) as failed
-    orphan_ids = [
-        s.id for s in sessions
-        if s.status in ("running", "created") and str(s.id) not in engine._active
-    ]
+    orphan_ids = [s.id for s in sessions if s.status in ("running", "created") and str(s.id) not in engine._active]
     if orphan_ids:
         from sqlalchemy import update as sa_update
 
         from src.database.models import BacktestSession as BtModel
 
-        now = _dt.now(tz=_tz.utc)
-        stmt = (
-            sa_update(BtModel)
-            .where(BtModel.id.in_(orphan_ids))
-            .values(status="failed", completed_at=now)
-        )
+        now = _dt.now(tz=UTC)
+        stmt = sa_update(BtModel).where(BtModel.id.in_(orphan_ids)).values(status="failed", completed_at=now)
         await db.execute(stmt)
         await db.commit()
         # Re-fetch so the response reflects the updated status
         sessions = await repo.list_sessions(
-            account_id, strategy_label=strategy_label,
-            status=status, sort_by=sort_by, limit=limit,
+            account_id,
+            strategy_label=strategy_label,
+            status=status,
+            sort_by=sort_by,
+            limit=limit,
         )
 
     items = [
@@ -698,12 +711,8 @@ async def list_backtests(
             roi_pct=str(s.roi_pct) if s.roi_pct is not None else None,
             total_trades=s.total_trades or 0,
             total_fees=str(s.total_fees) if s.total_fees is not None else None,
-            sharpe_ratio=(
-                s.metrics.get("sharpe_ratio") if s.metrics else None
-            ),
-            max_drawdown_pct=(
-                s.metrics.get("max_drawdown_pct") if s.metrics else None
-            ),
+            sharpe_ratio=(s.metrics.get("sharpe_ratio") if s.metrics else None),
+            max_drawdown_pct=(s.metrics.get("max_drawdown_pct") if s.metrics else None),
             created_at=s.created_at,
             started_at=s.started_at,
             completed_at=s.completed_at,
@@ -774,9 +783,7 @@ async def get_best_backtest(
     session = await repo.get_best_session(account_id, metric, strategy_label)
 
     if session is None:
-        raise BacktestNotFoundError(
-            "No completed backtests found for this account."
-        )
+        raise BacktestNotFoundError("No completed backtests found for this account.")
 
     value = str(getattr(session, metric, "N/A"))
     return BacktestBestResponse(
@@ -836,7 +843,7 @@ async def switch_account_mode(
     db: DbSessionDep,
 ) -> AccountModeResponse:
     """Switch account between live and backtest mode."""
-    from sqlalchemy import select, update
+    from sqlalchemy import update
 
     from src.database.models import Account
 
@@ -856,7 +863,7 @@ async def switch_account_mode(
     return await get_account_mode(request, await get_backtest_repo_instance(db), db)
 
 
-async def get_backtest_repo_instance(db: AsyncSession) -> Any:
+async def get_backtest_repo_instance(db: AsyncSession) -> Any:  # noqa: ANN401
     """Helper to create a BacktestRepository instance."""
     from src.database.repositories.backtest_repo import BacktestRepository
 

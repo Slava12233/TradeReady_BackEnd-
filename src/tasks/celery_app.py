@@ -71,13 +71,13 @@ app.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
     # Prevent tasks from running indefinitely
-    task_soft_time_limit=55,   # SIGTERM after 55 s
-    task_time_limit=60,        # SIGKILL after 60 s  (overridden per task where needed)
+    task_soft_time_limit=55,  # SIGTERM after 55 s
+    task_time_limit=60,  # SIGKILL after 60 s  (overridden per task where needed)
     # Queues
     task_default_queue="default",
     task_queues=(
         Queue("default"),
-        Queue("high_priority"),   # reserved for limit_order_monitor
+        Queue("high_priority"),  # reserved for limit_order_monitor
     ),
     task_routes={
         "src.tasks.limit_order_monitor.run_limit_order_monitor": {

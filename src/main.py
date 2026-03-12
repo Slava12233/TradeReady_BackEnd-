@@ -10,15 +10,15 @@ Run locally::
 
 from __future__ import annotations
 
-import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+import logging
 
-import structlog
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
+import structlog
 
 from src.api.middleware.auth import AuthMiddleware
 from src.api.middleware.logging import LoggingMiddleware
@@ -26,9 +26,9 @@ from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.api.routes.account import router as account_router
 from src.api.routes.analytics import router as analytics_router
 from src.api.routes.auth import router as auth_router
+from src.api.routes.backtest import router as backtest_router
 from src.api.routes.market import router as market_router
 from src.api.routes.trading import router as trading_router
-from src.api.routes.backtest import router as backtest_router
 from src.api.routes.waitlist import router as waitlist_router
 from src.api.websocket.handlers import (
     handle_message,
@@ -263,7 +263,7 @@ def create_app() -> FastAPI:
         try:
             async for message in websocket.iter_json():
                 await handle_message(connection_id, message, manager)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110
             # Client disconnected abruptly or sent invalid JSON
             pass
         finally:

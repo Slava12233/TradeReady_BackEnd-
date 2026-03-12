@@ -290,7 +290,7 @@ async def _send_response(
         return
     try:
         await conn.websocket.send_json(payload)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -326,10 +326,7 @@ def _describe_invalid_channel(payload: dict[str, Any]) -> str:
     """
     channel = payload.get("channel", "")
     if not channel:
-        return (
-            "Missing 'channel' field. "
-            "Valid channels: ticker, ticker_all, candles, orders, portfolio."
-        )
+        return "Missing 'channel' field. Valid channels: ticker, ticker_all, candles, orders, portfolio."
     if channel in ("ticker",):
         return "Channel 'ticker' requires a non-empty 'symbol' field."
     if channel == "candles":
@@ -339,10 +336,7 @@ def _describe_invalid_channel(payload: dict[str, Any]) -> str:
         if not payload.get("interval"):
             missing.append("'interval' (one of: 1m, 5m, 1h, 1d)")
         return f"Channel 'candles' requires {' and '.join(missing)}."
-    return (
-        f"Unknown channel {channel!r}. "
-        "Valid channels: ticker, ticker_all, candles, orders, portfolio."
-    )
+    return f"Unknown channel {channel!r}. Valid channels: ticker, ticker_all, candles, orders, portfolio."
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +410,7 @@ class RedisPubSubBridge:
             self._task.cancel()
             try:
                 await self._task
-            except (asyncio.CancelledError, Exception):
+            except (asyncio.CancelledError, Exception):  # noqa: S110
                 pass
         self._task = None
 
@@ -466,7 +460,7 @@ class RedisPubSubBridge:
             try:
                 await pubsub.unsubscribe(_PRICE_UPDATES_CHANNEL)
                 await pubsub.aclose()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
 
     async def _dispatch(self, raw_data: str) -> None:

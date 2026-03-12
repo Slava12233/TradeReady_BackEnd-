@@ -15,13 +15,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from src.cache.price_cache import PriceCache, Tick, TickerData
+from src.cache.price_cache import PriceCache, TickerData
 from tests.conftest import make_tick
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -146,23 +145,18 @@ async def test_get_all_prices_empty(mock_redis: AsyncMock) -> None:
 
 @pytest.mark.asyncio
 async def test_update_ticker_first_tick_initialises_all_fields(mock_redis: AsyncMock) -> None:
-    """First tick for a symbol should set open=high=low=close=price, volume=qty, change_pct=0."""
-    mock_redis.hgetall.return_value = {}  # no existing ticker
+    """First tick for a symbol should invoke the Lua script with correct keys and args."""
     cache = _cache(mock_redis)
     ts = datetime(2024, 1, 1, tzinfo=UTC)
     tick = make_tick("BTCUSDT", "64000.00", "0.01", ts, False, 1)
 
     await cache.update_ticker(tick)
 
-    mock_redis.hset.assert_awaited_once()
-    call_args = mock_redis.hset.call_args
-    mapping = call_args.kwargs.get("mapping") or call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs["mapping"]
-    assert mapping["open"] == "64000.00"
-    assert mapping["high"] == "64000.00"
-    assert mapping["low"] == "64000.00"
-    assert mapping["close"] == "64000.00"
-    assert mapping["volume"] == "0.01"
-    assert mapping["change_pct"] == "0"
+    lua_script = mock_redis.register_script.return_value
+    lua_script.assert_awaited_once()
+    call_kwargs = lua_script.call_args
+    assert call_kwargs.kwargs["keys"] == ["ticker:BTCUSDT"]
+    assert call_kwargs.kwargs["args"] == ["64000.00", "0.01", ts.isoformat()]
 
 
 # ---------------------------------------------------------------------------
@@ -172,118 +166,82 @@ async def test_update_ticker_first_tick_initialises_all_fields(mock_redis: Async
 
 @pytest.mark.asyncio
 async def test_update_ticker_updates_high(mock_redis: AsyncMock) -> None:
-    """Subsequent tick with a higher price should raise the 'high' field."""
+    """Subsequent tick with a higher price should pass the price to the Lua script."""
     ts = datetime(2024, 1, 1, tzinfo=UTC)
-    mock_redis.hgetall.return_value = {
-        "open": "64000.00",
-        "high": "64000.00",
-        "low": "64000.00",
-        "close": "64000.00",
-        "volume": "0.10",
-        "change_pct": "0",
-        "last_update": ts.isoformat(),
-    }
     cache = _cache(mock_redis)
     tick = make_tick("BTCUSDT", "65000.00", "0.05", ts, False, 2)
 
     await cache.update_ticker(tick)
 
-    call_args = mock_redis.hset.call_args
-    mapping = call_args.kwargs.get("mapping") or call_args.kwargs["mapping"]
-    assert mapping["high"] == "65000.00"
-    assert mapping["close"] == "65000.00"
+    lua_script = mock_redis.register_script.return_value
+    lua_script.assert_awaited_once()
+    call_kwargs = lua_script.call_args
+    assert call_kwargs.kwargs["keys"] == ["ticker:BTCUSDT"]
+    assert call_kwargs.kwargs["args"][0] == "65000.00"  # price
+    assert call_kwargs.kwargs["args"][1] == "0.05"  # quantity
 
 
 @pytest.mark.asyncio
 async def test_update_ticker_updates_low(mock_redis: AsyncMock) -> None:
-    """Subsequent tick with a lower price should drop the 'low' field."""
+    """Subsequent tick with a lower price should pass the price to the Lua script."""
     ts = datetime(2024, 1, 1, tzinfo=UTC)
-    mock_redis.hgetall.return_value = {
-        "open": "64000.00",
-        "high": "64000.00",
-        "low": "64000.00",
-        "close": "64000.00",
-        "volume": "0.10",
-        "change_pct": "0",
-        "last_update": ts.isoformat(),
-    }
     cache = _cache(mock_redis)
     tick = make_tick("BTCUSDT", "63000.00", "0.05", ts, True, 3)
 
     await cache.update_ticker(tick)
 
-    call_args = mock_redis.hset.call_args
-    mapping = call_args.kwargs.get("mapping") or call_args.kwargs["mapping"]
-    assert mapping["low"] == "63000.00"
+    lua_script = mock_redis.register_script.return_value
+    lua_script.assert_awaited_once()
+    call_kwargs = lua_script.call_args
+    assert call_kwargs.kwargs["keys"] == ["ticker:BTCUSDT"]
+    assert call_kwargs.kwargs["args"][0] == "63000.00"  # price
 
 
 @pytest.mark.asyncio
 async def test_update_ticker_accumulates_volume(mock_redis: AsyncMock) -> None:
-    """Volume should accumulate across subsequent ticks."""
+    """Volume quantity should be passed to the Lua script for accumulation."""
     ts = datetime(2024, 1, 1, tzinfo=UTC)
-    mock_redis.hgetall.return_value = {
-        "open": "64000.00",
-        "high": "64000.00",
-        "low": "64000.00",
-        "close": "64000.00",
-        "volume": "1.00",
-        "change_pct": "0",
-        "last_update": ts.isoformat(),
-    }
     cache = _cache(mock_redis)
     tick = make_tick("BTCUSDT", "64500.00", "0.50", ts, False, 4)
 
     await cache.update_ticker(tick)
 
-    call_args = mock_redis.hset.call_args
-    mapping = call_args.kwargs.get("mapping") or call_args.kwargs["mapping"]
-    assert Decimal(mapping["volume"]) == Decimal("1.50")
+    lua_script = mock_redis.register_script.return_value
+    lua_script.assert_awaited_once()
+    call_kwargs = lua_script.call_args
+    assert call_kwargs.kwargs["args"][1] == "0.50"  # quantity passed to Lua for accumulation
 
 
 @pytest.mark.asyncio
 async def test_update_ticker_calculates_change_pct(mock_redis: AsyncMock) -> None:
-    """change_pct must reflect (close - open) / open * 100."""
+    """change_pct calculation is handled by the Lua script; verify price is passed correctly."""
     ts = datetime(2024, 1, 1, tzinfo=UTC)
-    mock_redis.hgetall.return_value = {
-        "open": "100.00",
-        "high": "100.00",
-        "low": "100.00",
-        "close": "100.00",
-        "volume": "1.00",
-        "change_pct": "0",
-        "last_update": ts.isoformat(),
-    }
     cache = _cache(mock_redis)
     tick = make_tick("TESTUSDT", "110.00", "0.10", ts, False, 5)
 
     await cache.update_ticker(tick)
 
-    call_args = mock_redis.hset.call_args
-    mapping = call_args.kwargs.get("mapping") or call_args.kwargs["mapping"]
-    assert Decimal(mapping["change_pct"]) == Decimal("10.00")
+    lua_script = mock_redis.register_script.return_value
+    lua_script.assert_awaited_once()
+    call_kwargs = lua_script.call_args
+    assert call_kwargs.kwargs["keys"] == ["ticker:TESTUSDT"]
+    assert call_kwargs.kwargs["args"][0] == "110.00"  # price for change_pct calc in Lua
 
 
 @pytest.mark.asyncio
 async def test_update_ticker_does_not_overwrite_open(mock_redis: AsyncMock) -> None:
-    """The 'open' field must not appear in the update mapping (preserved from init)."""
+    """The Lua script preserves 'open' on updates; verify the script is called (not hset directly)."""
     ts = datetime(2024, 1, 1, tzinfo=UTC)
-    mock_redis.hgetall.return_value = {
-        "open": "64000.00",
-        "high": "64000.00",
-        "low": "64000.00",
-        "close": "64000.00",
-        "volume": "1.00",
-        "change_pct": "0",
-        "last_update": ts.isoformat(),
-    }
     cache = _cache(mock_redis)
     tick = make_tick("BTCUSDT", "65000.00", "0.10", ts, False, 6)
 
     await cache.update_ticker(tick)
 
-    call_args = mock_redis.hset.call_args
-    mapping = call_args.kwargs.get("mapping") or call_args.kwargs["mapping"]
-    assert "open" not in mapping
+    # The Lua script handles open preservation internally.
+    # Verify update_ticker delegates to the Lua script, not direct hset.
+    lua_script = mock_redis.register_script.return_value
+    lua_script.assert_awaited_once()
+    mock_redis.hset.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

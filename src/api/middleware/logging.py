@@ -48,13 +48,13 @@ Example::
 from __future__ import annotations
 
 import time
-import uuid
 from typing import Final
+import uuid
 
-import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+import structlog
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 

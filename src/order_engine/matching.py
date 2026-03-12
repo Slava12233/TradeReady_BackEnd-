@@ -41,14 +41,14 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import structlog
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Callable, Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+import structlog
 
 from src.accounts.balance_manager import BalanceManager
 from src.cache.price_cache import PriceCache
@@ -173,7 +173,7 @@ class LimitOrderMatcher:
             stats = await matcher.check_all_pending()
             print(stats.orders_filled)
         """
-        started_at = datetime.now(tz=timezone.utc)
+        started_at = datetime.now(tz=UTC)
         t0 = asyncio.get_running_loop().time()
 
         self._sweep_execution_errors = 0
@@ -315,9 +315,7 @@ class LimitOrderMatcher:
                     await asyncio.sleep(interval_seconds)
                 except Exception:
                     consecutive_failures += 1
-                    backoff = min(
-                        interval_seconds * (2 ** (consecutive_failures - 1)), 60.0
-                    )
+                    backoff = min(interval_seconds * (2 ** (consecutive_failures - 1)), 60.0)
                     logger.exception(
                         "matcher.sweep_unhandled_error",
                         extra={
@@ -558,5 +556,3 @@ def _condition_met(
         extra={"order_id": str(order.id), "type": order_type},
     )
     return False
-
-

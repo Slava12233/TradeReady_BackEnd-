@@ -111,9 +111,7 @@ class DataReplayer:
         self._price_cache: dict[datetime, dict[str, Decimal]] = {}
         self._cache_loaded = False
 
-    async def preload_range(
-        self, start_time: datetime, end_time: datetime
-    ) -> int:
+    async def preload_range(self, start_time: datetime, end_time: datetime) -> int:
         """Bulk-load all candle close prices for a time range into memory.
 
         After this call, :meth:`load_prices` serves from the in-memory cache
@@ -146,7 +144,7 @@ class DataReplayer:
                 WHERE bucket >= :start AND bucket <= :end {pair_filter}
             ) combined
             ORDER BY bucket, symbol
-        """)
+        """)  # noqa: S608
 
         result = await self._session.execute(query, params)
         rows = result.fetchall()
@@ -204,15 +202,13 @@ class DataReplayer:
                 WHERE bucket <= :ts {pair_filter}
             ) combined
             ORDER BY symbol, bucket DESC
-        """)
+        """)  # noqa: S608
 
         result = await self._session.execute(query, params)
         rows = result.fetchall()
         return {row.symbol: Decimal(str(row.close)) for row in rows}
 
-    def _load_prices_from_cache(
-        self, timestamp: datetime
-    ) -> dict[str, Decimal]:
+    def _load_prices_from_cache(self, timestamp: datetime) -> dict[str, Decimal]:
         """Resolve prices from preloaded cache at or before *timestamp*.
 
         Uses bisect for O(log n) lookup of the nearest bucket.
@@ -271,7 +267,7 @@ class DataReplayer:
             ) combined
             ORDER BY bucket DESC, symbol
             LIMIT :limit
-        """)
+        """)  # noqa: S608
 
         result = await self._session.execute(
             query, {"symbol": symbol, "end_time": end_time, "bf_interval": bf_interval, "limit": limit}
@@ -295,9 +291,7 @@ class DataReplayer:
         candles.reverse()
         return candles
 
-    async def load_ticker_24h(
-        self, symbol: str, timestamp: datetime
-    ) -> TickerData | None:
+    async def load_ticker_24h(self, symbol: str, timestamp: datetime) -> TickerData | None:
         """Compute 24-hour rolling stats ending at *timestamp*.
 
         UNIONs ``candles_1m`` with ``candles_backfill`` (using 1h as fallback
@@ -335,9 +329,7 @@ class DataReplayer:
             ) combined
         """)
 
-        result = await self._session.execute(
-            query, {"symbol": symbol, "start_24h": start_24h, "timestamp": timestamp}
-        )
+        result = await self._session.execute(query, {"symbol": symbol, "start_24h": start_24h, "timestamp": timestamp})
         row = result.fetchone()
 
         if row is None or row.open is None:
@@ -346,9 +338,7 @@ class DataReplayer:
         open_price = Decimal(str(row.open))
         close_price = Decimal(str(row.close))
         change = close_price - open_price
-        change_pct = (
-            (change / open_price * Decimal("100")) if open_price != 0 else Decimal("0")
-        )
+        change_pct = (change / open_price * Decimal("100")) if open_price != 0 else Decimal("0")
 
         return TickerData(
             symbol=symbol,
@@ -421,7 +411,7 @@ class DataReplayer:
                 WHERE bucket <= :ts {pair_filter}
             ) combined
             ORDER BY symbol
-        """)
+        """)  # noqa: S608
 
         result = await self._session.execute(query, params)
         return [row.symbol for row in result.fetchall()]

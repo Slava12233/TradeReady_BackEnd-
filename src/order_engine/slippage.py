@@ -44,9 +44,10 @@ Example::
 
 from __future__ import annotations
 
-import structlog
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+
+import structlog
 
 from src.cache.price_cache import PriceCache
 from src.utils.exceptions import InputValidationError, PriceNotAvailableError
@@ -65,9 +66,9 @@ _MAX_SLIPPAGE_FRACTION: Decimal = Decimal("0.10")
 _FEE_FRACTION: Decimal = Decimal("0.001")
 
 # Quantisation precision for monetary output fields.
-_PRICE_QUANT: Decimal = Decimal("0.00000001")   # 8 d.p.
-_PCT_QUANT: Decimal = Decimal("0.000001")        # 6 d.p.
-_FEE_QUANT: Decimal = Decimal("0.00000001")      # 8 d.p.
+_PRICE_QUANT: Decimal = Decimal("0.00000001")  # 8 d.p.
+_PCT_QUANT: Decimal = Decimal("0.000001")  # 6 d.p.
+_FEE_QUANT: Decimal = Decimal("0.00000001")  # 8 d.p.
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,17 +172,11 @@ class SlippageCalculator:
             reference_price=reference_price,
         )
 
-        execution_price: Decimal = reference_price * (
-            Decimal("1") + direction * slippage_fraction
-        )
+        execution_price: Decimal = reference_price * (Decimal("1") + direction * slippage_fraction)
         execution_price = execution_price.quantize(_PRICE_QUANT, rounding=ROUND_HALF_UP)
 
-        slippage_amount = abs(execution_price - reference_price).quantize(
-            _PRICE_QUANT, rounding=ROUND_HALF_UP
-        )
-        slippage_pct = (slippage_fraction * Decimal("100")).quantize(
-            _PCT_QUANT, rounding=ROUND_HALF_UP
-        )
+        slippage_amount = abs(execution_price - reference_price).quantize(_PRICE_QUANT, rounding=ROUND_HALF_UP)
+        slippage_pct = (slippage_fraction * Decimal("100")).quantize(_PCT_QUANT, rounding=ROUND_HALF_UP)
         fee = (order_size_usd * _FEE_FRACTION).quantize(_FEE_QUANT, rounding=ROUND_HALF_UP)
 
         logger.debug(
@@ -232,18 +227,14 @@ class SlippageCalculator:
         ticker = await self._price_cache.get_ticker(symbol)
 
         if ticker is None or ticker.volume <= Decimal("0"):
-            logger.warning(
-                "No ticker volume available for %s; using minimum slippage.", symbol
-            )
+            logger.warning("No ticker volume available for %s; using minimum slippage.", symbol)
             return _MIN_SLIPPAGE_FRACTION
 
         # Convert the 24-h base-asset volume to USD-denominated volume.
         avg_daily_volume_usd = ticker.volume * reference_price
 
         if avg_daily_volume_usd <= Decimal("0"):
-            logger.warning(
-                "Computed zero daily volume for %s; using minimum slippage.", symbol
-            )
+            logger.warning("Computed zero daily volume for %s; using minimum slippage.", symbol)
             return _MIN_SLIPPAGE_FRACTION
 
         # Core formula: slippage_fraction = factor * order_size / daily_volume

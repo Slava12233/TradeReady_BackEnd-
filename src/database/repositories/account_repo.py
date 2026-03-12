@@ -10,13 +10,13 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
-from typing import Sequence
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import Account
 from src.utils.exceptions import (
@@ -97,20 +97,14 @@ class AccountRepository:
             await self._session.rollback()
             constraint = str(exc.orig) if exc.orig else ""
             if "api_key" in constraint or "email" in constraint:
-                raise DuplicateAccountError(
-                    "An account with the given API key or email already exists."
-                ) from exc
-            raise DatabaseError(
-                f"Integrity error while creating account: {exc}"
-            ) from exc
+                raise DuplicateAccountError("An account with the given API key or email already exists.") from exc
+            raise DatabaseError(f"Integrity error while creating account: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception("account.create.db_error", extra={"error": str(exc)})
             raise DatabaseError("Failed to create account.") from exc
 
-    async def update_risk_profile(
-        self, account_id: UUID, profile: dict[str, object]
-    ) -> None:
+    async def update_risk_profile(self, account_id: UUID, profile: dict[str, object]) -> None:
         """Persist an updated ``risk_profile`` JSONB value for the given account.
 
         Mutates the account row's ``risk_profile`` column and flushes the
@@ -176,12 +170,7 @@ class AccountRepository:
             await session.commit()
         """
         try:
-            stmt = (
-                update(Account)
-                .where(Account.id == account_id)
-                .values(status=status)
-                .returning(Account)
-            )
+            stmt = update(Account).where(Account.id == account_id).values(status=status).returning(Account)
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
@@ -264,9 +253,7 @@ class AccountRepository:
             result = await self._session.execute(stmt)
             account = result.scalars().first()
             if account is None:
-                raise AccountNotFoundError(
-                    "No account found for the provided API key."
-                )
+                raise AccountNotFoundError("No account found for the provided API key.")
             return account
         except AccountNotFoundError:
             raise
@@ -303,9 +290,7 @@ class AccountRepository:
             result = await self._session.execute(stmt)
             account = result.scalars().first()
             if account is None:
-                raise AccountNotFoundError(
-                    "No account found for the provided email address."
-                )
+                raise AccountNotFoundError("No account found for the provided email address.")
             return account
         except AccountNotFoundError:
             raise

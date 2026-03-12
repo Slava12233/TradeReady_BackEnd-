@@ -54,16 +54,16 @@ Example::
 
 from __future__ import annotations
 
-import structlog
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.accounts.balance_manager import BalanceManager
 from src.cache.price_cache import PriceCache
@@ -225,9 +225,7 @@ class OrderEngine:
         try:
             reference_price = await self._price_cache.get_price(order.symbol)
         except Exception as exc:
-            raise CacheError(
-                f"Failed to fetch price for {order.symbol} from cache."
-            ) from exc
+            raise CacheError(f"Failed to fetch price for {order.symbol} from cache.") from exc
         if reference_price is None:
             raise PriceNotAvailableError(symbol=order.symbol)
 
@@ -320,9 +318,7 @@ class OrderEngine:
             count = await engine.cancel_all_orders(account_id)
             print(f"{count} orders cancelled")
         """
-        open_orders: Sequence[Order] = await self._order_repo.list_open_by_account(
-            account_id
-        )
+        open_orders: Sequence[Order] = await self._order_repo.list_open_by_account(account_id)
 
         cancelled_count = 0
         failed_order_ids: list[str] = []
@@ -434,7 +430,7 @@ class OrderEngine:
             from_locked=True,
         )
 
-        filled_at = datetime.now(tz=timezone.utc)
+        filled_at = datetime.now(tz=UTC)
         await self._order_repo.update_status(
             order_id,
             "filled",
@@ -552,15 +548,9 @@ class OrderEngine:
             required = order.quantity
             asset_to_check = base_asset
 
-        if not await self._balance_manager.has_sufficient_balance(
-            account_id, asset=asset_to_check, amount=required
-        ):
-            balance = await self._balance_manager.get_balance(
-                account_id, asset_to_check
-            )
-            available = (
-                Decimal(str(balance.available)) if balance is not None else Decimal("0")
-            )
+        if not await self._balance_manager.has_sufficient_balance(account_id, asset=asset_to_check, amount=required):
+            balance = await self._balance_manager.get_balance(account_id, asset_to_check)
+            available = Decimal(str(balance.available)) if balance is not None else Decimal("0")
             raise InsufficientBalanceError(
                 asset=asset_to_check,
                 required=required,
@@ -588,7 +578,7 @@ class OrderEngine:
             from_locked=False,
         )
 
-        filled_at = datetime.now(tz=timezone.utc)
+        filled_at = datetime.now(tz=UTC)
         await self._order_repo.update_status(
             db_order.id,
             "filled",
@@ -704,13 +694,9 @@ class OrderEngine:
             lock_asset = base_asset
             lock_amount = order.quantity
 
-        if not await self._balance_manager.has_sufficient_balance(
-            account_id, asset=lock_asset, amount=lock_amount
-        ):
+        if not await self._balance_manager.has_sufficient_balance(account_id, asset=lock_asset, amount=lock_amount):
             balance = await self._balance_manager.get_balance(account_id, lock_asset)
-            available = (
-                Decimal(str(balance.available)) if balance is not None else Decimal("0")
-            )
+            available = Decimal(str(balance.available)) if balance is not None else Decimal("0")
             raise InsufficientBalanceError(
                 asset=lock_asset,
                 required=lock_amount,
@@ -763,7 +749,7 @@ class OrderEngine:
             executed_quantity=None,
             slippage_pct=None,
             fee=None,
-            timestamp=datetime.now(tz=timezone.utc),
+            timestamp=datetime.now(tz=UTC),
         )
 
     async def _upsert_position(
@@ -888,9 +874,7 @@ class OrderEngine:
                 lock_amount = Decimal(str(order.quantity))
                 lock_asset = _base_asset_from_order(order)
 
-            await self._balance_manager.unlock(
-                account_id, asset=lock_asset, amount=lock_amount
-            )
+            await self._balance_manager.unlock(account_id, asset=lock_asset, amount=lock_amount)
         except Exception:
             logger.exception(
                 "engine.release_locked_funds.error",

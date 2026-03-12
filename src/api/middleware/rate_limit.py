@@ -35,7 +35,6 @@ Example::
 from __future__ import annotations
 
 import logging
-import math
 import time
 from typing import Final
 
@@ -275,7 +274,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return 0
 
     @staticmethod
-    def _get_redis(request: Request):  # type: ignore[return]
+    def _get_redis(request: Request):  # type: ignore[return]  # noqa: ANN205
         """Extract the Redis client from application state.
 
         The Redis client is stored on ``request.app.state.redis`` during

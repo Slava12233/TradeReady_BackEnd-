@@ -34,7 +34,6 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-
 # ---------------------------------------------------------------------------
 # Shared config base
 # ---------------------------------------------------------------------------
@@ -80,8 +79,7 @@ class PairResponse(_BaseSchema):
     has_price: bool = Field(
         ...,
         description=(
-            "True when a live price is available in Redis. "
-            "Orders for symbols with has_price=False will be rejected."
+            "True when a live price is available in Redis. Orders for symbols with has_price=False will be rejected."
         ),
         examples=[True],
     )
@@ -218,9 +216,7 @@ class BatchTickersResponse(_BaseSchema):
         timestamp: UTC snapshot timestamp.
     """
 
-    tickers: dict[str, TickerResponse] = Field(
-        ..., description="Map of symbol → 24h ticker data."
-    )
+    tickers: dict[str, TickerResponse] = Field(..., description="Map of symbol → 24h ticker data.")
     count: int = Field(..., description="Number of tickers returned.", examples=[50])
     timestamp: datetime = Field(..., description="UTC snapshot timestamp.")
 

@@ -18,10 +18,10 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from decimal import Decimal
+import json
 
 import httpx
 import structlog
@@ -90,9 +90,7 @@ class BinanceWebSocketClient:
             data = response.json()
 
         self._symbols = sorted(
-            s["symbol"]
-            for s in data["symbols"]
-            if s["status"] == "TRADING" and s["quoteAsset"] == "USDT"
+            s["symbol"] for s in data["symbols"] if s["status"] == "TRADING" and s["quoteAsset"] == "USDT"
         )
         log.info("Fetched active USDT trading pairs from Binance", count=len(self._symbols))
 

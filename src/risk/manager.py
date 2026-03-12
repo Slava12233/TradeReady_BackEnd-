@@ -47,14 +47,14 @@ Example::
 
 from __future__ import annotations
 
-import structlog
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import redis.asyncio as aioredis
+import structlog
 
 from src.accounts.balance_manager import BalanceManager
 from src.cache.price_cache import PriceCache
@@ -65,7 +65,6 @@ from src.database.repositories.order_repo import OrderRepository
 from src.database.repositories.trade_repo import TradeRepository
 from src.order_engine.validators import OrderRequest
 from src.utils.exceptions import (
-    AccountNotFoundError,
     CacheError,
     DatabaseError,
 )
@@ -151,7 +150,7 @@ class RiskCheckResult:
     details: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def ok(cls) -> "RiskCheckResult":
+    def ok(cls) -> RiskCheckResult:
         """Return an approved result with no rejection reason."""
         return cls(approved=True)
 
@@ -159,8 +158,8 @@ class RiskCheckResult:
     def reject(
         cls,
         reason: str,
-        **details: Any,
-    ) -> "RiskCheckResult":
+        **details: Any,  # noqa: ANN401
+    ) -> RiskCheckResult:
         """Return a rejected result with the given reason and optional details.
 
         Args:
@@ -310,15 +309,11 @@ class RiskManager:
                 symbol=order.symbol,
             )
 
-        estimated_value = (order.quantity * current_price).quantize(
-            Decimal("0.00000001")
-        )
+        estimated_value = (order.quantity * current_price).quantize(Decimal("0.00000001"))
 
         # Compute real total portfolio equity once — reused by steps 5 and 6
         # to avoid extra DB/cache round-trips and to use correct denominator.
-        total_equity = await self._compute_total_equity(
-            account_id, order.symbol, current_price
-        )
+        total_equity = await self._compute_total_equity(account_id, order.symbol, current_price)
 
         # ── Step 4: Minimum order size ────────────────────────────────────
         result = self._check_min_order_size(estimated_value, limits)
@@ -326,9 +321,7 @@ class RiskManager:
             return result
 
         # ── Step 5: Maximum order size % ─────────────────────────────────
-        result = await self._check_max_order_size(
-            account_id, estimated_value, order, limits, total_equity
-        )
+        result = await self._check_max_order_size(account_id, estimated_value, order, limits, total_equity)
         if not result.approved:
             return result
 
@@ -345,9 +338,7 @@ class RiskManager:
             return result
 
         # ── Step 8: Sufficient balance ────────────────────────────────────
-        result = await self._check_sufficient_balance(
-            account_id, order, estimated_value
-        )
+        result = await self._check_sufficient_balance(account_id, order, estimated_value)
         if not result.approved:
             return result
 
@@ -501,19 +492,11 @@ class RiskManager:
                 return default
 
         return RiskLimits(
-            max_position_size_pct=_dec(
-                "max_position_size_pct", _DEFAULT_MAX_POSITION_SIZE_PCT
-            ),
+            max_position_size_pct=_dec("max_position_size_pct", _DEFAULT_MAX_POSITION_SIZE_PCT),
             max_open_orders=_int("max_open_orders", _DEFAULT_MAX_OPEN_ORDERS),
-            daily_loss_limit_pct=_dec(
-                "daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_LIMIT_PCT
-            ),
-            min_order_size_usd=_dec(
-                "min_order_size_usd", _DEFAULT_MIN_ORDER_SIZE_USD
-            ),
-            max_order_size_pct=_dec(
-                "max_order_size_pct", _DEFAULT_MAX_ORDER_SIZE_PCT
-            ),
+            daily_loss_limit_pct=_dec("daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_LIMIT_PCT),
+            min_order_size_usd=_dec("min_order_size_usd", _DEFAULT_MIN_ORDER_SIZE_USD),
+            max_order_size_pct=_dec("max_order_size_pct", _DEFAULT_MAX_ORDER_SIZE_PCT),
             order_rate_limit=_int("order_rate_limit", _DEFAULT_ORDER_RATE_LIMIT),
         )
 
@@ -542,9 +525,7 @@ class RiskManager:
     ) -> RiskCheckResult:
         """Step 2: Verify the account's daily realized PnL is within limits."""
         try:
-            daily_pnl = Decimal(
-                str(await self._trade_repo.sum_daily_realized_pnl(account.id))
-            )
+            daily_pnl = Decimal(str(await self._trade_repo.sum_daily_realized_pnl(account.id)))
         except DatabaseError:
             raise
         except Exception as exc:
@@ -556,9 +537,7 @@ class RiskManager:
             raise DatabaseError("Failed to check daily loss limit.") from exc
 
         starting_balance = Decimal(str(account.starting_balance))
-        loss_limit = (starting_balance * limits.daily_loss_limit_pct / _HUNDRED).quantize(
-            Decimal("0.00000001")
-        )
+        loss_limit = (starting_balance * limits.daily_loss_limit_pct / _HUNDRED).quantize(Decimal("0.00000001"))
 
         # daily_pnl is negative when in loss; breach when loss > limit
         if daily_pnl < _ZERO and abs(daily_pnl) >= loss_limit:
@@ -597,7 +576,7 @@ class RiskManager:
         Returns:
             A tuple of (RiskCheckResult, rate_limit_key).
         """
-        now_utc = datetime.now(tz=timezone.utc)
+        now_utc = datetime.now(tz=UTC)
         minute_bucket = now_utc.strftime("%Y%m%d%H%M")
         key = _RATE_LIMIT_KEY_TEMPLATE.format(
             account_id=str(account_id),
@@ -697,9 +676,7 @@ class RiskManager:
             # No equity at all; step 8 (sufficient balance) will catch this.
             return RiskCheckResult.ok()
 
-        max_allowed_usd = (total_equity * limits.max_order_size_pct / _HUNDRED).quantize(
-            Decimal("0.00000001")
-        )
+        max_allowed_usd = (total_equity * limits.max_order_size_pct / _HUNDRED).quantize(Decimal("0.00000001"))
 
         if estimated_value > max_allowed_usd:
             logger.info(
@@ -748,14 +725,10 @@ class RiskManager:
         base_asset = symbol.removesuffix("USDT")
         base_balance = await self._balance_manager.get_balance(account_id, base_asset)
         existing_base = Decimal(str(base_balance.available)) if base_balance else _ZERO
-        existing_position_value = (existing_base * current_price).quantize(
-            Decimal("0.00000001")
-        )
+        existing_position_value = (existing_base * current_price).quantize(Decimal("0.00000001"))
 
         new_position_value = existing_position_value + estimated_value
-        new_position_pct = (new_position_value / total_equity * _HUNDRED).quantize(
-            Decimal("0.01")
-        )
+        new_position_pct = (new_position_value / total_equity * _HUNDRED).quantize(Decimal("0.01"))
 
         if new_position_pct > limits.max_position_size_pct:
             logger.info(
@@ -855,28 +828,18 @@ class RiskManager:
         fee buffer of ``trading_fee_pct``).
         For **sell** orders: checks available base-asset quantity ≥ order quantity.
         """
-        fee_multiplier = Decimal("1") + (
-            self._settings.trading_fee_pct / _HUNDRED
-        )
+        fee_multiplier = Decimal("1") + (self._settings.trading_fee_pct / _HUNDRED)
 
         if order.side == "buy":
-            required_usdt = (estimated_value * fee_multiplier).quantize(
-                Decimal("0.00000001")
-            )
+            required_usdt = (estimated_value * fee_multiplier).quantize(Decimal("0.00000001"))
             has_funds = await self._balance_manager.has_sufficient_balance(
                 account_id,
                 asset="USDT",
                 amount=required_usdt,
             )
             if not has_funds:
-                usdt_balance = await self._balance_manager.get_balance(
-                    account_id, "USDT"
-                )
-                available = (
-                    Decimal(str(usdt_balance.available))
-                    if usdt_balance
-                    else _ZERO
-                )
+                usdt_balance = await self._balance_manager.get_balance(account_id, "USDT")
+                available = Decimal(str(usdt_balance.available)) if usdt_balance else _ZERO
                 logger.info(
                     "risk.check.insufficient_balance",
                     account_id=str(account_id),
@@ -899,14 +862,8 @@ class RiskManager:
                 amount=order.quantity,
             )
             if not has_funds:
-                base_balance = await self._balance_manager.get_balance(
-                    account_id, base_asset
-                )
-                available = (
-                    Decimal(str(base_balance.available))
-                    if base_balance
-                    else _ZERO
-                )
+                base_balance = await self._balance_manager.get_balance(account_id, base_asset)
+                available = Decimal(str(base_balance.available)) if base_balance else _ZERO
                 logger.info(
                     "risk.check.insufficient_balance",
                     account_id=str(account_id),

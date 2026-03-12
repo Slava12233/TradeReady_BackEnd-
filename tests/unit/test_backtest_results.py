@@ -1,9 +1,7 @@
 """Unit tests for src.backtesting.results — metrics calculator."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-
-import pytest
 
 from src.backtesting.results import (
     calculate_metrics,
@@ -30,13 +28,13 @@ def _trade(
         fee=Decimal("5"),
         slippage_pct=Decimal("0.01"),
         realized_pnl=pnl,
-        simulated_at=datetime(2026, 1, 1, 0, minutes_offset, tzinfo=timezone.utc),
+        simulated_at=datetime(2026, 1, 1, 0, minutes_offset, tzinfo=UTC),
     )
 
 
 def _snapshot(equity: Decimal, hours_offset: int = 0) -> SandboxSnapshot:
     return SandboxSnapshot(
-        simulated_at=datetime(2026, 1, 1, hours_offset, 0, tzinfo=timezone.utc),
+        simulated_at=datetime(2026, 1, 1, hours_offset, 0, tzinfo=UTC),
         total_equity=equity,
         available_cash=equity,
         position_value=Decimal("0"),
@@ -70,7 +68,7 @@ def test_max_drawdown_calculation() -> None:
     snapshots = [
         _snapshot(Decimal("10000"), 0),
         _snapshot(Decimal("11000"), 1),  # peak
-        _snapshot(Decimal("9900"), 2),   # drawdown = (11000-9900)/11000 = 10%
+        _snapshot(Decimal("9900"), 2),  # drawdown = (11000-9900)/11000 = 10%
         _snapshot(Decimal("10500"), 3),
     ]
     metrics = calculate_metrics([], snapshots, Decimal("10000"), Decimal("1"))
@@ -85,15 +83,17 @@ def test_sharpe_ratio_calculation() -> None:
     # Add daily snapshots over 5 days
     for day in range(1, 6):
         equity = Decimal("10000") + Decimal(str(day * 100))
-        snapshots.append(SandboxSnapshot(
-            simulated_at=datetime(2026, 1, 1 + day, 0, 0, tzinfo=timezone.utc),
-            total_equity=equity,
-            available_cash=equity,
-            position_value=Decimal("0"),
-            unrealized_pnl=Decimal("0"),
-            realized_pnl=Decimal("0"),
-            positions={},
-        ))
+        snapshots.append(
+            SandboxSnapshot(
+                simulated_at=datetime(2026, 1, 1 + day, 0, 0, tzinfo=UTC),
+                total_equity=equity,
+                available_cash=equity,
+                position_value=Decimal("0"),
+                unrealized_pnl=Decimal("0"),
+                realized_pnl=Decimal("0"),
+                positions={},
+            )
+        )
 
     metrics = calculate_metrics([], snapshots, Decimal("10000"), Decimal("5"))
     assert metrics.sharpe_ratio is not None
@@ -107,15 +107,17 @@ def test_sortino_ratio_calculation() -> None:
     ]
     values = [10100, 10050, 9900, 10200, 10000]
     for i, val in enumerate(values):
-        snapshots.append(SandboxSnapshot(
-            simulated_at=datetime(2026, 1, 2 + i, 0, 0, tzinfo=timezone.utc),
-            total_equity=Decimal(str(val)),
-            available_cash=Decimal(str(val)),
-            position_value=Decimal("0"),
-            unrealized_pnl=Decimal("0"),
-            realized_pnl=Decimal("0"),
-            positions={},
-        ))
+        snapshots.append(
+            SandboxSnapshot(
+                simulated_at=datetime(2026, 1, 2 + i, 0, 0, tzinfo=UTC),
+                total_equity=Decimal(str(val)),
+                available_cash=Decimal(str(val)),
+                position_value=Decimal("0"),
+                unrealized_pnl=Decimal("0"),
+                realized_pnl=Decimal("0"),
+                positions={},
+            )
+        )
 
     metrics = calculate_metrics([], snapshots, Decimal("10000"), Decimal("5"))
     assert metrics.sortino_ratio is not None
@@ -169,3 +171,56 @@ def test_avg_win_avg_loss() -> None:
     assert metrics.avg_loss == Decimal("-100.00000000")
     assert metrics.best_trade == Decimal("200")
     assert metrics.worst_trade == Decimal("-150")
+
+
+# ---------------------------------------------------------------------------
+# P2 expansion tests
+# ---------------------------------------------------------------------------
+
+
+def test_all_losses_profit_factor_zero() -> None:
+    trades = [
+        _trade(pnl=Decimal("-100"), minutes_offset=0),
+        _trade(pnl=Decimal("-200"), minutes_offset=1),
+    ]
+    metrics = calculate_metrics(trades, [], Decimal("10000"), Decimal("7"))
+    # When no gross profit, profit_factor should be 0 or None
+    assert metrics.profit_factor == Decimal("0") or metrics.profit_factor is None
+
+
+def test_single_trade_metrics() -> None:
+    trades = [_trade(pnl=Decimal("500"), minutes_offset=0)]
+    metrics = calculate_metrics(trades, [], Decimal("10000"), Decimal("7"))
+    assert metrics.win_rate == Decimal("100.00")
+    assert metrics.best_trade == Decimal("500")
+    assert metrics.worst_trade == Decimal("500")
+
+
+def test_equity_curve_interval() -> None:
+    snapshots = [_snapshot(Decimal(str(10000 + i * 50)), i) for i in range(20)]
+    curve = generate_equity_curve(snapshots, interval=5)
+    assert len(curve) == 4  # 20 / 5 = 4
+
+
+def test_per_pair_stats_multiple_pairs() -> None:
+    trades = [
+        _trade("BTCUSDT", pnl=Decimal("100"), minutes_offset=0),
+        _trade("BTCUSDT", pnl=Decimal("-50"), minutes_offset=1),
+        _trade("ETHUSDT", pnl=Decimal("200"), minutes_offset=2),
+        _trade("ETHUSDT", pnl=Decimal("-30"), minutes_offset=3),
+        _trade("SOLUSDT", pnl=Decimal("50"), minutes_offset=4),
+    ]
+    stats = calculate_per_pair_stats(trades)
+    assert len(stats) == 3
+
+    sol_stat = next(s for s in stats if s.symbol == "SOLUSDT")
+    assert sol_stat.trades == 1
+    assert sol_stat.wins == 1
+
+
+def test_trades_per_day_calculation() -> None:
+    trades = [_trade(pnl=Decimal("100"), minutes_offset=i) for i in range(10)]
+    metrics = calculate_metrics(trades, [], Decimal("10000"), Decimal("7"))
+    # 10 trades over 7 days ≈ 1.43 trades/day
+    assert metrics.trades_per_day is not None
+    assert metrics.trades_per_day > Decimal("0")

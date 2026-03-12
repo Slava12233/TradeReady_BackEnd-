@@ -20,7 +20,7 @@ Example::
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import TYPE_CHECKING, TypeVar
 
@@ -78,7 +78,7 @@ def utc_now() -> datetime:
         ts = utc_now()
         assert ts.tzinfo is not None
     """
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def parse_period(period: str) -> timedelta | None:
@@ -217,9 +217,7 @@ def format_decimal(value: Decimal, places: int = 8) -> str:
     try:
         rounded = value.quantize(quantizer, rounding=ROUND_HALF_UP)
     except InvalidOperation as exc:
-        raise InvalidOperation(
-            f"Cannot round {value!r} to {places} decimal places"
-        ) from exc
+        raise InvalidOperation(f"Cannot round {value!r} to {places} decimal places") from exc
     return str(rounded)
 
 

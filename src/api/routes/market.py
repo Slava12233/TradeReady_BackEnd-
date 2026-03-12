@@ -26,13 +26,13 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import logging
-import random
 from datetime import UTC, datetime
 from decimal import Decimal
+import logging
+import random
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -211,8 +211,7 @@ async def get_price(
     response_model=PricesMapResponse,
     summary="Get current prices for all pairs",
     description=(
-        "Returns a map of symbol → price for every pair in the cache. "
-        "Pass ``symbols`` to filter (comma-separated)."
+        "Returns a map of symbol → price for every pair in the cache. Pass ``symbols`` to filter (comma-separated)."
     ),
 )
 async def get_prices(
@@ -220,10 +219,7 @@ async def get_prices(
     symbols: Annotated[
         str | None,
         Query(
-            description=(
-                "Comma-separated list of symbols to include, "
-                "e.g. ``BTCUSDT,ETHUSDT``.  Omit to return all."
-            )
+            description=("Comma-separated list of symbols to include, e.g. ``BTCUSDT,ETHUSDT``.  Omit to return all.")
         ),
     ] = None,
 ) -> PricesMapResponse:
@@ -381,7 +377,7 @@ async def get_tickers_batch(
 
     tickers: dict[str, TickerResponse] = {}
     now = datetime.now(UTC)
-    for sym, result in zip(symbol_list, results):
+    for sym, result in zip(symbol_list, results, strict=False):
         if not isinstance(result, TickerData):
             continue
         change = result.close - result.open
@@ -464,9 +460,7 @@ async def get_candles(
     await _validate_symbol(symbol, db)
 
     if interval not in _CANDLE_VIEWS:
-        raise InvalidSymbolError(
-            f"Interval '{interval}' is not supported. Use one of: {', '.join(_CANDLE_VIEWS)}."
-        )
+        raise InvalidSymbolError(f"Interval '{interval}' is not supported. Use one of: {', '.join(_CANDLE_VIEWS)}.")
 
     view_name = _CANDLE_VIEWS[interval]
 
@@ -598,12 +592,7 @@ async def get_trades(
     symbol = symbol.upper()
     await _validate_symbol(symbol, db)
 
-    stmt = (
-        select(Tick)
-        .where(Tick.symbol == symbol)
-        .order_by(Tick.time.desc())
-        .limit(limit)
-    )
+    stmt = select(Tick).where(Tick.symbol == symbol).order_by(Tick.time.desc()).limit(limit)
     result = await db.execute(stmt)
     ticks = result.scalars().all()
 
@@ -677,9 +666,7 @@ async def get_orderbook(
     symbol = symbol.upper()
 
     if depth not in _ALLOWED_DEPTHS:
-        raise InvalidSymbolError(
-            f"depth={depth} is not supported. Use one of: {sorted(_ALLOWED_DEPTHS)}."
-        )
+        raise InvalidSymbolError(f"depth={depth} is not supported. Use one of: {sorted(_ALLOWED_DEPTHS)}.")
 
     await _validate_symbol(symbol, db)
 
@@ -714,9 +701,7 @@ async def _validate_symbol(symbol: str, db: AsyncSession) -> None:
     Raises:
         :exc:`~src.utils.exceptions.InvalidSymbolError`: If the symbol is not found.
     """
-    result = await db.execute(
-        select(TradingPair.symbol).where(TradingPair.symbol == symbol).limit(1)
-    )
+    result = await db.execute(select(TradingPair.symbol).where(TradingPair.symbol == symbol).limit(1))
     if result.scalar_one_or_none() is None:
         raise InvalidSymbolError(symbol=symbol)
 

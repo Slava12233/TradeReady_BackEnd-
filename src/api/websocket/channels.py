@@ -71,13 +71,12 @@ import datetime
 from decimal import Decimal
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _str_decimal(value: Any) -> str:
+def _str_decimal(value: Any) -> str:  # noqa: ANN401
     """Convert *value* to a string, normalising ``Decimal`` and ``float``.
 
     Args:
@@ -91,7 +90,7 @@ def _str_decimal(value: Any) -> str:
     return str(value)
 
 
-def _iso_timestamp(value: Any) -> str:
+def _iso_timestamp(value: Any) -> str:  # noqa: ANN401
     """Convert *value* to an ISO-8601 UTC timestamp string.
 
     Accepts:
@@ -108,12 +107,12 @@ def _iso_timestamp(value: Any) -> str:
     if isinstance(value, datetime.datetime):
         # Ensure the datetime is expressed in UTC
         if value.tzinfo is not None:
-            dt = value.astimezone(datetime.timezone.utc)
+            dt = value.astimezone(datetime.UTC)
         else:
-            dt = value.replace(tzinfo=datetime.timezone.utc)
+            dt = value.replace(tzinfo=datetime.UTC)
         return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-    if isinstance(value, (int, float)):
-        dt = datetime.datetime.fromtimestamp(value / 1000.0, tz=datetime.timezone.utc)
+    if isinstance(value, int | float):
+        dt = datetime.datetime.fromtimestamp(value / 1000.0, tz=datetime.UTC)
         return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     return str(value)
 
@@ -267,10 +266,7 @@ class CandleChannel:
             ValueError: If *interval* is not in :attr:`VALID_INTERVALS`.
         """
         if interval not in cls.VALID_INTERVALS:
-            raise ValueError(
-                f"Invalid candle interval {interval!r}. "
-                f"Must be one of: {sorted(cls.VALID_INTERVALS)}"
-            )
+            raise ValueError(f"Invalid candle interval {interval!r}. Must be one of: {sorted(cls.VALID_INTERVALS)}")
         return f"{cls.PREFIX}:{symbol.upper()}:{interval}"
 
     @classmethod
@@ -478,7 +474,7 @@ class PortfolioChannel:
         Returns:
             Envelope dict ready for :meth:`ConnectionManager.broadcast_to_account`.
         """
-        timestamp = raw.get("timestamp") or datetime.datetime.now(datetime.timezone.utc)
+        timestamp = raw.get("timestamp") or datetime.datetime.now(datetime.UTC)
 
         data: dict[str, Any] = {
             "total_equity": _str_decimal(raw.get("total_equity", "0")),
@@ -498,14 +494,10 @@ class PortfolioChannel:
 # ---------------------------------------------------------------------------
 
 #: All private per-account channel names (not routed via broadcast_to_channel).
-PRIVATE_CHANNELS: frozenset[str] = frozenset(
-    {OrderChannel.NAME, PortfolioChannel.NAME}
-)
+PRIVATE_CHANNELS: frozenset[str] = frozenset({OrderChannel.NAME, PortfolioChannel.NAME})
 
 #: All public channel prefixes (routed via broadcast_to_channel).
-PUBLIC_CHANNEL_PREFIXES: frozenset[str] = frozenset(
-    {TickerChannel.PREFIX, CandleChannel.PREFIX}
-)
+PUBLIC_CHANNEL_PREFIXES: frozenset[str] = frozenset({TickerChannel.PREFIX, CandleChannel.PREFIX})
 
 
 def resolve_channel_name(action_payload: dict[str, Any]) -> str | None:

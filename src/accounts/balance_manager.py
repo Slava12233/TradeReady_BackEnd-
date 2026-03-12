@@ -35,19 +35,19 @@ Example::
 
 from __future__ import annotations
 
-import structlog
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.config import Settings
 from src.database.models import Balance
 from src.database.repositories.balance_repo import BalanceRepository
-from src.utils.exceptions import DatabaseError, InsufficientBalanceError, InputValidationError
+from src.utils.exceptions import DatabaseError, InputValidationError, InsufficientBalanceError
 
 log = structlog.get_logger(__name__)
 
@@ -413,9 +413,7 @@ class BalanceManager:
         Returns:
             The fee amount (always ≥ 0).
         """
-        return (gross_quote * self._settings.trading_fee_pct / _HUNDRED).quantize(
-            Decimal("0.00000001")
-        )
+        return (gross_quote * self._settings.trading_fee_pct / _HUNDRED).quantize(Decimal("0.00000001"))
 
     async def execute_trade(
         self,

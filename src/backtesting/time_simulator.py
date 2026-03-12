@@ -7,7 +7,7 @@ All times are UTC.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 
@@ -27,9 +27,9 @@ class TimeSimulator:
         interval_seconds: int = 60,
     ) -> None:
         if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=timezone.utc)
+            start_time = start_time.replace(tzinfo=UTC)
         if end_time.tzinfo is None:
-            end_time = end_time.replace(tzinfo=timezone.utc)
+            end_time = end_time.replace(tzinfo=UTC)
         if end_time <= start_time:
             msg = f"end_time ({end_time}) must be after start_time ({start_time})"
             raise ValueError(msg)

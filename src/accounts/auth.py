@@ -29,24 +29,24 @@ Example::
 
 from __future__ import annotations
 
-import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+import secrets
 from uuid import UUID
 
 import bcrypt
 import jwt
-from jwt import DecodeError, ExpiredSignatureError, InvalidTokenError as _JWTInvalidTokenError
+from jwt import DecodeError, ExpiredSignatureError
+from jwt import InvalidTokenError as _JWTInvalidTokenError
 
 from src.utils.exceptions import AuthenticationError, InvalidTokenError
-
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 _API_KEY_PREFIX = "ak_live_"
-_API_SECRET_PREFIX = "sk_live_"
+_API_SECRET_PREFIX = "sk_live_"  # noqa: S105
 _TOKEN_BYTES = 48  # secrets.token_urlsafe(48) → 64 url-safe chars
 _BCRYPT_ROUNDS = 12
 _JWT_ALGORITHM = "HS256"
@@ -262,7 +262,7 @@ def create_jwt(
         token = create_jwt(account_id=account.id, jwt_secret=settings.jwt_secret)
         # → "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     expires_at = now + timedelta(hours=expiry_hours)
 
     payload: dict[str, object] = {
@@ -311,7 +311,7 @@ def verify_jwt(token: str, jwt_secret: str) -> JwtPayload:
             options={"require": ["sub", "iat", "exp"]},
         )
     except ExpiredSignatureError:
-        raise InvalidTokenError("JWT token has expired.")
+        raise InvalidTokenError("JWT token has expired.") from None
     except (DecodeError, _JWTInvalidTokenError) as exc:
         raise InvalidTokenError(f"JWT token is invalid: {exc}") from exc
 
@@ -322,8 +322,8 @@ def verify_jwt(token: str, jwt_secret: str) -> JwtPayload:
 
     # PyJWT guarantees iat and exp are present numeric values when decode()
     # succeeds with options={"require": ["iat", "exp"]}.
-    issued_at = datetime.fromtimestamp(float(decoded["iat"]), tz=timezone.utc)  # type: ignore[arg-type]
-    expires_at = datetime.fromtimestamp(float(decoded["exp"]), tz=timezone.utc)  # type: ignore[arg-type]
+    issued_at = datetime.fromtimestamp(float(decoded["iat"]), tz=UTC)  # type: ignore[arg-type]
+    expires_at = datetime.fromtimestamp(float(decoded["exp"]), tz=UTC)  # type: ignore[arg-type]
 
     return JwtPayload(
         account_id=account_id,

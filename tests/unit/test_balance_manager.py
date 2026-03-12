@@ -9,7 +9,7 @@ Tests cover:
 - execute_trade() — atomic buy and sell settlement
 - fee deduction in execute_trade
 - InsufficientBalanceError propagation
-- ValidationError on invalid inputs
+- InputValidationError on invalid inputs
 """
 
 from __future__ import annotations
@@ -23,8 +23,7 @@ import pytest
 from src.accounts.balance_manager import BalanceManager, TradeSettlement
 from src.config import Settings
 from src.database.models import Balance
-from src.utils.exceptions import InsufficientBalanceError, ValidationError
-
+from src.utils.exceptions import InputValidationError
 
 # ---------------------------------------------------------------------------
 # Helpers / Fixtures
@@ -107,19 +106,19 @@ async def test_credit_calls_repo_update_available():
 
 @pytest.mark.asyncio
 async def test_credit_zero_raises_validation_error():
-    """credit(0) raises ValidationError."""
+    """credit(0) raises InputValidationError."""
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError):
         await mgr.credit(uuid4(), asset="USDT", amount=Decimal("0"))
 
 
 @pytest.mark.asyncio
 async def test_credit_negative_raises_validation_error():
-    """credit(-1) raises ValidationError."""
+    """credit(-1) raises InputValidationError."""
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError):
         await mgr.credit(uuid4(), asset="USDT", amount=Decimal("-1"))
 
 
@@ -146,7 +145,7 @@ async def test_debit_calls_repo_with_negative_delta():
 async def test_debit_zero_raises_validation_error():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError):
         await mgr.debit(uuid4(), asset="USDT", amount=Decimal("0"))
 
 
@@ -173,7 +172,7 @@ async def test_lock_calls_atomic_lock_funds():
 async def test_lock_zero_raises_validation_error():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError):
         await mgr.lock(uuid4(), asset="USDT", amount=Decimal("0"))
 
 
@@ -200,7 +199,7 @@ async def test_unlock_calls_atomic_unlock_funds():
 async def test_unlock_zero_raises_validation_error():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError):
         await mgr.unlock(uuid4(), asset="USDT", amount=Decimal("0"))
 
 
@@ -246,19 +245,15 @@ async def test_has_sufficient_balance_use_locked():
     repo = _make_repo(get_result=_make_balance(account_id, available="0", locked="500"))
     mgr, _ = _make_manager(repo)
 
-    assert await mgr.has_sufficient_balance(
-        account_id, asset="USDT", amount=Decimal("500"), use_locked=True
-    )
-    assert not await mgr.has_sufficient_balance(
-        account_id, asset="USDT", amount=Decimal("501"), use_locked=True
-    )
+    assert await mgr.has_sufficient_balance(account_id, asset="USDT", amount=Decimal("500"), use_locked=True)
+    assert not await mgr.has_sufficient_balance(account_id, asset="USDT", amount=Decimal("501"), use_locked=True)
 
 
 @pytest.mark.asyncio
 async def test_has_sufficient_balance_zero_amount_raises():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError):
         await mgr.has_sufficient_balance(uuid4(), asset="USDT", amount=Decimal("0"))
 
 
@@ -392,7 +387,7 @@ async def test_execute_sell_calls_repo_with_net_quote():
 async def test_execute_trade_invalid_side_raises_validation_error():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError, match="side"):
+    with pytest.raises(InputValidationError, match="side"):
         await mgr.execute_trade(
             uuid4(),
             symbol="BTCUSDT",
@@ -408,7 +403,7 @@ async def test_execute_trade_invalid_side_raises_validation_error():
 async def test_execute_trade_zero_quantity_raises_validation_error():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError, match="quantity"):
+    with pytest.raises(InputValidationError, match="quantity"):
         await mgr.execute_trade(
             uuid4(),
             symbol="BTCUSDT",
@@ -424,7 +419,7 @@ async def test_execute_trade_zero_quantity_raises_validation_error():
 async def test_execute_trade_zero_price_raises_validation_error():
     mgr, _ = _make_manager()
 
-    with pytest.raises(ValidationError, match="execution_price"):
+    with pytest.raises(InputValidationError, match="execution_price"):
         await mgr.execute_trade(
             uuid4(),
             symbol="BTCUSDT",

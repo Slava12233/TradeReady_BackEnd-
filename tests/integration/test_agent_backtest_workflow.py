@@ -8,8 +8,8 @@ Requires Docker services.
 
 from __future__ import annotations
 
-import pytest
 from httpx import AsyncClient
+import pytest
 
 from src.main import create_app
 
@@ -25,16 +25,17 @@ async def client():
 
 @pytest.fixture
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
-    resp = await client.post("/api/v1/auth/register", json={
-        "display_name": "workflow_test_agent",
-    })
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "display_name": "workflow_test_agent",
+        },
+    )
     data = resp.json()
     return {"X-API-Key": data["api_key"]}
 
 
-async def test_multi_backtest_compare_workflow(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_multi_backtest_compare_workflow(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     """Agent creates two backtests, compares, picks best, switches mode."""
 
     resp = await client.get("/api/v1/market/data-range", headers=auth_headers)
@@ -47,13 +48,17 @@ async def test_multi_backtest_compare_workflow(
 
     for label in ["momentum_v1", "momentum_v2"]:
         # Create
-        resp = await client.post("/api/v1/backtest/create", headers=auth_headers, json={
-            "start_time": data_range["earliest"],
-            "end_time": data_range["latest"],
-            "starting_balance": "10000",
-            "candle_interval": 60,
-            "strategy_label": label,
-        })
+        resp = await client.post(
+            "/api/v1/backtest/create",
+            headers=auth_headers,
+            json={
+                "start_time": data_range["earliest"],
+                "end_time": data_range["latest"],
+                "starting_balance": "10000",
+                "candle_interval": 60,
+                "strategy_label": label,
+            },
+        )
         assert resp.status_code == 200
         sid = resp.json()["session_id"]
         session_ids.append(sid)
@@ -62,7 +67,8 @@ async def test_multi_backtest_compare_workflow(
         await client.post(f"/api/v1/backtest/{sid}/start", headers=auth_headers)
         await client.post(
             f"/api/v1/backtest/{sid}/step/batch",
-            headers=auth_headers, json={"steps": 50},
+            headers=auth_headers,
+            json={"steps": 50},
         )
         # Cancel to save results
         await client.post(f"/api/v1/backtest/{sid}/cancel", headers=auth_headers)

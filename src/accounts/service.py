@@ -31,16 +31,16 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import structlog
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.accounts.auth import (
     authenticate_api_key,
@@ -315,15 +315,13 @@ class AccountService:
         try:
             account = await self._account_repo.get_by_email(email)
         except AccountNotFoundError:
-            raise AuthenticationError("Invalid email or password.")
+            raise AuthenticationError("Invalid email or password.") from None
 
         if not account.password_hash:
             raise AuthenticationError("Invalid email or password.")
 
         loop = asyncio.get_event_loop()
-        password_matches: bool = await loop.run_in_executor(
-            None, verify_password, password, account.password_hash
-        )
+        password_matches: bool = await loop.run_in_executor(None, verify_password, password, account.password_hash)
         if not password_matches:
             log.warning("account.password_auth.invalid", email=email)
             raise AuthenticationError("Invalid email or password.")
@@ -449,7 +447,7 @@ class AccountService:
                 )
                 .values(
                     status="closed",
-                    ended_at=datetime.now(tz=timezone.utc),
+                    ended_at=datetime.now(tz=UTC),
                 )
             )
 
@@ -546,4 +544,3 @@ class AccountService:
             await self._session.rollback()
             raise DatabaseError("Failed to unsuspend account.") from exc
         log.info("account.unsuspended", account_id=str(account_id))
-

@@ -18,7 +18,7 @@ Plus:
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -31,9 +31,7 @@ from src.database.repositories.account_repo import AccountRepository
 from src.database.repositories.order_repo import OrderRepository
 from src.database.repositories.trade_repo import TradeRepository
 from src.order_engine.validators import OrderRequest
-from src.risk.manager import RiskCheckResult, RiskLimits, RiskManager
-from src.utils.exceptions import AccountNotFoundError
-
+from src.risk.manager import RiskCheckResult, RiskManager
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -53,8 +51,9 @@ def _make_account(
     return acc
 
 
-def _make_balance(available: str = "10000") -> Balance:
+def _make_balance(available: str = "10000", asset: str = "USDT") -> Balance:
     bal = MagicMock(spec=Balance)
+    bal.asset = asset
     bal.available = Decimal(available)
     bal.locked = Decimal("0")
     return bal
@@ -90,11 +89,13 @@ def _build_manager(
         account = _make_account()
 
     redis = AsyncMock()
-    # Simulate INCR returning rate_limit_count, followed by EXPIRE returning 1
+    # _check_rate_limit uses redis.get(key) to read current count
+    redis.get = AsyncMock(return_value=str(rate_limit_count) if rate_limit_count > 0 else None)
+    # _consume_rate_limit_token uses redis.pipeline() for INCR + EXPIRE
     mock_pipe = AsyncMock()
     mock_pipe.incr = MagicMock()
     mock_pipe.expire = MagicMock()
-    mock_pipe.execute = AsyncMock(return_value=[rate_limit_count, 1])
+    mock_pipe.execute = AsyncMock(return_value=[rate_limit_count + 1, 1])
     mock_pipe.__aenter__ = AsyncMock(return_value=mock_pipe)
     mock_pipe.__aexit__ = AsyncMock(return_value=False)
     redis.pipeline = MagicMock(return_value=mock_pipe)
@@ -111,6 +112,7 @@ def _build_manager(
 
     balance_mgr = AsyncMock(spec=BalanceManager)
     balance_mgr.get_balance = _get_balance
+    balance_mgr.get_all_balances = AsyncMock(return_value=[usdt_bal])
     balance_mgr.has_sufficient_balance = AsyncMock(return_value=True)
 
     account_repo = AsyncMock(spec=AccountRepository)
@@ -239,8 +241,8 @@ async def test_rejected_when_rate_limit_exceeded():
 
 @pytest.mark.asyncio
 async def test_not_rejected_at_rate_limit_boundary():
-    """rate_limit_count == 100 → within limit, step 3 passes."""
-    mgr, account = _build_manager(rate_limit_count=100)
+    """rate_limit_count == 99 → within limit (< 100), step 3 passes."""
+    mgr, account = _build_manager(rate_limit_count=99)
     order = _make_order_request()
 
     result = await mgr.validate_order(account.id, order)

@@ -20,8 +20,8 @@ Routes
   └── get_balance_manager()   → BalanceManager             (per-request, depends on db + settings)
   └── get_account_service()   → AccountService             (per-request, depends on db + settings)
   └── get_slippage_calc()     → SlippageCalculator         (per-request, depends on price_cache + settings)
-  └── get_order_engine()      → OrderEngine                (per-request, depends on db + price_cache + balance_manager + slippage)
-  └── get_risk_manager()      → RiskManager                (per-request, depends on redis + price_cache + balance_manager + repos + settings)
+  └── get_order_engine()      → OrderEngine                (per-request, db + cache + balance + slippage)
+  └── get_risk_manager()      → RiskManager                (per-request, redis + cache + balance + repos + settings)
   └── get_circuit_breaker()   → CircuitBreaker             (per-request, depends on redis + account_repo)
   └── get_portfolio_tracker() → PortfolioTracker           (per-request, depends on db + price_cache + settings)
   └── get_performance_metrics() → PerformanceMetrics       (per-request, depends on db)
@@ -40,7 +40,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import Settings
 from src.config import get_settings as _get_settings
-
 
 # ---------------------------------------------------------------------------
 # Settings
@@ -141,7 +140,7 @@ RedisDep = Annotated[Redis, Depends(get_redis)]
 
 async def get_price_cache(
     redis: RedisDep,
-) -> "PriceCacheDep":  # type: ignore[name-defined]
+) -> PriceCacheDep:  # type: ignore[name-defined]
     """Return a ``PriceCache`` instance bound to the current Redis client.
 
     Example::
@@ -173,7 +172,7 @@ except ImportError:
 
 async def get_account_repo(
     db: DbSessionDep,
-) -> "AccountRepoDep":  # type: ignore[name-defined]
+) -> AccountRepoDep:  # type: ignore[name-defined]
     """Return an ``AccountRepository`` wired to the current session."""
     from src.database.repositories.account_repo import AccountRepository  # noqa: PLC0415
 
@@ -182,7 +181,7 @@ async def get_account_repo(
 
 async def get_balance_repo(
     db: DbSessionDep,
-) -> "BalanceRepoDep":  # type: ignore[name-defined]
+) -> BalanceRepoDep:  # type: ignore[name-defined]
     """Return a ``BalanceRepository`` wired to the current session."""
     from src.database.repositories.balance_repo import BalanceRepository  # noqa: PLC0415
 
@@ -191,7 +190,7 @@ async def get_balance_repo(
 
 async def get_order_repo(
     db: DbSessionDep,
-) -> "OrderRepoDep":  # type: ignore[name-defined]
+) -> OrderRepoDep:  # type: ignore[name-defined]
     """Return an ``OrderRepository`` wired to the current session."""
     from src.database.repositories.order_repo import OrderRepository  # noqa: PLC0415
 
@@ -200,7 +199,7 @@ async def get_order_repo(
 
 async def get_trade_repo(
     db: DbSessionDep,
-) -> "TradeRepoDep":  # type: ignore[name-defined]
+) -> TradeRepoDep:  # type: ignore[name-defined]
     """Return a ``TradeRepository`` wired to the current session."""
     from src.database.repositories.trade_repo import TradeRepository  # noqa: PLC0415
 
@@ -209,7 +208,7 @@ async def get_trade_repo(
 
 async def get_tick_repo(
     db: DbSessionDep,
-) -> "TickRepoDep":  # type: ignore[name-defined]
+) -> TickRepoDep:  # type: ignore[name-defined]
     """Return a ``TickRepository`` wired to the current session."""
     from src.database.repositories.tick_repo import TickRepository  # noqa: PLC0415
 
@@ -218,7 +217,7 @@ async def get_tick_repo(
 
 async def get_snapshot_repo(
     db: DbSessionDep,
-) -> "SnapshotRepoDep":  # type: ignore[name-defined]
+) -> SnapshotRepoDep:  # type: ignore[name-defined]
     """Return a ``SnapshotRepository`` wired to the current session."""
     from src.database.repositories.snapshot_repo import SnapshotRepository  # noqa: PLC0415
 
@@ -230,9 +229,9 @@ try:
     from src.database.repositories.account_repo import AccountRepository as _AccountRepo
     from src.database.repositories.balance_repo import BalanceRepository as _BalanceRepo
     from src.database.repositories.order_repo import OrderRepository as _OrderRepo
-    from src.database.repositories.trade_repo import TradeRepository as _TradeRepo
-    from src.database.repositories.tick_repo import TickRepository as _TickRepo
     from src.database.repositories.snapshot_repo import SnapshotRepository as _SnapshotRepo
+    from src.database.repositories.tick_repo import TickRepository as _TickRepo
+    from src.database.repositories.trade_repo import TradeRepository as _TradeRepo
 
     AccountRepoDep = Annotated[_AccountRepo, Depends(get_account_repo)]
     BalanceRepoDep = Annotated[_BalanceRepo, Depends(get_balance_repo)]
@@ -257,7 +256,7 @@ except ImportError:
 async def get_balance_manager(
     db: DbSessionDep,
     settings: SettingsDep,
-) -> "BalanceManagerDep":  # type: ignore[name-defined]
+) -> BalanceManagerDep:  # type: ignore[name-defined]
     """Return a ``BalanceManager`` wired to the current session and settings.
 
     Example::
@@ -291,7 +290,7 @@ except ImportError:
 async def get_account_service(
     db: DbSessionDep,
     settings: SettingsDep,
-) -> "AccountServiceDep":  # type: ignore[name-defined]
+) -> AccountServiceDep:  # type: ignore[name-defined]
     """Return an ``AccountService`` wired to the current session and settings.
 
     Example::
@@ -325,7 +324,7 @@ except ImportError:
 async def get_slippage_calculator(
     price_cache: PriceCacheDep,  # type: ignore[valid-type]
     settings: SettingsDep,
-) -> "SlippageCalcDep":  # type: ignore[name-defined]
+) -> SlippageCalcDep:  # type: ignore[name-defined]
     """Return a ``SlippageCalculator`` wired to the current price cache.
 
     The ``default_factor`` is drawn from ``settings.default_slippage_factor``.
@@ -358,7 +357,7 @@ async def get_order_engine(
     slippage_calc: SlippageCalcDep,  # type: ignore[valid-type]
     order_repo: OrderRepoDep,  # type: ignore[valid-type]
     trade_repo: TradeRepoDep,  # type: ignore[valid-type]
-) -> "OrderEngineDep":  # type: ignore[name-defined]
+) -> OrderEngineDep:  # type: ignore[name-defined]
     """Return an ``OrderEngine`` wired to all required collaborators.
 
     Example::
@@ -404,7 +403,7 @@ async def get_risk_manager(
     order_repo: OrderRepoDep,  # type: ignore[valid-type]
     trade_repo: TradeRepoDep,  # type: ignore[valid-type]
     settings: SettingsDep,
-) -> "RiskManagerDep":  # type: ignore[name-defined]
+) -> RiskManagerDep:  # type: ignore[name-defined]
     """Return a ``RiskManager`` wired to all required collaborators.
 
     Example::
@@ -463,7 +462,7 @@ except ImportError:
 
 async def get_circuit_breaker_redis(
     redis: RedisDep,
-) -> "CircuitBreakerRedisDep":  # type: ignore[name-defined]
+) -> CircuitBreakerRedisDep:  # type: ignore[name-defined]
     """Return (redis,) tuple for use in Celery tasks that call reset_all.
 
     Routes that need a fully configured CircuitBreaker for a specific account
@@ -490,7 +489,7 @@ async def get_portfolio_tracker(
     db: DbSessionDep,
     price_cache: PriceCacheDep,  # type: ignore[valid-type]
     settings: SettingsDep,
-) -> "PortfolioTrackerDep":  # type: ignore[name-defined]
+) -> PortfolioTrackerDep:  # type: ignore[name-defined]
     """Return a ``PortfolioTracker`` wired to the current session.
 
     Example::
@@ -522,7 +521,7 @@ except ImportError:
 
 async def get_performance_metrics(
     db: DbSessionDep,
-) -> "PerformanceMetricsDep":  # type: ignore[name-defined]
+) -> PerformanceMetricsDep:  # type: ignore[name-defined]
     """Return a ``PerformanceMetrics`` instance wired to the current session.
 
     Example::
@@ -557,7 +556,7 @@ async def get_snapshot_service(
     db: DbSessionDep,
     price_cache: PriceCacheDep,  # type: ignore[valid-type]
     settings: SettingsDep,
-) -> "SnapshotServiceDep":  # type: ignore[name-defined]
+) -> SnapshotServiceDep:  # type: ignore[name-defined]
     """Return a ``SnapshotService`` wired to the current session.
 
     Example::
@@ -587,10 +586,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # The BacktestEngine is a singleton — it holds active sessions in memory.
-_backtest_engine_instance: "BacktestEngine | None" = None  # type: ignore[name-defined]
+_backtest_engine_instance: BacktestEngine | None = None  # type: ignore[name-defined]  # noqa: F821
 
 
-def get_backtest_engine() -> "BacktestEngineDep":  # type: ignore[name-defined]
+def get_backtest_engine() -> BacktestEngineDep:  # type: ignore[name-defined]
     """Return the singleton ``BacktestEngine`` instance.
 
     The engine is created lazily on the first call.  It holds active
@@ -620,7 +619,7 @@ except ImportError:
 
 async def get_backtest_repo(
     db: DbSessionDep,
-) -> "BacktestRepoDep":  # type: ignore[name-defined]
+) -> BacktestRepoDep:  # type: ignore[name-defined]
     """Return a ``BacktestRepository`` wired to the current session."""
     from src.database.repositories.backtest_repo import BacktestRepository  # noqa: PLC0415
 

@@ -16,8 +16,7 @@ Tests cover:
 
 from __future__ import annotations
 
-import math
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -26,7 +25,6 @@ import pytest
 
 from src.database.models import PortfolioSnapshot, Trade
 from src.portfolio.metrics import Metrics, PerformanceMetrics
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,7 +37,7 @@ def _make_trade(
 ) -> Trade:
     t = MagicMock(spec=Trade)
     t.realized_pnl = Decimal(realized_pnl) if realized_pnl else None
-    t.created_at = created_at or datetime.now(tz=timezone.utc)
+    t.created_at = created_at or datetime.now(tz=UTC)
     return t
 
 
@@ -50,7 +48,7 @@ def _make_snapshot(
 ) -> PortfolioSnapshot:
     s = MagicMock(spec=PortfolioSnapshot)
     s.total_equity = Decimal(equity)
-    s.created_at = created_at or datetime.now(tz=timezone.utc)
+    s.created_at = created_at or datetime.now(tz=UTC)
     s.snapshot_type = snapshot_type
     return s
 
@@ -139,11 +137,11 @@ async def test_single_losing_trade():
 async def test_win_rate_calculated_correctly():
     """3 wins out of 5 trades → win_rate = 60 %."""
     trades = [
-        _make_trade("100"),   # win
-        _make_trade("-50"),   # loss
-        _make_trade("200"),   # win
-        _make_trade("-10"),   # loss
-        _make_trade("300"),   # win
+        _make_trade("100"),  # win
+        _make_trade("-50"),  # loss
+        _make_trade("200"),  # win
+        _make_trade("-10"),  # loss
+        _make_trade("300"),  # win
     ]
     svc = _build_metrics(trades=trades)
     m = await svc.calculate(uuid4())
@@ -161,7 +159,7 @@ async def test_win_rate_calculated_correctly():
 async def test_profit_factor_gross_profit_over_gross_loss():
     """profit_factor = total_gains / abs(total_losses)."""
     trades = [
-        _make_trade("600"),   # win
+        _make_trade("600"),  # win
         _make_trade("-200"),  # loss
     ]
     svc = _build_metrics(trades=trades)
@@ -199,7 +197,7 @@ async def test_avg_win_and_avg_loss():
     svc = _build_metrics(trades=trades)
     m = await svc.calculate(uuid4())
 
-    assert m.avg_win == Decimal("200")   # (100+300)/2
+    assert m.avg_win == Decimal("200")  # (100+300)/2
     assert m.avg_loss == Decimal("-150")  # (-200+-100)/2
 
 
@@ -211,11 +209,11 @@ async def test_avg_win_and_avg_loss():
 @pytest.mark.asyncio
 async def test_max_drawdown_from_snapshots():
     """Max drawdown is computed from the equity snapshot series."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     snapshots = [
         _make_snapshot("10000", now),
         _make_snapshot("12000", now + timedelta(hours=1)),  # peak
-        _make_snapshot("9000",  now + timedelta(hours=2)),  # trough: -25%
+        _make_snapshot("9000", now + timedelta(hours=2)),  # trough: -25%
         _make_snapshot("11000", now + timedelta(hours=3)),
     ]
     svc = _build_metrics(snapshots=snapshots)
@@ -228,7 +226,7 @@ async def test_max_drawdown_from_snapshots():
 @pytest.mark.asyncio
 async def test_max_drawdown_zero_when_equity_only_rises():
     """No drawdown when equity only increases."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     snapshots = [
         _make_snapshot("10000", now),
         _make_snapshot("11000", now + timedelta(hours=1)),
@@ -248,12 +246,9 @@ async def test_max_drawdown_zero_when_equity_only_rises():
 @pytest.mark.asyncio
 async def test_sharpe_ratio_positive_for_consistently_profitable_equity():
     """Consistent equity growth should produce a positive Sharpe ratio."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     # 24 hourly snapshots with steady upward drift
-    snapshots = [
-        _make_snapshot(str(10000 + i * 100), now + timedelta(hours=i))
-        for i in range(24)
-    ]
+    snapshots = [_make_snapshot(str(10000 + i * 100), now + timedelta(hours=i)) for i in range(24)]
     svc = _build_metrics(snapshots=snapshots)
     m = await svc.calculate(uuid4())
 
@@ -277,12 +272,12 @@ async def test_sharpe_ratio_zero_when_no_snapshots():
 @pytest.mark.asyncio
 async def test_current_streak_win():
     """Three consecutive wins at the end → current_streak = 3."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     trades = [
         _make_trade("-100", now),
-        _make_trade("50",  now + timedelta(hours=1)),
-        _make_trade("60",  now + timedelta(hours=2)),
-        _make_trade("70",  now + timedelta(hours=3)),
+        _make_trade("50", now + timedelta(hours=1)),
+        _make_trade("60", now + timedelta(hours=2)),
+        _make_trade("70", now + timedelta(hours=3)),
     ]
     svc = _build_metrics(trades=trades)
     m = await svc.calculate(uuid4())
@@ -293,7 +288,7 @@ async def test_current_streak_win():
 @pytest.mark.asyncio
 async def test_current_streak_loss():
     """Two consecutive losses at the end → current_streak = -2."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     trades = [
         _make_trade("100", now),
         _make_trade("-50", now + timedelta(hours=1)),

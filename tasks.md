@@ -1,6 +1,6 @@
 # Tasks — AI Agent Crypto Trading Platform
 
-> **Last Updated:** 2026-02-24
+> **Last Updated:** 2026-03-12
 > **Status Legend:** `[ ]` To Do · `[~]` In Progress · `[x]` Done · `[-]` Blocked · `[!]` Needs Review
 
 ---
@@ -198,6 +198,23 @@
 - [x] Integration tests: WebSocket (connect, subscribe, receive price, order notification, heartbeat)
 - [ ] Verify OpenAPI docs auto-generated at `/docs` and `/redoc`
 - [ ] Load test with locust: 50 concurrent agents, ~400 req/s, verify p95 < 100ms
+
+### 3.8 Test Coverage Gap Analysis
+
+- [x] Unit tests: `src/utils/exceptions.py` — 13 tests (TradingPlatformError hierarchy, to_dict, http_status, details)
+- [x] Unit tests: `src/config.py` — 8 tests (Settings validation, field validators, DATABASE_URL scheme, JWT_SECRET length)
+- [x] Unit tests: `src/accounts/auth.py` — 19 tests + 2 bonus (API key generation, bcrypt hash, JWT create/verify, expiry)
+- [x] Unit tests: `src/order_engine/validators.py` — 15 tests (all validation rules, symbol format, quantity/price bounds)
+- [x] Unit tests: `src/risk/circuit_breaker.py` — 12 tests (trip, reset, daily PnL tracking, Redis integration)
+- [x] Unit tests: `src/accounts/service.py` — 12 tests (register, authenticate, get_account, reset_account, suspend)
+- [x] Unit tests: `src/order_engine/matching.py` — 13 tests (limit order matching, stop-loss/take-profit triggers)
+- [x] Unit tests: `src/portfolio/tracker.py` — 8 tests (real-time equity, unrealized PnL, positions)
+- [x] Unit tests: `src/cache/redis_client.py` — 8 tests (connection pool, ping health check, pipeline)
+- [x] Unit tests: `src/monitoring/health.py` — 10 tests (health check endpoint, Redis/DB/ingestion status)
+- [x] Expanded `tests/unit/test_backtest_engine.py` — +8 tests (now 13 total; fixed AsyncMock for preload_range)
+- [x] Expanded `tests/unit/test_backtest_sandbox.py` — +6 tests (now 20 total)
+- [x] Expanded `tests/unit/test_backtest_results.py` — +5 tests (now 16 total)
+- [x] Unit tests: `src/portfolio/snapshots.py` (snapshot_service) — 4 tests (new file)
 
 ---
 

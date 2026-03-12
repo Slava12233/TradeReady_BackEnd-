@@ -33,7 +33,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Shared config base
 # ---------------------------------------------------------------------------
@@ -121,7 +120,7 @@ class OrderRequest(_BaseSchema):
     )
 
     @model_validator(mode="after")
-    def _validate_price_requirement(self) -> "OrderRequest":
+    def _validate_price_requirement(self) -> OrderRequest:
         """Enforce price presence rules based on order type."""
         if self.type in _PRICE_REQUIRED and self.price is None:
             raise ValueError(f"'price' is required for '{self.type}' orders.")
@@ -260,8 +259,15 @@ class OrderResponse(_BaseSchema):
     )
 
     @field_serializer(
-        "requested_quantity", "executed_quantity", "executed_price",
-        "slippage_pct", "fee", "total_cost", "quantity", "price", "locked_amount",
+        "requested_quantity",
+        "executed_quantity",
+        "executed_price",
+        "slippage_pct",
+        "fee",
+        "total_cost",
+        "quantity",
+        "price",
+        "locked_amount",
     )
     def _serialize_decimal(self, value: Decimal | None) -> str | None:  # noqa: PLR6301
         return str(value) if value is not None else None

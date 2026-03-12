@@ -45,15 +45,12 @@ Example::
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timezone
 from decimal import Decimal
+import logging
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.auth import CurrentAccountDep
 from src.api.schemas.analytics import (
@@ -66,7 +63,6 @@ from src.api.schemas.analytics import (
     SnapshotItem,
 )
 from src.database.models import Account
-from src.database.repositories.account_repo import AccountRepository
 from src.dependencies import (
     DbSessionDep,
     PerformanceMetricsDep,
@@ -264,10 +260,7 @@ async def get_portfolio_history(
     interval: Annotated[
         SnapshotInterval,
         Query(
-            description=(
-                "Snapshot resolution: '1m' (minute), '1h' (hourly, default), "
-                "or '1d' (daily)."
-            ),
+            description=("Snapshot resolution: '1m' (minute), '1h' (hourly, default), or '1d' (daily)."),
             examples=["1h"],
         ),
     ] = "1h",
@@ -394,10 +387,7 @@ async def get_leaderboard(
     period: Annotated[
         AnalyticsPeriod,
         Query(
-            description=(
-                "Lookback window for leaderboard rankings. "
-                "'1d', '7d', '30d', '90d', or 'all'."
-            ),
+            description=("Lookback window for leaderboard rankings. '1d', '7d', '30d', '90d', or 'all'."),
             examples=["30d"],
         ),
     ] = "30d",

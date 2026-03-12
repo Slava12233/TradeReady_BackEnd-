@@ -41,9 +41,9 @@ Example::
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -57,11 +57,11 @@ from src.api.schemas.account import (
     BalanceItem,
     BalancesResponse,
     NewSessionSummary,
+    PnLPeriod,
+    PnLResponse,
     PortfolioResponse,
     PositionItem,
     PositionsResponse,
-    PnLPeriod,
-    PnLResponse,
     PreviousSessionSummary,
     ResetRequest,
     ResetResponse,
@@ -107,7 +107,7 @@ def _position_view_to_item(view: PositionView) -> PositionItem:
     # opened_at is not available on PositionView; use epoch as a sentinel.
     # In production the Position ORM row's opened_at would be fetched separately
     # if needed, but the schema requires it so we use a reasonable default.
-    opened_at = datetime.fromtimestamp(0, tz=timezone.utc)
+    opened_at = datetime.fromtimestamp(0, tz=UTC)
     return PositionItem(
         symbol=view.symbol,
         asset=view.asset,
@@ -135,15 +135,9 @@ def _build_risk_profile_info(account: Account) -> RiskProfileInfo:
     """
     profile: dict = account.risk_profile or {}
     return RiskProfileInfo(
-        max_position_size_pct=int(
-            profile.get("max_position_size_pct", _DEFAULT_MAX_POSITION_PCT)
-        ),
-        daily_loss_limit_pct=int(
-            profile.get("daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_PCT)
-        ),
-        max_open_orders=int(
-            profile.get("max_open_orders", _DEFAULT_MAX_OPEN_ORDERS)
-        ),
+        max_position_size_pct=int(profile.get("max_position_size_pct", _DEFAULT_MAX_POSITION_PCT)),
+        daily_loss_limit_pct=int(profile.get("daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_PCT)),
+        max_open_orders=int(profile.get("max_open_orders", _DEFAULT_MAX_OPEN_ORDERS)),
     )
 
 
@@ -264,8 +258,7 @@ async def get_account_info(
     status_code=status.HTTP_200_OK,
     summary="Get account balances",
     description=(
-        "Return per-asset balance breakdown (available + locked) and the "
-        "total portfolio equity expressed in USDT."
+        "Return per-asset balance breakdown (available + locked) and the total portfolio equity expressed in USDT."
     ),
 )
 async def get_balance(
@@ -499,7 +492,7 @@ async def get_portfolio(
         roi_pct=summary.roi_pct,
         starting_balance=summary.starting_balance,
         positions=position_items,
-        timestamp=datetime.now(tz=timezone.utc),
+        timestamp=datetime.now(tz=UTC),
     )
 
 
@@ -584,21 +577,9 @@ async def get_pnl(
         (Decimal(str(t.fee)) for t in period_trades if t.fee is not None),
         Decimal("0"),
     )
-    winning_trades = sum(
-        1
-        for t in period_trades
-        if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) > 0
-    )
-    losing_trades = sum(
-        1
-        for t in period_trades
-        if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) < 0
-    )
-    breakeven_trades = sum(
-        1
-        for t in period_trades
-        if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) == 0
-    )
+    winning_trades = sum(1 for t in period_trades if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) > 0)
+    losing_trades = sum(1 for t in period_trades if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) < 0)
+    breakeven_trades = sum(1 for t in period_trades if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) == 0)
     total_trades_with_pnl = winning_trades + losing_trades + breakeven_trades
     win_rate = (
         Decimal(str(winning_trades)) / Decimal(str(total_trades_with_pnl)) * Decimal("100")
@@ -645,10 +626,7 @@ async def get_pnl(
     response_model=RiskProfileInfo,
     status_code=status.HTTP_200_OK,
     summary="Update risk profile",
-    description=(
-        "Update the authenticated account's risk limits. "
-        "All three fields must be provided."
-    ),
+    description=("Update the authenticated account's risk limits. All three fields must be provided."),
 )
 async def update_risk_profile(
     body: RiskProfileInfo,
@@ -806,9 +784,11 @@ async def reset_account(
     # Calculate previous session duration in days.
     duration_days = max(
         0,
-        (datetime.now(tz=timezone.utc) - started_at.replace(tzinfo=timezone.utc)
-         if started_at.tzinfo is None
-         else datetime.now(tz=timezone.utc) - started_at).days,
+        (
+            datetime.now(tz=UTC) - started_at.replace(tzinfo=UTC)
+            if started_at.tzinfo is None
+            else datetime.now(tz=UTC) - started_at
+        ).days,
     )
 
     # Determine new starting balance (original or override from request).

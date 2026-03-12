@@ -7,23 +7,22 @@ their ``TimeSimulator`` and ``BacktestSandbox``.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import UTC, datetime
+from decimal import Decimal
+import time
 from typing import Any
 from uuid import UUID
 
-import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
-from src.backtesting.data_replayer import Candle, DataReplayer, TickerData
+from src.backtesting.data_replayer import Candle, DataReplayer
 from src.backtesting.results import (
     BacktestMetrics,
     PairStats,
     calculate_metrics,
     calculate_per_pair_stats,
-    generate_equity_curve,
 )
 from src.backtesting.sandbox import BacktestSandbox, OrderResult, PortfolioSummary
 from src.backtesting.time_simulator import TimeSimulator
@@ -126,13 +125,11 @@ class BacktestEngine:
         session_factory: Callable returning async DB sessions.
     """
 
-    def __init__(self, session_factory: Any) -> None:
+    def __init__(self, session_factory: Any) -> None:  # noqa: ANN401
         self._session_factory = session_factory
         self._active: dict[str, _ActiveSession] = {}
 
-    async def create_session(
-        self, account_id: UUID, config: BacktestConfig, db: AsyncSession
-    ) -> BacktestSessionModel:
+    async def create_session(self, account_id: UUID, config: BacktestConfig, db: AsyncSession) -> BacktestSessionModel:
         """Create a new backtest session in the database.
 
         Validates the time range has data and the balance is reasonable.
@@ -260,7 +257,7 @@ class BacktestEngine:
 
         # Update DB
         session.status = "running"
-        session.started_at = datetime.now(tz=timezone.utc)
+        session.started_at = datetime.now(tz=UTC)
         session.virtual_clock = config.start_time
         await db.flush()
 
@@ -336,9 +333,7 @@ class BacktestEngine:
             remaining_steps=remaining_steps,
         )
 
-    async def step_batch(
-        self, session_id: str, steps: int, db: AsyncSession
-    ) -> StepResult:
+    async def step_batch(self, session_id: str, steps: int, db: AsyncSession) -> StepResult:
         """Advance multiple candle steps.
 
         Args:
@@ -376,9 +371,7 @@ class BacktestEngine:
             )
         return result
 
-    async def get_price(
-        self, session_id: str, symbol: str
-    ) -> PriceAtTime:
+    async def get_price(self, session_id: str, symbol: str) -> PriceAtTime:
         """Get the current price for a symbol in the backtest.
 
         Args:
@@ -396,24 +389,28 @@ class BacktestEngine:
             virtual_time=active.simulator.current_time,
         )
 
-    async def get_candles(
-        self, session_id: str, symbol: str, interval: int = 60, limit: int = 100
-    ) -> list[Candle]:
+    async def get_candles(self, session_id: str, symbol: str, interval: int = 60, limit: int = 100) -> list[Candle]:
         """Get historical candles up to the current virtual time."""
         active = self._get_active(session_id)
-        return await active.replayer.load_candles(
-            symbol, active.simulator.current_time, interval, limit
-        )
+        return await active.replayer.load_candles(symbol, active.simulator.current_time, interval, limit)
 
     async def execute_order(
-        self, session_id: str, symbol: str, side: str, order_type: str,
-        quantity: Decimal, price: Decimal | None,
+        self,
+        session_id: str,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: Decimal,
+        price: Decimal | None,
     ) -> OrderResult:
         """Place an order in the backtest sandbox."""
         active = self._get_active(session_id)
         return active.sandbox.place_order(
-            symbol=symbol, side=side, order_type=order_type,
-            quantity=quantity, price=price,
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            price=price,
             current_prices=active.current_prices,
             virtual_time=active.simulator.current_time,
         )
@@ -436,9 +433,7 @@ class BacktestEngine:
         active = self._get_active(session_id)
         return active.sandbox.get_portfolio(active.current_prices)
 
-    async def complete(
-        self, session_id: str, db: AsyncSession
-    ) -> BacktestResult:
+    async def complete(self, session_id: str, db: AsyncSession) -> BacktestResult:
         """Complete a backtest: close positions, compute metrics, persist results.
 
         Args:
@@ -451,35 +446,30 @@ class BacktestEngine:
         active = self._get_active(session_id)
 
         # Close all open positions
-        active.sandbox.close_all_positions(
-            active.current_prices, active.simulator.current_time
-        )
+        active.sandbox.close_all_positions(active.current_prices, active.simulator.current_time)
 
         # Final snapshot
-        active.sandbox.capture_snapshot(
-            active.current_prices, active.simulator.current_time
-        )
+        active.sandbox.capture_snapshot(active.current_prices, active.simulator.current_time)
 
         # Compute metrics
         portfolio = active.sandbox.get_portfolio(active.current_prices)
-        duration_days = Decimal(str(
-            (active.config.end_time - active.config.start_time).total_seconds() / 86400
-        ))
+        duration_days = Decimal(str((active.config.end_time - active.config.start_time).total_seconds() / 86400))
         metrics = calculate_metrics(
-            active.sandbox.trades, active.sandbox.snapshots,
-            active.config.starting_balance, duration_days,
+            active.sandbox.trades,
+            active.sandbox.snapshots,
+            active.config.starting_balance,
+            duration_days,
         )
-        per_pair = calculate_per_pair_stats(active.sandbox.trades)
+        _per_pair = calculate_per_pair_stats(active.sandbox.trades)
 
         total_pnl = portfolio.total_equity - active.config.starting_balance
         roi_pct = (
             (total_pnl / active.config.starting_balance * Decimal("100")).quantize(_QUANT2)
-            if active.config.starting_balance > 0 else Decimal("0")
+            if active.config.starting_balance > 0
+            else Decimal("0")
         )
 
-        wall_duration = Decimal(str(
-            time.monotonic() - active.started_wall
-        )).quantize(_QUANT2)
+        wall_duration = Decimal(str(time.monotonic() - active.started_wall)).quantize(_QUANT2)
 
         # Persist to DB
         result = await self._persist_results(
@@ -490,31 +480,33 @@ class BacktestEngine:
         self._active.pop(session_id, None)
         return result
 
-    async def cancel(
-        self, session_id: str, db: AsyncSession
-    ) -> BacktestResult:
+    async def cancel(self, session_id: str, db: AsyncSession) -> BacktestResult:
         """Cancel a running backtest and save partial results."""
         active = self._get_active(session_id)
 
         # Final snapshot at current position
-        active.sandbox.capture_snapshot(
-            active.current_prices, active.simulator.current_time
-        )
+        active.sandbox.capture_snapshot(active.current_prices, active.simulator.current_time)
 
         portfolio = active.sandbox.get_portfolio(active.current_prices)
         total_pnl = portfolio.total_equity - active.config.starting_balance
         roi_pct = (
             (total_pnl / active.config.starting_balance * Decimal("100")).quantize(_QUANT2)
-            if active.config.starting_balance > 0 else Decimal("0")
+            if active.config.starting_balance > 0
+            else Decimal("0")
         )
 
-        wall_duration = Decimal(str(
-            time.monotonic() - active.started_wall
-        )).quantize(_QUANT2)
+        wall_duration = Decimal(str(time.monotonic() - active.started_wall)).quantize(_QUANT2)
 
         result = await self._persist_results(
-            session_id, db, active, portfolio, None, total_pnl, roi_pct,
-            wall_duration, status="cancelled",
+            session_id,
+            db,
+            active,
+            portfolio,
+            None,
+            total_pnl,
+            roi_pct,
+            wall_duration,
+            status="cancelled",
         )
 
         self._active.pop(session_id, None)
@@ -535,15 +527,11 @@ class BacktestEngine:
             )
         return active
 
-    async def _load_session(
-        self, session_id: str, db: AsyncSession
-    ) -> BacktestSessionModel:
+    async def _load_session(self, session_id: str, db: AsyncSession) -> BacktestSessionModel:
         """Load session from DB."""
         from sqlalchemy import select
 
-        stmt = select(BacktestSessionModel).where(
-            BacktestSessionModel.id == session_id
-        )
+        stmt = select(BacktestSessionModel).where(BacktestSessionModel.id == session_id)
         result = await db.execute(stmt)
         session = result.scalars().first()
         if session is None:
@@ -566,7 +554,7 @@ class BacktestEngine:
         from src.database.models import BacktestSnapshot, BacktestTrade
 
         session = await self._load_session(session_id, db)
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         session.status = status
         session.completed_at = now
@@ -583,36 +571,40 @@ class BacktestEngine:
 
         # Bulk insert trades
         for t in active.sandbox.trades:
-            db.add(BacktestTrade(
-                session_id=UUID(session_id),
-                symbol=t.symbol,
-                side=t.side,
-                type=t.type,
-                quantity=t.quantity,
-                price=t.price,
-                quote_amount=t.quote_amount,
-                fee=t.fee,
-                slippage_pct=t.slippage_pct,
-                realized_pnl=t.realized_pnl,
-                simulated_at=t.simulated_at,
-            ))
+            db.add(
+                BacktestTrade(
+                    session_id=UUID(session_id),
+                    symbol=t.symbol,
+                    side=t.side,
+                    type=t.type,
+                    quantity=t.quantity,
+                    price=t.price,
+                    quote_amount=t.quote_amount,
+                    fee=t.fee,
+                    slippage_pct=t.slippage_pct,
+                    realized_pnl=t.realized_pnl,
+                    simulated_at=t.simulated_at,
+                )
+            )
 
         # Bulk insert snapshots
         for s in active.sandbox.snapshots:
-            db.add(BacktestSnapshot(
-                session_id=UUID(session_id),
-                simulated_at=s.simulated_at,
-                total_equity=s.total_equity,
-                available_cash=s.available_cash,
-                position_value=s.position_value,
-                unrealized_pnl=s.unrealized_pnl,
-                realized_pnl=s.realized_pnl,
-                positions=s.positions,
-            ))
+            db.add(
+                BacktestSnapshot(
+                    session_id=UUID(session_id),
+                    simulated_at=s.simulated_at,
+                    total_equity=s.total_equity,
+                    available_cash=s.available_cash,
+                    position_value=s.position_value,
+                    unrealized_pnl=s.unrealized_pnl,
+                    realized_pnl=s.realized_pnl,
+                    positions=s.positions,
+                )
+            )
 
         await db.flush()
 
-        per_pair = calculate_per_pair_stats(active.sandbox.trades)
+        _per_pair = calculate_per_pair_stats(active.sandbox.trades)
 
         logger.info(
             "backtest.completed",
@@ -640,6 +632,6 @@ class BacktestEngine:
             total_trades=active.sandbox.total_trades,
             total_fees=active.sandbox.total_fees,
             metrics=metrics,
-            per_pair=per_pair,
+            per_pair=_per_pair,
             duration_real_sec=wall_duration,
         )

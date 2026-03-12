@@ -24,10 +24,8 @@ Dependencies:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -45,7 +43,6 @@ from src.order_engine.engine import OrderEngine, OrderResult
 from src.order_engine.slippage import SlippageCalculator, SlippageResult
 from src.order_engine.validators import OrderRequest, OrderValidator
 from src.risk.manager import RiskCheckResult, RiskManager
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -277,9 +274,7 @@ async def test_market_sell_receives_net_proceeds(settings, account_id):
 
     balance_mgr = AsyncMock(spec=BalanceManager)
     balance_mgr.has_sufficient_balance = AsyncMock(return_value=True)
-    balance_mgr.get_balance = AsyncMock(
-        return_value=MagicMock(available=Decimal("0.1"), locked=Decimal("0"))
-    )
+    balance_mgr.get_balance = AsyncMock(return_value=MagicMock(available=Decimal("0.1"), locked=Decimal("0")))
     balance_mgr.execute_trade = AsyncMock(return_value=settlement_mock)
 
     created_order = MagicMock(spec=Order)
@@ -374,8 +369,9 @@ async def test_risk_rejection_propagated_to_caller(settings, account_id):
 @pytest.mark.asyncio
 async def test_slippage_increases_with_order_size_in_context():
     """In a real trade context, larger orders cost more in slippage."""
-    from src.order_engine.slippage import SlippageCalculator, SlippageResult
     from unittest.mock import AsyncMock, MagicMock
+
+    from src.order_engine.slippage import SlippageCalculator
 
     ticker = MagicMock()
     ticker.volume = Decimal("5000")  # moderate liquidity

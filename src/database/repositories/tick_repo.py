@@ -24,14 +24,15 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Sequence
 
-from sqlalchemy import func as sa_func, select
+from sqlalchemy import func as sa_func
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import Tick
 from src.utils.exceptions import DatabaseError
@@ -86,12 +87,7 @@ class TickRepository:
             current_price = tick.price
         """
         try:
-            stmt = (
-                select(Tick)
-                .where(Tick.symbol == symbol)
-                .order_by(Tick.time.desc())
-                .limit(1)
-            )
+            stmt = select(Tick).where(Tick.symbol == symbol).order_by(Tick.time.desc()).limit(1)
             result = await self._session.execute(stmt)
             return result.scalars().first()
         except SQLAlchemyError as exc:
@@ -99,9 +95,7 @@ class TickRepository:
                 "tick_repo.get_latest.db_error",
                 extra={"symbol": symbol, "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to fetch latest tick for symbol '{symbol}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch latest tick for symbol '{symbol}'.") from exc
 
     async def get_range(
         self,
@@ -149,7 +143,7 @@ class TickRepository:
             )
         """
         if until is None:
-            until = datetime.now(tz=timezone.utc)
+            until = datetime.now(tz=UTC)
 
         try:
             stmt = (
@@ -176,9 +170,7 @@ class TickRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to fetch tick range for symbol '{symbol}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch tick range for symbol '{symbol}'.") from exc
 
     async def get_price_at(self, symbol: str, *, at: datetime) -> Tick | None:
         """Return the tick closest to (but not after) *at* for *symbol*.
@@ -228,9 +220,7 @@ class TickRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to fetch tick at timestamp for symbol '{symbol}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch tick at timestamp for symbol '{symbol}'.") from exc
 
     async def count_in_range(
         self,
@@ -267,7 +257,7 @@ class TickRepository:
             is_fresh = count > 0
         """
         if until is None:
-            until = datetime.now(tz=timezone.utc)
+            until = datetime.now(tz=UTC)
 
         try:
             stmt = select(sa_func.count()).where(
@@ -287,9 +277,7 @@ class TickRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to count ticks in range for symbol '{symbol}'."
-            ) from exc
+            raise DatabaseError(f"Failed to count ticks in range for symbol '{symbol}'.") from exc
 
     async def get_vwap(
         self,
@@ -331,7 +319,7 @@ class TickRepository:
                 raise PriceNotAvailableError(symbol="BTCUSDT")
         """
         if until is None:
-            until = datetime.now(tz=timezone.utc)
+            until = datetime.now(tz=UTC)
 
         try:
             stmt = select(
@@ -359,6 +347,4 @@ class TickRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to compute VWAP for symbol '{symbol}'."
-            ) from exc
+            raise DatabaseError(f"Failed to compute VWAP for symbol '{symbol}'.") from exc

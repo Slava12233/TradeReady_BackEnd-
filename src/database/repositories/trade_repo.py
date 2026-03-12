@@ -15,15 +15,16 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
-from datetime import date, datetime, time, timedelta, timezone
+from collections.abc import Sequence
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import func as sa_func, select
+from sqlalchemy import func as sa_func
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import Trade
 from src.utils.exceptions import DatabaseError, TradeNotFoundError
@@ -125,9 +126,7 @@ class TradeRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Integrity error while creating trade: {exc}"
-            ) from exc
+            raise DatabaseError(f"Integrity error while creating trade: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception(
@@ -266,8 +265,12 @@ class TradeRepository:
             DatabaseError: On any SQLAlchemy / database error.
         """
         try:
-            stmt = select(sa_func.count()).select_from(Trade).where(
-                Trade.account_id == account_id,
+            stmt = (
+                select(sa_func.count())
+                .select_from(Trade)
+                .where(
+                    Trade.account_id == account_id,
+                )
             )
             if symbol is not None:
                 stmt = stmt.where(Trade.symbol == symbol)
@@ -372,9 +375,9 @@ class TradeRepository:
             )
         """
         if day is None:
-            day = datetime.now(tz=timezone.utc).date()
+            day = datetime.now(tz=UTC).date()
 
-        day_start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+        day_start = datetime.combine(day, time.min, tzinfo=UTC)
         day_end = day_start + timedelta(days=1)
 
         try:
@@ -398,9 +401,7 @@ class TradeRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to fetch daily trades for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch daily trades for account '{account_id}'.") from exc
 
     async def sum_daily_realized_pnl(
         self,
@@ -436,15 +437,13 @@ class TradeRepository:
                 raise DailyLossLimitError(...)
         """
         if day is None:
-            day = datetime.now(tz=timezone.utc).date()
+            day = datetime.now(tz=UTC).date()
 
-        day_start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+        day_start = datetime.combine(day, time.min, tzinfo=UTC)
         day_end = day_start + timedelta(days=1)
 
         try:
-            stmt = select(
-                sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)
-            ).where(
+            stmt = select(sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)).where(
                 Trade.account_id == account_id,
                 Trade.created_at >= day_start,
                 Trade.created_at < day_end,
@@ -461,6 +460,4 @@ class TradeRepository:
                     "error": str(exc),
                 },
             )
-            raise DatabaseError(
-                f"Failed to aggregate daily PnL for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to aggregate daily PnL for account '{account_id}'.") from exc

@@ -11,9 +11,9 @@ Reference: https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-dat
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from decimal import Decimal
+import logging
 
 import httpx
 
@@ -82,15 +82,17 @@ async def fetch_binance_klines(
 
     candles: list[dict] = []
     for kline in raw:
-        candles.append({
-            "time": datetime.fromtimestamp(kline[0] / 1000, tz=UTC),
-            "open": Decimal(str(kline[1])),
-            "high": Decimal(str(kline[2])),
-            "low": Decimal(str(kline[3])),
-            "close": Decimal(str(kline[4])),
-            "volume": Decimal(str(kline[5])),
-            "trade_count": int(kline[8]),
-        })
+        candles.append(
+            {
+                "time": datetime.fromtimestamp(kline[0] / 1000, tz=UTC),
+                "open": Decimal(str(kline[1])),
+                "high": Decimal(str(kline[2])),
+                "low": Decimal(str(kline[3])),
+                "close": Decimal(str(kline[4])),
+                "volume": Decimal(str(kline[5])),
+                "trade_count": int(kline[8]),
+            }
+        )
 
     logger.debug(
         "binance_klines.fetched",

@@ -13,16 +13,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncpg
 import pytest
 
-from src.cache.price_cache import Tick
 from src.price_ingestion.tick_buffer import TickBuffer
 from tests.conftest import make_tick
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,7 +98,9 @@ async def test_flush_called_with_correct_records(mock_asyncpg_pool: MagicMock) -
     conn.copy_records_to_table.assert_awaited_once()
 
     call_kwargs = conn.copy_records_to_table.call_args
-    records = call_kwargs.kwargs.get("records") or call_kwargs.args[1] if call_kwargs.args else call_kwargs.kwargs["records"]
+    records = (
+        call_kwargs.kwargs.get("records") or call_kwargs.args[1] if call_kwargs.args else call_kwargs.kwargs["records"]
+    )
     assert len(records) == 2
     assert records[0][1] == "BTCUSDT"
     assert records[1][1] == "ETHUSDT"
@@ -147,9 +146,7 @@ async def test_manual_flush_empty_buffer_returns_zero(mock_asyncpg_pool: MagicMo
 async def test_buffer_retained_on_postgres_error(mock_asyncpg_pool: MagicMock) -> None:
     """When copy_records_to_table raises PostgresError the buffer must be kept."""
     conn = mock_asyncpg_pool.acquire.return_value.__aenter__.return_value
-    conn.copy_records_to_table = AsyncMock(
-        side_effect=asyncpg.PostgresError("connection lost")
-    )
+    conn.copy_records_to_table = AsyncMock(side_effect=asyncpg.PostgresError("connection lost"))
 
     buffer = _make_buffer(mock_asyncpg_pool, max_size=100)
     for i in range(3):
@@ -181,9 +178,7 @@ async def test_retry_after_failure(mock_asyncpg_pool: MagicMock) -> None:
     """After a failed flush the same ticks should be written on the next call."""
     conn = mock_asyncpg_pool.acquire.return_value.__aenter__.return_value
     # First call fails, second call succeeds
-    conn.copy_records_to_table = AsyncMock(
-        side_effect=[asyncpg.PostgresError("first failure"), None]
-    )
+    conn.copy_records_to_table = AsyncMock(side_effect=[asyncpg.PostgresError("first failure"), None])
 
     buffer = _make_buffer(mock_asyncpg_pool, max_size=100)
     await buffer.add(make_tick(trade_id=1))

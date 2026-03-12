@@ -7,9 +7,9 @@ for precision.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+import math
 from typing import Any
 
 from src.backtesting.sandbox import SandboxSnapshot, SandboxTrade
@@ -103,26 +103,14 @@ def calculate_metrics(
     wins = [p for p in pnls if p > _ZERO]
     losses = [p for p in pnls if p < _ZERO]
 
-    win_rate = (
-        (Decimal(len(wins)) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2)
-        if pnls else _ZERO
-    )
+    win_rate = (Decimal(len(wins)) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2) if pnls else _ZERO
 
-    avg_win = (
-        (sum(wins) / Decimal(len(wins))).quantize(_QUANT8)
-        if wins else _ZERO
-    )
-    avg_loss = (
-        (sum(losses) / Decimal(len(losses))).quantize(_QUANT8)
-        if losses else _ZERO
-    )
+    avg_win = (sum(wins) / Decimal(len(wins))).quantize(_QUANT8) if wins else _ZERO
+    avg_loss = (sum(losses) / Decimal(len(losses))).quantize(_QUANT8) if losses else _ZERO
 
     gross_profit = sum(wins) if wins else _ZERO
     gross_loss = abs(sum(losses)) if losses else _ZERO
-    profit_factor = (
-        (gross_profit / gross_loss).quantize(_QUANT4)
-        if gross_loss > _ZERO else None
-    )
+    profit_factor = (gross_profit / gross_loss).quantize(_QUANT4) if gross_loss > _ZERO else None
 
     best_trade = max(pnls) if pnls else _ZERO
     worst_trade = min(pnls) if pnls else _ZERO
@@ -137,10 +125,7 @@ def calculate_metrics(
         if durations:
             avg_trade_duration = (sum(durations) / Decimal(len(durations))).quantize(_QUANT2)
 
-    trades_per_day = (
-        (Decimal(len(trades)) / duration_days).quantize(_QUANT2)
-        if duration_days > _ZERO else _ZERO
-    )
+    trades_per_day = (Decimal(len(trades)) / duration_days).quantize(_QUANT2) if duration_days > _ZERO else _ZERO
 
     # ── Drawdown from equity curve ───────────────────────────────────────
     max_dd_pct = _ZERO
@@ -164,9 +149,7 @@ def calculate_metrics(
 
         # Duration of max drawdown in days
         if dd_start_idx < len(snapshots) - 1:
-            dd_seconds = (
-                snapshots[-1].simulated_at - snapshots[dd_start_idx].simulated_at
-            ).total_seconds()
+            dd_seconds = (snapshots[-1].simulated_at - snapshots[dd_start_idx].simulated_at).total_seconds()
             max_dd_duration_days = (Decimal(str(dd_seconds)) / Decimal("86400")).quantize(_QUANT2)
 
     # ── Sharpe & Sortino from daily returns ──────────────────────────────
@@ -211,21 +194,21 @@ def calculate_per_pair_stats(trades: list[SandboxTrade]) -> list[PairStats]:
         wr = (Decimal(wins) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2) if pnls else _ZERO
         total_vol = sum(t.quote_amount for t in symbol_trades)
 
-        results.append(PairStats(
-            symbol=symbol,
-            trades=len(symbol_trades),
-            wins=wins,
-            losses=losses_count,
-            win_rate=wr,
-            net_pnl=net_pnl.quantize(_QUANT8),
-            total_volume=total_vol.quantize(_QUANT8),
-        ))
+        results.append(
+            PairStats(
+                symbol=symbol,
+                trades=len(symbol_trades),
+                wins=wins,
+                losses=losses_count,
+                win_rate=wr,
+                net_pnl=net_pnl.quantize(_QUANT8),
+                total_volume=total_vol.quantize(_QUANT8),
+            )
+        )
     return results
 
 
-def generate_equity_curve(
-    snapshots: list[SandboxSnapshot], interval: int = 1
-) -> list[EquityPoint]:
+def generate_equity_curve(snapshots: list[SandboxSnapshot], interval: int = 1) -> list[EquityPoint]:
     """Generate equity curve points from snapshots.
 
     Args:
@@ -300,7 +283,7 @@ def _compute_sortino(snapshots: list[SandboxSnapshot]) -> Decimal | None:
     if not downside:
         return None
 
-    downside_var = sum(r ** 2 for r in downside) / Decimal(len(downside))
+    downside_var = sum(r**2 for r in downside) / Decimal(len(downside))
     downside_std = Decimal(str(math.sqrt(float(downside_var))))
 
     if downside_std == _ZERO:

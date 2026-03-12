@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     )
 
     # ── API Server ────────────────────────────────────────────────────────────
-    api_host: str = Field(default="0.0.0.0")
+    api_host: str = Field(default="0.0.0.0")  # noqa: S104
     api_port: int = Field(default=8000, ge=1, le=65535)
     api_base_url: str = Field(default="https://api.agentexchange.com")
 
@@ -98,10 +98,7 @@ class Settings(BaseSettings):
     def _database_url_asyncpg(cls, value: str) -> str:
         """Ensure the database URL uses the asyncpg driver."""
         if not value.startswith("postgresql+asyncpg://"):
-            raise ValueError(
-                "database_url must use the asyncpg driver "
-                "(postgresql+asyncpg://...)"
-            )
+            raise ValueError("database_url must use the asyncpg driver (postgresql+asyncpg://...)")
         return value
 
 

@@ -8,8 +8,8 @@ Tasks:
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import logging
-from datetime import datetime, timedelta, timezone
 
 from src.tasks.celery_app import app
 
@@ -35,7 +35,7 @@ async def _cancel_stale_backtests_async() -> dict[str, int]:
     from src.database.models import BacktestSession
     from src.database.session import get_session_factory
 
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+    cutoff = datetime.now(tz=UTC) - timedelta(hours=1)
     factory = get_session_factory()
 
     async with factory() as session:
@@ -45,7 +45,7 @@ async def _cancel_stale_backtests_async() -> dict[str, int]:
                 BacktestSession.status.in_(["running", "created"]),
                 BacktestSession.updated_at < cutoff,
             )
-            .values(status="cancelled", completed_at=datetime.now(tz=timezone.utc))
+            .values(status="cancelled", completed_at=datetime.now(tz=UTC))
         )
         result = await session.execute(stmt)
         await session.commit()

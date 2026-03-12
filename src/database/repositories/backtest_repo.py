@@ -7,15 +7,14 @@ SQLAlchemy queries for backtest data directly.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import structlog
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import BacktestSession, BacktestSnapshot, BacktestTrade
 from src.utils.exceptions import DatabaseError
@@ -45,9 +44,7 @@ class BacktestRepository:
             logger.exception("backtest_repo.create_session.error", error=str(exc))
             raise DatabaseError("Failed to create backtest session.") from exc
 
-    async def get_session(
-        self, session_id: UUID, account_id: UUID | None = None
-    ) -> BacktestSession | None:
+    async def get_session(self, session_id: UUID, account_id: UUID | None = None) -> BacktestSession | None:
         """Fetch a backtest session by ID, optionally scoped to account."""
         try:
             stmt = select(BacktestSession).where(BacktestSession.id == session_id)
@@ -65,7 +62,7 @@ class BacktestRepository:
             stmt = (
                 update(BacktestSession)
                 .where(BacktestSession.id == session_id)
-                .values(**fields, updated_at=datetime.now(tz=timezone.utc))
+                .values(**fields, updated_at=datetime.now(tz=UTC))
             )
             await self._session.execute(stmt)
             await self._session.flush()
@@ -84,9 +81,7 @@ class BacktestRepository:
     ) -> Sequence[BacktestSession]:
         """List backtest sessions for an account with optional filters."""
         try:
-            stmt = select(BacktestSession).where(
-                BacktestSession.account_id == account_id
-            )
+            stmt = select(BacktestSession).where(BacktestSession.account_id == account_id)
             if strategy_label is not None:
                 stmt = stmt.where(BacktestSession.strategy_label == strategy_label)
             if status is not None:
@@ -108,9 +103,7 @@ class BacktestRepository:
 
     # ── Trades ───────────────────────────────────────────────────────────
 
-    async def save_trades(
-        self, session_id: UUID, trades: list[BacktestTrade]
-    ) -> None:
+    async def save_trades(self, session_id: UUID, trades: list[BacktestTrade]) -> None:
         """Bulk insert trades for a session."""
         try:
             for trade in trades:
@@ -121,9 +114,7 @@ class BacktestRepository:
             logger.exception("backtest_repo.save_trades.error", error=str(exc))
             raise DatabaseError("Failed to save backtest trades.") from exc
 
-    async def get_trades(
-        self, session_id: UUID, *, limit: int = 1000, offset: int = 0
-    ) -> Sequence[BacktestTrade]:
+    async def get_trades(self, session_id: UUID, *, limit: int = 1000, offset: int = 0) -> Sequence[BacktestTrade]:
         """Get trades for a session, ordered by simulated_at."""
         try:
             stmt = (
@@ -141,9 +132,7 @@ class BacktestRepository:
 
     # ── Snapshots ────────────────────────────────────────────────────────
 
-    async def save_snapshots(
-        self, session_id: UUID, snapshots: list[BacktestSnapshot]
-    ) -> None:
+    async def save_snapshots(self, session_id: UUID, snapshots: list[BacktestSnapshot]) -> None:
         """Bulk insert snapshots for a session."""
         try:
             for snap in snapshots:
@@ -194,14 +183,10 @@ class BacktestRepository:
             logger.exception("backtest_repo.get_best_session.error", error=str(exc))
             raise DatabaseError("Failed to fetch best backtest session.") from exc
 
-    async def get_sessions_for_compare(
-        self, session_ids: list[UUID]
-    ) -> Sequence[BacktestSession]:
+    async def get_sessions_for_compare(self, session_ids: list[UUID]) -> Sequence[BacktestSession]:
         """Fetch multiple sessions for side-by-side comparison."""
         try:
-            stmt = select(BacktestSession).where(
-                BacktestSession.id.in_(session_ids)
-            )
+            stmt = select(BacktestSession).where(BacktestSession.id.in_(session_ids))
             result = await self._session.execute(stmt)
             return result.scalars().all()
         except SQLAlchemyError as exc:
@@ -217,23 +202,16 @@ class BacktestRepository:
             Total number of rows deleted.
         """
         try:
-            cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+            cutoff = datetime.now(tz=UTC) - timedelta(days=days)
 
             # Find old completed sessions
-            old_sessions = (
-                select(BacktestSession.id)
-                .where(
-                    BacktestSession.status.in_(["completed", "cancelled", "failed"]),
-                    BacktestSession.completed_at < cutoff,
-                )
+            old_sessions = select(BacktestSession.id).where(
+                BacktestSession.status.in_(["completed", "cancelled", "failed"]),
+                BacktestSession.completed_at < cutoff,
             )
 
-            trades_stmt = delete(BacktestTrade).where(
-                BacktestTrade.session_id.in_(old_sessions)
-            )
-            snaps_stmt = delete(BacktestSnapshot).where(
-                BacktestSnapshot.session_id.in_(old_sessions)
-            )
+            trades_stmt = delete(BacktestTrade).where(BacktestTrade.session_id.in_(old_sessions))
+            snaps_stmt = delete(BacktestSnapshot).where(BacktestSnapshot.session_id.in_(old_sessions))
 
             r1 = await self._session.execute(trades_stmt)
             r2 = await self._session.execute(snaps_stmt)

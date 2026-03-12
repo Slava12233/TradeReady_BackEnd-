@@ -40,16 +40,16 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import logging
 import os
 import sys
-from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import httpx
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-
 from src.mcp.tools import register_tools
 
 # ---------------------------------------------------------------------------

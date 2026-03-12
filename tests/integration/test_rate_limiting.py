@@ -25,12 +25,11 @@ Run with::
 
 from __future__ import annotations
 
-import time
 from decimal import Decimal
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.accounts.auth import create_jwt

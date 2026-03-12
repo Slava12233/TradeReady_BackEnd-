@@ -30,7 +30,6 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.accounts.auth import create_jwt
@@ -348,9 +347,7 @@ class TestListPairs:
         pair_mock = _make_trading_pair_row()
 
         result = MagicMock()
-        result.scalars = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=[pair_mock]))
-        )
+        result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[pair_mock])))
         db.execute = AsyncMock(return_value=result)
 
         client = _build_client(db_session=db)
@@ -369,9 +366,7 @@ class TestListPairs:
             _make_trading_pair_row("ETHUSDT", "ETH", "USDT"),
         ]
         result = MagicMock()
-        result.scalars = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=pairs))
-        )
+        result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=pairs)))
         db.execute = AsyncMock(return_value=result)
 
         client = _build_client(db_session=db)
@@ -386,9 +381,7 @@ class TestListPairs:
         """Each pair item exposes all expected fields."""
         db = AsyncMock()
         result = MagicMock()
-        result.scalars = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=[_make_trading_pair_row()]))
-        )
+        result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[_make_trading_pair_row()])))
         db.execute = AsyncMock(return_value=result)
 
         client = _build_client(db_session=db)
@@ -439,9 +432,7 @@ class TestListPairs:
         """``min_qty``, ``step_size``, and ``min_notional`` are JSON strings."""
         db = AsyncMock()
         result = MagicMock()
-        result.scalars = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=[_make_trading_pair_row()]))
-        )
+        result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[_make_trading_pair_row()])))
         db.execute = AsyncMock(return_value=result)
 
         client = _build_client(db_session=db)
@@ -753,9 +744,17 @@ class TestGetTicker:
 
         body = resp.json()
         required = (
-            "symbol", "open", "high", "low", "close",
-            "volume", "quote_volume", "change", "change_pct",
-            "trade_count", "timestamp",
+            "symbol",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "quote_volume",
+            "change",
+            "change_pct",
+            "trade_count",
+            "timestamp",
         )
         for field in required:
             assert field in body, f"Missing field: {field}"
@@ -984,9 +983,7 @@ class TestGetTrades:
         validate_result.scalar_one_or_none = MagicMock(return_value=symbol)
 
         ticks_result = MagicMock()
-        ticks_result.scalars = MagicMock(
-            return_value=MagicMock(all=MagicMock(return_value=ticks))
-        )
+        ticks_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=ticks)))
 
         db.execute = AsyncMock(side_effect=[validate_result, ticks_result])
         return db

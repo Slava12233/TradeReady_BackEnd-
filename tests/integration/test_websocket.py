@@ -31,13 +31,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 from src.api.websocket.channels import (
     CandleChannel,
@@ -164,12 +163,8 @@ def _build_client(
             return_value=mock_redis,
         )
     )
-    stack.enter_context(
-        patch("src.api.websocket.handlers.start_redis_bridge", new_callable=AsyncMock)
-    )
-    stack.enter_context(
-        patch("src.api.websocket.handlers.stop_redis_bridge", new_callable=AsyncMock)
-    )
+    stack.enter_context(patch("src.api.websocket.handlers.start_redis_bridge", new_callable=AsyncMock))
+    stack.enter_context(patch("src.api.websocket.handlers.stop_redis_bridge", new_callable=AsyncMock))
     stack.enter_context(
         patch(
             "src.api.websocket.manager.ConnectionManager.disconnect_all",
@@ -232,7 +227,7 @@ class TestWebSocketConnection:
         # Passing None as authenticated_account makes _authenticate return None
         client = _build_client(authenticated_account=None)
 
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             # TestClient raises when the server closes the WS before sending
             with client.websocket_connect("/ws/v1?api_key=ak_live_invalid"):
                 pass  # pragma: no cover
@@ -241,7 +236,7 @@ class TestWebSocketConnection:
         """Missing api_key query param → authentication fails → connection rejected."""
         client = _build_client(authenticated_account=None)
 
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             with client.websocket_connect("/ws/v1"):
                 pass  # pragma: no cover
 
@@ -410,9 +405,7 @@ class TestWebSocketSubscriptionErrors:
         client = _build_client(authenticated_account=account)
 
         with client.websocket_connect(f"/ws/v1?api_key={_VALID_API_KEY}") as ws:
-            ws.send_json(
-                {"action": "subscribe", "channel": "candles", "interval": "1m"}
-            )
+            ws.send_json({"action": "subscribe", "channel": "candles", "interval": "1m"})
             msg = ws.receive_json()
 
         assert msg["type"] == "error"
@@ -424,9 +417,7 @@ class TestWebSocketSubscriptionErrors:
         client = _build_client(authenticated_account=account)
 
         with client.websocket_connect(f"/ws/v1?api_key={_VALID_API_KEY}") as ws:
-            ws.send_json(
-                {"action": "subscribe", "channel": "candles", "symbol": "BTCUSDT"}
-            )
+            ws.send_json({"action": "subscribe", "channel": "candles", "symbol": "BTCUSDT"})
             msg = ws.receive_json()
 
         assert msg["type"] == "error"
@@ -474,8 +465,16 @@ class TestWebSocketSubscriptionErrors:
         client = _build_client(authenticated_account=account)
 
         symbols = [
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
-            "SOLUSDT", "DOTUSDT", "DOGEUSDT", "MATICUSDT", "LTCUSDT",
+            "BTCUSDT",
+            "ETHUSDT",
+            "BNBUSDT",
+            "XRPUSDT",
+            "ADAUSDT",
+            "SOLUSDT",
+            "DOTUSDT",
+            "DOGEUSDT",
+            "MATICUSDT",
+            "LTCUSDT",
         ]
         assert len(symbols) == 10  # exactly at the cap
 
@@ -717,7 +716,7 @@ class TestWebSocketOrderNotifications:
         account = _make_account()
         client = _build_client(authenticated_account=account)
 
-        with client.websocket_connect(f"/ws/v1?api_key={_VALID_API_KEY}") as ws:
+        with client.websocket_connect(f"/ws/v1?api_key={_VALID_API_KEY}") as _ws:
             # Connect but do NOT subscribe to orders
             order_event = OrderChannel.serialize(
                 {
@@ -751,7 +750,7 @@ class TestWebSocketOrderNotifications:
 
         different_account_id = uuid4()
 
-        with client.websocket_connect(f"/ws/v1?api_key=ak_live_accounta") as ws:
+        with client.websocket_connect("/ws/v1?api_key=ak_live_accounta") as _ws:
             order_event = OrderChannel.serialize(
                 {
                     "order_id": str(uuid4()),
@@ -764,9 +763,7 @@ class TestWebSocketOrderNotifications:
             )
 
             manager: ConnectionManager = client.app.state.ws_manager
-            sent = client.portal.call(
-                manager.broadcast_to_account, different_account_id, order_event
-            )
+            sent = client.portal.call(manager.broadcast_to_account, different_account_id, order_event)
 
         # No connections belong to ``different_account_id``
         assert sent == 0
@@ -1057,7 +1054,7 @@ class TestConnectionManagerUnit:
 
     def test_connection_add_subscription_cap(self) -> None:
         """``Connection.add_subscription`` returns ``False`` once cap is reached."""
-        from src.api.websocket.manager import Connection, _MAX_SUBSCRIPTIONS
+        from src.api.websocket.manager import _MAX_SUBSCRIPTIONS, Connection
 
         conn = Connection(
             connection_id="cap-test",

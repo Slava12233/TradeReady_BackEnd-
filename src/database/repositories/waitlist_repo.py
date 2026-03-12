@@ -9,10 +9,9 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
-
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import WaitlistEntry
 from src.utils.exceptions import DatabaseError, DuplicateAccountError
@@ -53,9 +52,7 @@ class WaitlistRepository:
             return entry
         except IntegrityError as exc:
             await self._session.rollback()
-            raise DuplicateAccountError(
-                "This email is already on the waitlist.", email=email
-            ) from exc
+            raise DuplicateAccountError("This email is already on the waitlist.", email=email) from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception("waitlist.create.db_error", error=str(exc))

@@ -29,6 +29,8 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    TIMESTAMP,
+    VARCHAR,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -36,12 +38,11 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
-    TIMESTAMP,
     Text,
-    VARCHAR,
     func,
 )
-from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import INET, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -117,9 +118,7 @@ class Tick(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<Tick symbol={self.symbol!r} price={self.price} time={self.time}>"
-        )
+        return f"<Tick symbol={self.symbol!r} price={self.price} time={self.time}>"
 
 
 # ── TradingPair ───────────────────────────────────────────────────────────────
@@ -189,9 +188,7 @@ class TradingPair(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<TradingPair symbol={self.symbol!r} status={self.status!r}>"
-        )
+        return f"<TradingPair symbol={self.symbol!r} status={self.status!r}>"
 
 
 # ── Account ───────────────────────────────────────────────────────────────────
@@ -292,21 +289,13 @@ class Account(Base):
         onupdate=func.now(),
     )
 
-    balances: Mapped[list[Balance]] = relationship(
-        "Balance", back_populates="account", cascade="all, delete-orphan"
-    )
+    balances: Mapped[list[Balance]] = relationship("Balance", back_populates="account", cascade="all, delete-orphan")
     sessions: Mapped[list[TradingSession]] = relationship(
         "TradingSession", back_populates="account", cascade="all, delete-orphan"
     )
-    orders: Mapped[list[Order]] = relationship(
-        "Order", back_populates="account", cascade="all, delete-orphan"
-    )
-    trades: Mapped[list[Trade]] = relationship(
-        "Trade", back_populates="account", cascade="all, delete-orphan"
-    )
-    positions: Mapped[list[Position]] = relationship(
-        "Position", back_populates="account", cascade="all, delete-orphan"
-    )
+    orders: Mapped[list[Order]] = relationship("Order", back_populates="account", cascade="all, delete-orphan")
+    trades: Mapped[list[Trade]] = relationship("Trade", back_populates="account", cascade="all, delete-orphan")
+    positions: Mapped[list[Position]] = relationship("Position", back_populates="account", cascade="all, delete-orphan")
     snapshots: Mapped[list[PortfolioSnapshot]] = relationship(
         "PortfolioSnapshot", back_populates="account", cascade="all, delete-orphan"
     )
@@ -393,8 +382,7 @@ class Balance(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<Balance account={self.account_id} asset={self.asset!r} "
-            f"available={self.available} locked={self.locked}>"
+            f"<Balance account={self.account_id} asset={self.asset!r} available={self.available} locked={self.locked}>"
         )
 
 
@@ -462,9 +450,7 @@ class TradingSession(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<TradingSession id={self.id} account={self.account_id} status={self.status!r}>"
-        )
+        return f"<TradingSession id={self.id} account={self.account_id} status={self.status!r}>"
 
 
 # ── Order ─────────────────────────────────────────────────────────────────────
@@ -585,9 +571,7 @@ class Order(Base):
     )
 
     account: Mapped[Account] = relationship("Account", back_populates="orders")
-    session: Mapped[TradingSession | None] = relationship(
-        "TradingSession", back_populates="orders"
-    )
+    session: Mapped[TradingSession | None] = relationship("TradingSession", back_populates="orders")
     trades: Mapped[list[Trade]] = relationship("Trade", back_populates="order")
 
     __table_args__ = (
@@ -614,8 +598,7 @@ class Order(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<Order id={self.id} symbol={self.symbol!r} side={self.side!r} "
-            f"type={self.type!r} status={self.status!r}>"
+            f"<Order id={self.id} symbol={self.symbol!r} side={self.side!r} type={self.type!r} status={self.status!r}>"
         )
 
 
@@ -701,9 +684,7 @@ class Trade(Base):
 
     account: Mapped[Account] = relationship("Account", back_populates="trades")
     order: Mapped[Order] = relationship("Order", back_populates="trades")
-    session: Mapped[TradingSession | None] = relationship(
-        "TradingSession", back_populates="trades"
-    )
+    session: Mapped[TradingSession | None] = relationship("TradingSession", back_populates="trades")
 
     __table_args__ = (
         CheckConstraint("side IN ('buy', 'sell')", name="ck_trades_side"),
@@ -713,10 +694,7 @@ class Trade(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<Trade id={self.id} symbol={self.symbol!r} side={self.side!r} "
-            f"price={self.price} qty={self.quantity}>"
-        )
+        return f"<Trade id={self.id} symbol={self.symbol!r} side={self.side!r} price={self.price} qty={self.quantity}>"
 
 
 # ── Position ──────────────────────────────────────────────────────────────────
@@ -960,15 +938,10 @@ class AuditLog(Base):
         server_default=func.now(),
     )
 
-    __table_args__ = (
-        Index("idx_audit_account", "account_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_audit_account", "account_id", "created_at"),)
 
     def __repr__(self) -> str:
-        return (
-            f"<AuditLog id={self.id} account={self.account_id} "
-            f"action={self.action!r} at={self.created_at}>"
-        )
+        return f"<AuditLog id={self.id} account={self.account_id} action={self.action!r} at={self.created_at}>"
 
 
 # ── WaitlistEntry ─────────────────────────────────────────────────────────
@@ -1007,9 +980,7 @@ class WaitlistEntry(Base):
         server_default=func.now(),
     )
 
-    __table_args__ = (
-        Index("idx_waitlist_created", "created_at"),
-    )
+    __table_args__ = (Index("idx_waitlist_created", "created_at"),)
 
     def __repr__(self) -> str:
         return f"<WaitlistEntry email={self.email!r} source={self.source!r}>"
@@ -1287,10 +1258,7 @@ class BacktestTrade(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<BacktestTrade id={self.id} symbol={self.symbol!r} "
-            f"side={self.side!r} price={self.price}>"
-        )
+        return f"<BacktestTrade id={self.id} symbol={self.symbol!r} side={self.side!r} price={self.price}>"
 
 
 # ── BacktestSnapshot ─────────────────────────────────────────────────────────
@@ -1359,12 +1327,7 @@ class BacktestSnapshot(Base):
 
     session: Mapped[BacktestSession] = relationship("BacktestSession", back_populates="backtest_snapshots")
 
-    __table_args__ = (
-        Index("idx_bt_snapshots_session_time", "session_id", "simulated_at"),
-    )
+    __table_args__ = (Index("idx_bt_snapshots_session_time", "session_id", "simulated_at"),)
 
     def __repr__(self) -> str:
-        return (
-            f"<BacktestSnapshot session={self.session_id} "
-            f"equity={self.total_equity} at={self.simulated_at}>"
-        )
+        return f"<BacktestSnapshot session={self.session_id} equity={self.total_equity} at={self.simulated_at}>"

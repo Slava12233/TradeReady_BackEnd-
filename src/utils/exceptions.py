@@ -14,7 +14,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
@@ -234,9 +233,7 @@ class InsufficientBalanceError(TradingPlatformError):
             details["available"] = str(available)
         if message is None:
             if asset and required and available:
-                message = (
-                    f"Not enough {asset}. Required: {required}, Available: {available}"
-                )
+                message = f"Not enough {asset}. Required: {required}, Available: {available}"
             else:
                 message = "Insufficient balance to complete this operation."
         super().__init__(message, details=details)
@@ -376,9 +373,7 @@ class OrderNotFoundError(TradingPlatformError):
         if order_id is not None:
             details["order_id"] = str(order_id)
         if message is None:
-            message = (
-                f"Order '{order_id}' not found." if order_id else "Order not found."
-            )
+            message = f"Order '{order_id}' not found." if order_id else "Order not found."
         super().__init__(message, details=details)
 
 
@@ -408,9 +403,7 @@ class TradeNotFoundError(TradingPlatformError):
         if trade_id is not None:
             details["trade_id"] = str(trade_id)
         if message is None:
-            message = (
-                f"Trade '{trade_id}' not found." if trade_id else "Trade not found."
-            )
+            message = f"Trade '{trade_id}' not found." if trade_id else "Trade not found."
         super().__init__(message, details=details)
 
 
@@ -485,11 +478,7 @@ class InvalidSymbolError(TradingPlatformError):
         if symbol is not None:
             details["symbol"] = symbol
         if message is None:
-            message = (
-                f"Trading pair '{symbol}' is not available."
-                if symbol
-                else "Trading pair not found."
-            )
+            message = f"Trading pair '{symbol}' is not available." if symbol else "Trading pair not found."
         super().__init__(message, details=details)
 
 
@@ -520,11 +509,7 @@ class PriceNotAvailableError(TradingPlatformError):
         if symbol is not None:
             details["symbol"] = symbol
         if message is None:
-            message = (
-                f"Current price for '{symbol}' is not available."
-                if symbol
-                else "Price data is not available."
-            )
+            message = f"Current price for '{symbol}' is not available." if symbol else "Price data is not available."
         super().__init__(message, details=details)
 
 
@@ -547,7 +532,9 @@ class RiskLimitExceededError(TradingPlatformError):
         max_value: The maximum allowed value.
 
     Example:
-        raise RiskLimitExceededError(limit_type="position_size", current_value=Decimal("0.26"), max_value=Decimal("0.25"))
+        raise RiskLimitExceededError(
+            limit_type="position_size", current_value=Decimal("0.26"), max_value=Decimal("0.25"),
+        )
     """
 
     code = "RISK_LIMIT_EXCEEDED"
@@ -639,9 +626,7 @@ class AccountNotFoundError(TradingPlatformError):
         if account_id is not None:
             details["account_id"] = str(account_id)
         if message is None:
-            message = (
-                f"Account '{account_id}' not found." if account_id else "Account not found."
-            )
+            message = f"Account '{account_id}' not found." if account_id else "Account not found."
         super().__init__(message, details=details)
 
 
@@ -802,11 +787,7 @@ class BacktestNotFoundError(TradingPlatformError):
         if session_id is not None:
             details["session_id"] = str(session_id)
         if message is None:
-            message = (
-                f"Backtest session '{session_id}' not found."
-                if session_id
-                else "Backtest session not found."
-            )
+            message = f"Backtest session '{session_id}' not found." if session_id else "Backtest session not found."
         super().__init__(message, details=details)
 
 

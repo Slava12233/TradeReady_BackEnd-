@@ -35,13 +35,13 @@ Example::
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
+import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Query, status
 
 from src.api.middleware.auth import CurrentAccountDep
 from src.api.schemas.trading import (
@@ -54,7 +54,7 @@ from src.api.schemas.trading import (
     TradeHistoryItem,
     TradeHistoryResponse,
 )
-from src.database.models import Account, Order, Trade
+from src.database.models import Order, Trade
 from src.dependencies import (
     OrderEngineDep,
     OrderRepoDep,
@@ -317,8 +317,7 @@ async def get_order(
     status_code=status.HTTP_200_OK,
     summary="List orders",
     description=(
-        "Return a paginated list of orders for the authenticated account.  "
-        "Filter by ``status`` and/or ``symbol``."
+        "Return a paginated list of orders for the authenticated account.  Filter by ``status`` and/or ``symbol``."
     ),
 )
 async def list_orders(
@@ -509,7 +508,7 @@ async def cancel_order(
 
     await engine.cancel_order(account.id, order_id)
 
-    cancelled_at = datetime.now(tz=timezone.utc)
+    cancelled_at = datetime.now(tz=UTC)
     logger.info(
         "trading.cancel_order.success",
         extra={"account_id": str(account.id), "order_id": str(order_id)},

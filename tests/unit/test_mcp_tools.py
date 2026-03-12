@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -36,7 +36,6 @@ from src.mcp.tools import (
     _json_content,
     register_tools,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -461,12 +460,8 @@ class TestDispatchMarketData:
 
     @pytest.mark.asyncio
     async def test_get_candles_success(self) -> None:
-        candles = [
-            {"open": "64000", "high": "65000", "low": "63000", "close": "64500", "volume": "100"}
-        ]
-        result = await _run_dispatch(
-            "get_candles", {"symbol": "BTCUSDT", "interval": "1h"}, candles
-        )
+        candles = [{"open": "64000", "high": "65000", "low": "63000", "close": "64500", "volume": "100"}]
+        result = await _run_dispatch("get_candles", {"symbol": "BTCUSDT", "interval": "1h"}, candles)
         parsed = json.loads(result[0].text)
         assert isinstance(parsed, list)
         assert parsed[0]["close"] == "64500"
@@ -842,7 +837,7 @@ class TestDispatchAnalytics:
         client = AsyncMock(spec=httpx.AsyncClient)
         client.request = AsyncMock(return_value=_make_response(200, data))
 
-        result = await _dispatch("get_performance", {"period": "7d"}, client)
+        await _dispatch("get_performance", {"period": "7d"}, client)
 
         call_args = client.request.call_args
         params = call_args[1]["params"]

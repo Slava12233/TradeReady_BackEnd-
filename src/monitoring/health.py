@@ -107,8 +107,8 @@ async def _probe_ingestion() -> tuple[bool, list[str], int]:
         On any error all values are returned as degraded/empty.
     """
     try:
-        from src.cache.redis_client import get_redis_client  # noqa: PLC0415
         from src.cache.price_cache import PriceCache  # noqa: PLC0415
+        from src.cache.redis_client import get_redis_client  # noqa: PLC0415
 
         client = await get_redis_client()
         cache = PriceCache(client)
@@ -150,12 +150,10 @@ async def health_check() -> JSONResponse:
     """
     import asyncio  # noqa: PLC0415
 
-    (redis_ok, redis_ms), (db_ok, db_ms), (ingestion_active, stale_pairs, total_pairs) = (
-        await asyncio.gather(
-            _probe_redis(),
-            _probe_db(),
-            _probe_ingestion(),
-        )
+    (redis_ok, redis_ms), (db_ok, db_ms), (ingestion_active, stale_pairs, total_pairs) = await asyncio.gather(
+        _probe_redis(),
+        _probe_db(),
+        _probe_ingestion(),
     )
 
     if not redis_ok or not db_ok:

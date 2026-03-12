@@ -12,14 +12,11 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from src.cache.price_cache import Tick
-
 
 # ---------------------------------------------------------------------------
 # pytest-asyncio configuration
@@ -171,6 +168,12 @@ def mock_redis() -> AsyncMock:
     redis.hgetall = AsyncMock(return_value={})
     redis.publish = AsyncMock(return_value=1)
 
+    # register_script is synchronous in real redis-py and returns a Script
+    # object whose __call__ is async.  Wire up a MagicMock (sync) that returns
+    # an AsyncMock (the callable script).
+    mock_script = AsyncMock(return_value=1)
+    redis.register_script = MagicMock(return_value=mock_script)
+
     # Pipeline mock — supports async context manager usage.
     # hset/publish are synchronous inside a pipeline (only execute() is awaited).
     mock_pipe = MagicMock()
@@ -181,7 +184,6 @@ def mock_redis() -> AsyncMock:
     mock_pipe.__aexit__ = AsyncMock(return_value=False)
 
     redis.pipeline = MagicMock(return_value=mock_pipe)
-
 
     return redis
 

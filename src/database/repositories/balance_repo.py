@@ -15,14 +15,14 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import Balance
 from src.utils.exceptions import (
@@ -122,11 +122,7 @@ class BalanceRepository:
                 print(bal.asset, bal.available, bal.locked)
         """
         try:
-            stmt = (
-                select(Balance)
-                .where(Balance.account_id == account_id)
-                .order_by(Balance.asset.asc())
-            )
+            stmt = select(Balance).where(Balance.account_id == account_id).order_by(Balance.asset.asc())
             result = await self._session.execute(stmt)
             return result.scalars().all()
         except SQLAlchemyError as exc:
@@ -245,9 +241,7 @@ class BalanceRepository:
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} asset={asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={asset!r}.")
             logger.debug(
                 "balance.available_updated",
                 extra={
@@ -325,9 +319,7 @@ class BalanceRepository:
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} asset={asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={asset!r}.")
             logger.debug(
                 "balance.locked_updated",
                 extra={
@@ -413,9 +405,7 @@ class BalanceRepository:
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} asset={asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={asset!r}.")
             logger.info(
                 "balance.funds_locked",
                 extra={
@@ -496,9 +486,7 @@ class BalanceRepository:
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} asset={asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={asset!r}.")
             logger.info(
                 "balance.funds_unlocked",
                 extra={
@@ -615,10 +603,7 @@ class BalanceRepository:
             quote_result = await self._session.execute(quote_stmt)
             quote_bal = quote_result.scalars().first()
             if quote_bal is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} "
-                    f"asset={quote_asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={quote_asset!r}.")
 
             # 2. Credit base asset — upsert-style: create if not exists
             base_bal = await self._get_or_create_zero(account_id, base_asset)
@@ -634,10 +619,7 @@ class BalanceRepository:
             base_result = await self._session.execute(base_stmt)
             base_bal = base_result.scalars().first()
             if base_bal is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} "
-                    f"asset={base_asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={base_asset!r}.")
 
             logger.info(
                 "balance.buy_executed",
@@ -751,10 +733,7 @@ class BalanceRepository:
             base_result = await self._session.execute(base_stmt)
             base_bal = base_result.scalars().first()
             if base_bal is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} "
-                    f"asset={base_asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={base_asset!r}.")
 
             # 2. Credit quote asset (always available; USDT almost always exists)
             await self._get_or_create_zero(account_id, quote_asset)
@@ -770,10 +749,7 @@ class BalanceRepository:
             quote_result = await self._session.execute(quote_stmt)
             quote_bal = quote_result.scalars().first()
             if quote_bal is None:
-                raise DatabaseError(
-                    f"Balance row not found for account={account_id} "
-                    f"asset={quote_asset!r}."
-                )
+                raise DatabaseError(f"Balance row not found for account={account_id} asset={quote_asset!r}.")
 
             logger.info(
                 "balance.sell_executed",
@@ -851,7 +827,4 @@ class BalanceRepository:
             existing = await self.get(account_id, asset)
             if existing is not None:
                 return existing
-            raise DatabaseError(
-                f"Failed to auto-create balance for account={account_id} "
-                f"asset={asset!r}."
-            )
+            raise DatabaseError(f"Failed to auto-create balance for account={account_id} asset={asset!r}.") from None

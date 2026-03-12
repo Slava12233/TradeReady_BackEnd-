@@ -36,8 +36,9 @@ import logging
 from typing import Any
 
 import httpx
-import mcp.types as types
+
 from mcp.server import Server
+import mcp.types as types
 
 logger = logging.getLogger(__name__)
 
@@ -140,10 +141,7 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
                 },
                 "price": {
                     "type": "number",
-                    "description": (
-                        "Limit / trigger price. Required for limit, stop_loss, "
-                        "and take_profit orders."
-                    ),
+                    "description": ("Limit / trigger price. Required for limit, stop_loss, and take_profit orders."),
                 },
             },
             "required": ["symbol", "side", "type", "quantity"],
@@ -180,8 +178,7 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
     types.Tool(
         name="get_portfolio",
         description=(
-            "Get complete portfolio summary including total equity, "
-            "cash balance, open positions, and unrealized PnL."
+            "Get complete portfolio summary including total equity, cash balance, open positions, and unrealized PnL."
         ),
         inputSchema={
             "type": "object",
@@ -210,10 +207,7 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
     ),
     types.Tool(
         name="get_performance",
-        description=(
-            "Get trading performance metrics including Sharpe ratio, "
-            "win rate, max drawdown, and ROI."
-        ),
+        description=("Get trading performance metrics including Sharpe ratio, win rate, max drawdown, and ROI."),
         inputSchema={
             "type": "object",
             "properties": {
@@ -400,9 +394,7 @@ async def _dispatch(
             params: dict[str, Any] = {"interval": args["interval"]}
             if "limit" in args:
                 params["limit"] = int(args["limit"])
-            data = await _call_api(
-                client, "GET", f"/api/v1/market/candles/{symbol}", params=params
-            )
+            data = await _call_api(client, "GET", f"/api/v1/market/candles/{symbol}", params=params)
             return _json_content(data)
 
         # ------------------------------------------------------------------
@@ -426,15 +418,10 @@ async def _dispatch(
                 return [
                     types.TextContent(
                         type="text",
-                        text=(
-                            "Account reset aborted: 'confirm' must be true. "
-                            "Pass confirm=true to execute the reset."
-                        ),
+                        text=("Account reset aborted: 'confirm' must be true. Pass confirm=true to execute the reset."),
                     )
                 ]
-            data = await _call_api(
-                client, "POST", "/api/v1/account/reset", json={"confirm": True}
-            )
+            data = await _call_api(client, "POST", "/api/v1/account/reset", json={"confirm": True})
             return _json_content(data)
 
         # ------------------------------------------------------------------
@@ -478,9 +465,7 @@ async def _dispatch(
             params = {}
             if "period" in args and args["period"]:
                 params["period"] = args["period"]
-            data = await _call_api(
-                client, "GET", "/api/v1/analytics/performance", params=params
-            )
+            data = await _call_api(client, "GET", "/api/v1/analytics/performance", params=params)
             return _json_content(data)
 
         case _:

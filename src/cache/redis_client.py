@@ -18,9 +18,9 @@ import asyncio
 from typing import Self
 
 import redis.asyncio as aioredis
-import structlog
 from redis.asyncio.connection import ConnectionPool
 from redis.exceptions import RedisError
+import structlog
 
 logger = structlog.get_logger(__name__)
 

@@ -16,20 +16,29 @@ Uses ``unittest.mock`` for WebSocket client tests.
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 import json
 import time
-from decimal import Decimal
 from typing import Any
 from unittest.mock import patch
 from uuid import UUID
 
-import httpx
-import pytest
-import respx
-
-from agentexchange.client import AgentExchangeClient
 from agentexchange.async_client import AsyncAgentExchangeClient
-from agentexchange.ws_client import AgentExchangeWS
+from agentexchange.client import AgentExchangeClient
+from agentexchange.exceptions import (
+    AgentExchangeError,
+    AuthenticationError,
+    ConflictError,
+    ConnectionError,
+    InsufficientBalanceError,
+    InvalidSymbolError,
+    NotFoundError,
+    OrderError,
+    RateLimitError,
+    ServerError,
+    ValidationError,
+    raise_for_response,
+)
 from agentexchange.models import (
     AccountInfo,
     Balance,
@@ -45,21 +54,10 @@ from agentexchange.models import (
     Ticker,
     Trade,
 )
-from agentexchange.exceptions import (
-    AgentExchangeError,
-    AuthenticationError,
-    ConflictError,
-    ConnectionError,
-    InsufficientBalanceError,
-    InvalidSymbolError,
-    NotFoundError,
-    OrderError,
-    RateLimitError,
-    ServerError,
-    ValidationError,
-    raise_for_response,
-)
-
+from agentexchange.ws_client import AgentExchangeWS
+import httpx
+import pytest
+import respx
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -118,9 +116,7 @@ _TICKER_BODY: dict[str, Any] = {
 }
 
 _TRADES_BODY: dict[str, Any] = {
-    "trades": [
-        {"price": "64521.30", "quantity": "0.001", "side": "buy", "executed_at": _TS}
-    ]
+    "trades": [{"price": "64521.30", "quantity": "0.001", "side": "buy", "executed_at": _TS}]
 }
 
 _ORDERBOOK_BODY: dict[str, Any] = {
@@ -312,9 +308,7 @@ class TestLogin:
 
     def test_login_stores_jwt(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             client = _make_client()
             client._login()
             assert client._jwt == _TOKEN
@@ -323,9 +317,7 @@ class TestLogin:
     def test_login_sets_expiry_with_buffer(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
             mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(
-                    200, json={"token": _TOKEN, "expires_in": 600}
-                )
+                return_value=httpx.Response(200, json={"token": _TOKEN, "expires_in": 600})
             )
             client = _make_client()
             before = time.time()
@@ -337,9 +329,7 @@ class TestLogin:
 
     def test_login_defaults_900s_expiry_when_missing(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json={"token": _TOKEN})
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json={"token": _TOKEN}))
             client = _make_client()
             before = time.time()
             client._login()
@@ -349,9 +339,7 @@ class TestLogin:
 
     def test_ensure_auth_calls_login_when_no_jwt(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             client = _make_client()
             assert client._jwt is None
             client._ensure_auth()
@@ -360,9 +348,7 @@ class TestLogin:
 
     def test_ensure_auth_refreshes_expired_token(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             client = _make_client()
             client._jwt = "old_token"
             client._jwt_expires_at = time.time() - 1
@@ -373,9 +359,7 @@ class TestLogin:
     def test_ensure_auth_skips_login_when_valid(self) -> None:
         # Use assert_all_called=False so the unused login route does not fail the test
         with respx.mock(base_url=_BASE, assert_all_called=False) as mock:
-            login_route = mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            login_route = mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             client = _make_client()
             client._jwt = "valid_token"
             client._jwt_expires_at = time.time() + 600
@@ -396,13 +380,9 @@ class TestRetryAndErrors:
     def test_5xx_retries_then_raises_server_error(self) -> None:
         """On persistent 5xx, client retries 3 times then raises ServerError."""
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             price_route = mock.get("/api/v1/market/price/BTCUSDT").mock(
-                return_value=httpx.Response(
-                    500, json=_error_body("INTERNAL_ERROR", "internal server error")
-                )
+                return_value=httpx.Response(500, json=_error_body("INTERNAL_ERROR", "internal server error"))
             )
             client = _make_client()
             with patch("time.sleep"):
@@ -415,12 +395,8 @@ class TestRetryAndErrors:
     def test_transport_error_after_all_retries_raises_connection_error(self) -> None:
         """Network transport failures exhaust retries and raise ConnectionError."""
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/price/BTCUSDT").mock(
-                side_effect=httpx.ConnectError("Connection refused")
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/price/BTCUSDT").mock(side_effect=httpx.ConnectError("Connection refused"))
             client = _make_client()
             with patch("time.sleep"):
                 with pytest.raises(ConnectionError):
@@ -430,13 +406,9 @@ class TestRetryAndErrors:
     def test_4xx_does_not_retry(self) -> None:
         """4xx errors should NOT be retried — raise immediately after 1 attempt."""
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             price_route = mock.get("/api/v1/market/price/BTCUSDT").mock(
-                return_value=httpx.Response(
-                    404, json=_error_body("ACCOUNT_NOT_FOUND")
-                )
+                return_value=httpx.Response(404, json=_error_body("ACCOUNT_NOT_FOUND"))
             )
             client = _make_client()
             with pytest.raises(NotFoundError):
@@ -447,12 +419,8 @@ class TestRetryAndErrors:
     def test_204_no_content_cancel_returns_true(self) -> None:
         """A 204 response with no body should not raise and cancel_order returns True."""
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.delete(f"/api/v1/trade/order/{_ORDER_ID}").mock(
-                return_value=httpx.Response(204, content=b"")
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.delete(f"/api/v1/trade/order/{_ORDER_ID}").mock(return_value=httpx.Response(204, content=b""))
             client = _make_client()
             result = client.cancel_order(_ORDER_ID)
             assert result is True
@@ -461,9 +429,7 @@ class TestRetryAndErrors:
     def test_5xx_recovery_on_second_attempt(self) -> None:
         """If 5xx on first attempt but 200 on retry, succeed."""
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
             # First call → 500, second call → 200
             mock.get("/api/v1/market/price/BTCUSDT").mock(
                 side_effect=[
@@ -637,12 +603,8 @@ class TestSyncMarketMethods:
 
     def test_get_price_returns_price_model(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/price/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_PRICE_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/price/BTCUSDT").mock(return_value=httpx.Response(200, json=_PRICE_BODY))
             client = _make_client()
             result = client.get_price("BTCUSDT")
             assert isinstance(result, Price)
@@ -652,12 +614,8 @@ class TestSyncMarketMethods:
 
     def test_get_all_prices_returns_list_of_price(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/prices").mock(
-                return_value=httpx.Response(200, json=_PRICES_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/prices").mock(return_value=httpx.Response(200, json=_PRICES_BODY))
             client = _make_client()
             result = client.get_all_prices()
             assert isinstance(result, list)
@@ -667,24 +625,16 @@ class TestSyncMarketMethods:
 
     def test_get_all_prices_empty_list(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/prices").mock(
-                return_value=httpx.Response(200, json={"prices": []})
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/prices").mock(return_value=httpx.Response(200, json={"prices": []}))
             client = _make_client()
             assert client.get_all_prices() == []
             client.close()
 
     def test_get_candles_returns_list_of_candle(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/candles/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_CANDLES_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/candles/BTCUSDT").mock(return_value=httpx.Response(200, json=_CANDLES_BODY))
             client = _make_client()
             result = client.get_candles("BTCUSDT", interval="1h", limit=24)
             assert isinstance(result, list)
@@ -695,12 +645,8 @@ class TestSyncMarketMethods:
 
     def test_get_ticker_returns_ticker_model(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/ticker/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_TICKER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/ticker/BTCUSDT").mock(return_value=httpx.Response(200, json=_TICKER_BODY))
             client = _make_client()
             result = client.get_ticker("BTCUSDT")
             assert isinstance(result, Ticker)
@@ -710,12 +656,8 @@ class TestSyncMarketMethods:
 
     def test_get_recent_trades_returns_list_of_dicts(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/trades/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_TRADES_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/trades/BTCUSDT").mock(return_value=httpx.Response(200, json=_TRADES_BODY))
             client = _make_client()
             result = client.get_recent_trades("BTCUSDT", limit=10)
             assert isinstance(result, list)
@@ -725,12 +667,8 @@ class TestSyncMarketMethods:
 
     def test_get_orderbook_returns_dict_with_bids_asks(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/orderbook/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_ORDERBOOK_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/orderbook/BTCUSDT").mock(return_value=httpx.Response(200, json=_ORDERBOOK_BODY))
             client = _make_client()
             result = client.get_orderbook("BTCUSDT", depth=5)
             assert isinstance(result, dict)
@@ -749,12 +687,8 @@ class TestSyncTradingMethods:
 
     def test_place_market_order_returns_filled_order(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=_ORDER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=_ORDER_BODY))
             client = _make_client()
             result = client.place_market_order("BTCUSDT", "buy", Decimal("0.001"))
             assert isinstance(result, Order)
@@ -765,12 +699,8 @@ class TestSyncTradingMethods:
 
     def test_place_market_order_sends_correct_body(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            order_route = mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=_ORDER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            order_route = mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=_ORDER_BODY))
             client = _make_client()
             client.place_market_order("BTCUSDT", "buy", "0.001")
             sent = json.loads(order_route.calls.last.request.content)
@@ -783,12 +713,8 @@ class TestSyncTradingMethods:
     def test_place_limit_order_returns_pending_order(self) -> None:
         limit_order = {**_ORDER_BODY, "type": "limit", "status": "pending", "price": "60000.00"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=limit_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=limit_order))
             client = _make_client()
             result = client.place_limit_order("BTCUSDT", "buy", "0.001", 60000)
             assert isinstance(result, Order)
@@ -799,12 +725,8 @@ class TestSyncTradingMethods:
     def test_place_limit_order_sends_price_in_body(self) -> None:
         limit_order = {**_ORDER_BODY, "type": "limit", "status": "pending", "price": "60000"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            order_route = mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=limit_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            order_route = mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=limit_order))
             client = _make_client()
             client.place_limit_order("BTCUSDT", "buy", "0.001", "60000")
             sent = json.loads(order_route.calls.last.request.content)
@@ -816,12 +738,8 @@ class TestSyncTradingMethods:
     def test_place_stop_loss_returns_order(self) -> None:
         sl_order = {**_ORDER_BODY, "type": "stop_loss", "status": "pending"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=sl_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=sl_order))
             client = _make_client()
             result = client.place_stop_loss("BTCUSDT", "sell", "0.001", 58000)
             assert isinstance(result, Order)
@@ -831,12 +749,8 @@ class TestSyncTradingMethods:
     def test_place_take_profit_returns_order(self) -> None:
         tp_order = {**_ORDER_BODY, "type": "take_profit", "status": "pending"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=tp_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=tp_order))
             client = _make_client()
             result = client.place_take_profit("BTCUSDT", "sell", "0.001", 70000)
             assert isinstance(result, Order)
@@ -845,12 +759,8 @@ class TestSyncTradingMethods:
 
     def test_get_order_returns_order(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get(f"/api/v1/trade/order/{_ORDER_ID}").mock(
-                return_value=httpx.Response(200, json=_ORDER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get(f"/api/v1/trade/order/{_ORDER_ID}").mock(return_value=httpx.Response(200, json=_ORDER_BODY))
             client = _make_client()
             result = client.get_order(_ORDER_ID)
             assert isinstance(result, Order)
@@ -859,12 +769,8 @@ class TestSyncTradingMethods:
 
     def test_get_open_orders_returns_list_of_order(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/trade/orders/open").mock(
-                return_value=httpx.Response(200, json=_OPEN_ORDERS_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/trade/orders/open").mock(return_value=httpx.Response(200, json=_OPEN_ORDERS_BODY))
             client = _make_client()
             result = client.get_open_orders()
             assert isinstance(result, list)
@@ -874,36 +780,24 @@ class TestSyncTradingMethods:
 
     def test_cancel_order_returns_true(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.delete(f"/api/v1/trade/order/{_ORDER_ID}").mock(
-                return_value=httpx.Response(204, content=b"")
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.delete(f"/api/v1/trade/order/{_ORDER_ID}").mock(return_value=httpx.Response(204, content=b""))
             client = _make_client()
             assert client.cancel_order(_ORDER_ID) is True
             client.close()
 
     def test_cancel_all_orders_returns_count(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.delete("/api/v1/trade/orders/open").mock(
-                return_value=httpx.Response(200, json=_CANCEL_ALL_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.delete("/api/v1/trade/orders/open").mock(return_value=httpx.Response(200, json=_CANCEL_ALL_BODY))
             client = _make_client()
             assert client.cancel_all_orders() == 3
             client.close()
 
     def test_get_trade_history_returns_list_of_trade(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/trade/history").mock(
-                return_value=httpx.Response(200, json=_TRADE_HISTORY_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/trade/history").mock(return_value=httpx.Response(200, json=_TRADE_HISTORY_BODY))
             client = _make_client()
             result = client.get_trade_history(symbol="BTCUSDT", limit=100)
             assert isinstance(result, list)
@@ -925,12 +819,8 @@ class TestSyncAccountMethods:
 
     def test_get_account_info_returns_account_info(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/info").mock(
-                return_value=httpx.Response(200, json=_ACCOUNT_INFO_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/info").mock(return_value=httpx.Response(200, json=_ACCOUNT_INFO_BODY))
             client = _make_client()
             result = client.get_account_info()
             assert isinstance(result, AccountInfo)
@@ -941,12 +831,8 @@ class TestSyncAccountMethods:
 
     def test_get_balance_returns_list_of_balance(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/balance").mock(
-                return_value=httpx.Response(200, json=_BALANCE_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/balance").mock(return_value=httpx.Response(200, json=_BALANCE_BODY))
             client = _make_client()
             result = client.get_balance()
             assert isinstance(result, list)
@@ -958,12 +844,8 @@ class TestSyncAccountMethods:
 
     def test_get_positions_returns_list_of_position(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/positions").mock(
-                return_value=httpx.Response(200, json=_POSITIONS_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/positions").mock(return_value=httpx.Response(200, json=_POSITIONS_BODY))
             client = _make_client()
             result = client.get_positions()
             assert isinstance(result, list)
@@ -973,12 +855,8 @@ class TestSyncAccountMethods:
 
     def test_get_portfolio_returns_portfolio(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/portfolio").mock(
-                return_value=httpx.Response(200, json=_PORTFOLIO_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/portfolio").mock(return_value=httpx.Response(200, json=_PORTFOLIO_BODY))
             client = _make_client()
             result = client.get_portfolio()
             assert isinstance(result, Portfolio)
@@ -988,12 +866,8 @@ class TestSyncAccountMethods:
 
     def test_get_pnl_returns_pnl(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/pnl").mock(
-                return_value=httpx.Response(200, json=_PNL_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/pnl").mock(return_value=httpx.Response(200, json=_PNL_BODY))
             client = _make_client()
             result = client.get_pnl(period="all")
             assert isinstance(result, PnL)
@@ -1003,12 +877,8 @@ class TestSyncAccountMethods:
 
     def test_reset_account_returns_dict_with_session_id(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/account/reset").mock(
-                return_value=httpx.Response(200, json=_RESET_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/account/reset").mock(return_value=httpx.Response(200, json=_RESET_BODY))
             client = _make_client()
             result = client.reset_account(starting_balance=Decimal("10000"))
             assert isinstance(result, dict)
@@ -1026,12 +896,8 @@ class TestSyncAnalyticsMethods:
 
     def test_get_performance_returns_performance(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/analytics/performance").mock(
-                return_value=httpx.Response(200, json=_PERFORMANCE_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/analytics/performance").mock(return_value=httpx.Response(200, json=_PERFORMANCE_BODY))
             client = _make_client()
             result = client.get_performance(period="all")
             assert isinstance(result, Performance)
@@ -1041,12 +907,8 @@ class TestSyncAnalyticsMethods:
 
     def test_get_portfolio_history_returns_list_of_snapshot(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/analytics/portfolio/history").mock(
-                return_value=httpx.Response(200, json=_HISTORY_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/analytics/portfolio/history").mock(return_value=httpx.Response(200, json=_HISTORY_BODY))
             client = _make_client()
             result = client.get_portfolio_history(interval="1h", limit=168)
             assert isinstance(result, list)
@@ -1057,12 +919,8 @@ class TestSyncAnalyticsMethods:
 
     def test_get_leaderboard_returns_list_of_entries(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/analytics/leaderboard").mock(
-                return_value=httpx.Response(200, json=_LEADERBOARD_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/analytics/leaderboard").mock(return_value=httpx.Response(200, json=_LEADERBOARD_BODY))
             client = _make_client()
             result = client.get_leaderboard(period="all", limit=20)
             assert isinstance(result, list)
@@ -1083,19 +941,13 @@ class TestContextManager:
 
     def test_context_manager_closes_on_exit(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/price/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_PRICE_BODY)
-            )
-            with AgentExchangeClient(
-                api_key=_API_KEY, api_secret=_API_SECRET, base_url=_BASE
-            ) as client:
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/price/BTCUSDT").mock(return_value=httpx.Response(200, json=_PRICE_BODY))
+            with AgentExchangeClient(api_key=_API_KEY, api_secret=_API_SECRET, base_url=_BASE) as client:
                 price = client.get_price("BTCUSDT")
                 assert isinstance(price, Price)
             # After __exit__ the underlying httpx client is closed; further requests fail
-            with pytest.raises(Exception):
+            with pytest.raises(Exception):  # noqa: B017
                 client.get_price("BTCUSDT")
 
 
@@ -1258,9 +1110,7 @@ class TestWSDispatch:
         async def handler(data: dict) -> None:
             received.append(data)
 
-        await ws._dispatch(
-            {"type": "candle", "symbol": "ETHUSDT", "interval": "1m", "close": "3200.00"}
-        )
+        await ws._dispatch({"type": "candle", "symbol": "ETHUSDT", "interval": "1m", "close": "3200.00"})
         assert len(received) == 1
 
     async def test_dispatch_order_update_message(self) -> None:
@@ -1271,9 +1121,7 @@ class TestWSDispatch:
         async def handler(data: dict) -> None:
             received.append(data)
 
-        await ws._dispatch(
-            {"type": "order_update", "order_id": _ORDER_ID, "status": "filled"}
-        )
+        await ws._dispatch({"type": "order_update", "order_id": _ORDER_ID, "status": "filled"})
         assert len(received) == 1
 
     async def test_dispatch_order_type_also_routes_to_orders(self) -> None:
@@ -1307,9 +1155,7 @@ class TestWSDispatch:
         async def handler(data: dict) -> None:
             received.append(data)
 
-        await ws._dispatch(
-            {"type": "update", "channel": "ticker:BTCUSDT", "price": "64521.30"}
-        )
+        await ws._dispatch({"type": "update", "channel": "ticker:BTCUSDT", "price": "64521.30"})
         assert len(received) == 1
 
     async def test_dispatch_unknown_type_is_silently_ignored(self) -> None:
@@ -1387,12 +1233,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_price(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/price/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_PRICE_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/price/BTCUSDT").mock(return_value=httpx.Response(200, json=_PRICE_BODY))
             client = await self._make()
             result = await client.get_price("BTCUSDT")
             assert isinstance(result, Price)
@@ -1401,12 +1243,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_all_prices(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/prices").mock(
-                return_value=httpx.Response(200, json=_PRICES_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/prices").mock(return_value=httpx.Response(200, json=_PRICES_BODY))
             client = await self._make()
             result = await client.get_all_prices()
             assert isinstance(result, list)
@@ -1415,12 +1253,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_candles(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/candles/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_CANDLES_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/candles/BTCUSDT").mock(return_value=httpx.Response(200, json=_CANDLES_BODY))
             client = await self._make()
             result = await client.get_candles("BTCUSDT")
             assert isinstance(result, list)
@@ -1429,12 +1263,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_ticker(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/ticker/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_TICKER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/ticker/BTCUSDT").mock(return_value=httpx.Response(200, json=_TICKER_BODY))
             client = await self._make()
             result = await client.get_ticker("BTCUSDT")
             assert isinstance(result, Ticker)
@@ -1442,12 +1272,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_recent_trades(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/trades/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_TRADES_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/trades/BTCUSDT").mock(return_value=httpx.Response(200, json=_TRADES_BODY))
             client = await self._make()
             result = await client.get_recent_trades("BTCUSDT")
             assert isinstance(result, list)
@@ -1455,12 +1281,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_orderbook(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/orderbook/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_ORDERBOOK_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/orderbook/BTCUSDT").mock(return_value=httpx.Response(200, json=_ORDERBOOK_BODY))
             client = await self._make()
             result = await client.get_orderbook("BTCUSDT")
             assert isinstance(result, dict)
@@ -1470,12 +1292,8 @@ class TestAsyncClientAllMethods:
 
     async def test_place_market_order(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=_ORDER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=_ORDER_BODY))
             client = await self._make()
             result = await client.place_market_order("BTCUSDT", "buy", Decimal("0.001"))
             assert isinstance(result, Order)
@@ -1485,12 +1303,8 @@ class TestAsyncClientAllMethods:
     async def test_place_limit_order(self) -> None:
         limit_order = {**_ORDER_BODY, "type": "limit", "status": "pending", "price": "60000.00"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=limit_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=limit_order))
             client = await self._make()
             result = await client.place_limit_order("BTCUSDT", "buy", "0.001", 60000)
             assert isinstance(result, Order)
@@ -1499,12 +1313,8 @@ class TestAsyncClientAllMethods:
     async def test_place_stop_loss(self) -> None:
         sl_order = {**_ORDER_BODY, "type": "stop_loss", "status": "pending"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=sl_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=sl_order))
             client = await self._make()
             result = await client.place_stop_loss("BTCUSDT", "sell", "0.001", 58000)
             assert isinstance(result, Order)
@@ -1513,12 +1323,8 @@ class TestAsyncClientAllMethods:
     async def test_place_take_profit(self) -> None:
         tp_order = {**_ORDER_BODY, "type": "take_profit", "status": "pending"}
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/trade/order").mock(
-                return_value=httpx.Response(200, json=tp_order)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/trade/order").mock(return_value=httpx.Response(200, json=tp_order))
             client = await self._make()
             result = await client.place_take_profit("BTCUSDT", "sell", "0.001", 70000)
             assert isinstance(result, Order)
@@ -1526,12 +1332,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_order(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get(f"/api/v1/trade/order/{_ORDER_ID}").mock(
-                return_value=httpx.Response(200, json=_ORDER_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get(f"/api/v1/trade/order/{_ORDER_ID}").mock(return_value=httpx.Response(200, json=_ORDER_BODY))
             client = await self._make()
             result = await client.get_order(_ORDER_ID)
             assert isinstance(result, Order)
@@ -1539,12 +1341,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_open_orders(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/trade/orders/open").mock(
-                return_value=httpx.Response(200, json=_OPEN_ORDERS_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/trade/orders/open").mock(return_value=httpx.Response(200, json=_OPEN_ORDERS_BODY))
             client = await self._make()
             result = await client.get_open_orders()
             assert isinstance(result, list)
@@ -1553,12 +1351,8 @@ class TestAsyncClientAllMethods:
 
     async def test_cancel_order(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.delete(f"/api/v1/trade/order/{_ORDER_ID}").mock(
-                return_value=httpx.Response(204, content=b"")
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.delete(f"/api/v1/trade/order/{_ORDER_ID}").mock(return_value=httpx.Response(204, content=b""))
             client = await self._make()
             result = await client.cancel_order(_ORDER_ID)
             assert result is True
@@ -1566,12 +1360,8 @@ class TestAsyncClientAllMethods:
 
     async def test_cancel_all_orders(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.delete("/api/v1/trade/orders/open").mock(
-                return_value=httpx.Response(200, json=_CANCEL_ALL_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.delete("/api/v1/trade/orders/open").mock(return_value=httpx.Response(200, json=_CANCEL_ALL_BODY))
             client = await self._make()
             result = await client.cancel_all_orders()
             assert result == 3
@@ -1579,12 +1369,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_trade_history(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/trade/history").mock(
-                return_value=httpx.Response(200, json=_TRADE_HISTORY_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/trade/history").mock(return_value=httpx.Response(200, json=_TRADE_HISTORY_BODY))
             client = await self._make()
             result = await client.get_trade_history(limit=50)
             assert isinstance(result, list)
@@ -1595,12 +1381,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_account_info(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/info").mock(
-                return_value=httpx.Response(200, json=_ACCOUNT_INFO_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/info").mock(return_value=httpx.Response(200, json=_ACCOUNT_INFO_BODY))
             client = await self._make()
             result = await client.get_account_info()
             assert isinstance(result, AccountInfo)
@@ -1608,12 +1390,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_balance(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/balance").mock(
-                return_value=httpx.Response(200, json=_BALANCE_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/balance").mock(return_value=httpx.Response(200, json=_BALANCE_BODY))
             client = await self._make()
             result = await client.get_balance()
             assert isinstance(result, list)
@@ -1622,12 +1400,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_positions(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/positions").mock(
-                return_value=httpx.Response(200, json=_POSITIONS_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/positions").mock(return_value=httpx.Response(200, json=_POSITIONS_BODY))
             client = await self._make()
             result = await client.get_positions()
             assert isinstance(result, list)
@@ -1636,12 +1410,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_portfolio(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/portfolio").mock(
-                return_value=httpx.Response(200, json=_PORTFOLIO_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/portfolio").mock(return_value=httpx.Response(200, json=_PORTFOLIO_BODY))
             client = await self._make()
             result = await client.get_portfolio()
             assert isinstance(result, Portfolio)
@@ -1649,12 +1419,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_pnl(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/account/pnl").mock(
-                return_value=httpx.Response(200, json=_PNL_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/account/pnl").mock(return_value=httpx.Response(200, json=_PNL_BODY))
             client = await self._make()
             result = await client.get_pnl()
             assert isinstance(result, PnL)
@@ -1662,12 +1428,8 @@ class TestAsyncClientAllMethods:
 
     async def test_reset_account(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.post("/api/v1/account/reset").mock(
-                return_value=httpx.Response(200, json=_RESET_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.post("/api/v1/account/reset").mock(return_value=httpx.Response(200, json=_RESET_BODY))
             client = await self._make()
             result = await client.reset_account()
             assert isinstance(result, dict)
@@ -1677,12 +1439,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_performance(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/analytics/performance").mock(
-                return_value=httpx.Response(200, json=_PERFORMANCE_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/analytics/performance").mock(return_value=httpx.Response(200, json=_PERFORMANCE_BODY))
             client = await self._make()
             result = await client.get_performance()
             assert isinstance(result, Performance)
@@ -1690,12 +1448,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_portfolio_history(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/analytics/portfolio/history").mock(
-                return_value=httpx.Response(200, json=_HISTORY_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/analytics/portfolio/history").mock(return_value=httpx.Response(200, json=_HISTORY_BODY))
             client = await self._make()
             result = await client.get_portfolio_history()
             assert isinstance(result, list)
@@ -1704,12 +1458,8 @@ class TestAsyncClientAllMethods:
 
     async def test_get_leaderboard(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/analytics/leaderboard").mock(
-                return_value=httpx.Response(200, json=_LEADERBOARD_BODY)
-            )
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/analytics/leaderboard").mock(return_value=httpx.Response(200, json=_LEADERBOARD_BODY))
             client = await self._make()
             result = await client.get_leaderboard()
             assert isinstance(result, list)
@@ -1720,14 +1470,8 @@ class TestAsyncClientAllMethods:
 
     async def test_async_context_manager(self) -> None:
         with respx.mock(base_url=_BASE) as mock:
-            mock.post("/api/v1/auth/login").mock(
-                return_value=httpx.Response(200, json=_LOGIN_BODY)
-            )
-            mock.get("/api/v1/market/price/BTCUSDT").mock(
-                return_value=httpx.Response(200, json=_PRICE_BODY)
-            )
-            async with AsyncAgentExchangeClient(
-                api_key=_API_KEY, api_secret=_API_SECRET, base_url=_BASE
-            ) as client:
+            mock.post("/api/v1/auth/login").mock(return_value=httpx.Response(200, json=_LOGIN_BODY))
+            mock.get("/api/v1/market/price/BTCUSDT").mock(return_value=httpx.Response(200, json=_PRICE_BODY))
+            async with AsyncAgentExchangeClient(api_key=_API_KEY, api_secret=_API_SECRET, base_url=_BASE) as client:
                 price = await client.get_price("BTCUSDT")
                 assert isinstance(price, Price)

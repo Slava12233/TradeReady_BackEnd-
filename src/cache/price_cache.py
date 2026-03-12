@@ -30,8 +30,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import redis.asyncio as aioredis
-import structlog
 from redis.exceptions import RedisError
+import structlog
 
 from src.cache.types import Tick, TickerData
 

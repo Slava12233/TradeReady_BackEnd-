@@ -47,7 +47,6 @@ from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,
     AuthenticationError,
-    InvalidTokenError,
     TradingPlatformError,
 )
 
@@ -164,7 +163,7 @@ async def _resolve_account_from_api_key(
     try:
         account = await repo.get_by_api_key(api_key)
     except AccountNotFoundError:
-        raise AuthenticationError("Invalid API key.")
+        raise AuthenticationError("Invalid API key.") from None
 
     if account.status != "active":
         raise AccountSuspendedError(account_id=account.id)
@@ -196,16 +195,12 @@ async def _resolve_account_from_jwt(
     settings = get_settings()
 
     # verify_jwt raises InvalidTokenError on any problem
-    payload = await asyncio.get_event_loop().run_in_executor(
-        None, verify_jwt, token, settings.jwt_secret
-    )
+    payload = await asyncio.get_event_loop().run_in_executor(None, verify_jwt, token, settings.jwt_secret)
 
     try:
         account = await repo.get_by_id(payload.account_id)
     except AccountNotFoundError:
-        raise AuthenticationError(
-            f"Account '{payload.account_id}' referenced by token no longer exists."
-        )
+        raise AuthenticationError(f"Account '{payload.account_id}' referenced by token no longer exists.") from None
 
     if account.status != "active":
         raise AccountSuspendedError(account_id=account.id)

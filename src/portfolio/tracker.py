@@ -43,9 +43,9 @@ Example::
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
+import logging
 from uuid import UUID
 
 from sqlalchemy import select
@@ -230,19 +230,13 @@ class PortfolioTracker:
 
         positions = await self.get_positions(account_id)
 
-        total_position_value = sum(
-            (p.market_value for p in positions), _ZERO
-        )
+        total_position_value = sum((p.market_value for p in positions), _ZERO)
         unrealized_pnl = sum((p.unrealized_pnl for p in positions), _ZERO)
         realized_pnl = await self._sum_realized_pnl(account_id)
 
         total_equity = available_cash + locked_cash + total_position_value
         total_pnl = unrealized_pnl + realized_pnl
-        roi_pct = (
-            (total_pnl / starting_balance * _HUNDRED)
-            if starting_balance
-            else _ZERO
-        )
+        roi_pct = (total_pnl / starting_balance * _HUNDRED) if starting_balance else _ZERO
 
         logger.debug(
             "portfolio.get_portfolio",
@@ -304,11 +298,7 @@ class PortfolioTracker:
 
             market_value = qty * current_price if price_available else cost_basis
             unrealized_pnl = market_value - cost_basis
-            unrealized_pnl_pct = (
-                (unrealized_pnl / cost_basis * _HUNDRED)
-                if cost_basis
-                else _ZERO
-            )
+            unrealized_pnl_pct = (unrealized_pnl / cost_basis * _HUNDRED) if cost_basis else _ZERO
             realized_pnl_pos = Decimal(str(pos.realized_pnl))
             asset = _symbol_to_asset(pos.symbol)
 
@@ -401,9 +391,7 @@ class PortfolioTracker:
                 "portfolio.get_starting_balance.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to fetch starting balance for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch starting balance for account '{account_id}'.") from exc
 
         if raw is None:
             raise AccountNotFoundError(account_id=account_id)
@@ -424,9 +412,7 @@ class PortfolioTracker:
                 "portfolio.get_usdt_balance.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to fetch USDT balance for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch USDT balance for account '{account_id}'.") from exc
 
     async def _fetch_positions(self, account_id: UUID) -> list[Position]:
         """Return all ORM Position rows with quantity > 0 for *account_id*.
@@ -450,9 +436,7 @@ class PortfolioTracker:
                 "portfolio.fetch_positions.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to fetch positions for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to fetch positions for account '{account_id}'.") from exc
 
     async def _sum_realized_pnl(self, account_id: UUID) -> Decimal:
         """Return cumulative realized PnL from all trade fills.
@@ -479,9 +463,7 @@ class PortfolioTracker:
         from src.database.models import Trade
 
         try:
-            stmt = select(
-                sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)
-            ).where(Trade.account_id == account_id)
+            stmt = select(sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)).where(Trade.account_id == account_id)
             result = await self._session.execute(stmt)
             raw = result.scalar_one()
             return Decimal(str(raw))
@@ -490,9 +472,7 @@ class PortfolioTracker:
                 "portfolio.sum_all_realized_pnl.db_error",
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Failed to sum realized PnL for account '{account_id}'."
-            ) from exc
+            raise DatabaseError(f"Failed to sum realized PnL for account '{account_id}'.") from exc
 
     async def _sum_daily_realized_pnl(self, account_id: UUID) -> Decimal:
         """Return today's realized PnL via TradeRepository.

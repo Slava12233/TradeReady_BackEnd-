@@ -15,11 +15,9 @@ Test scenarios:
 
 from __future__ import annotations
 
-import asyncio
-import json
 from datetime import UTC, datetime
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncpg
 import pytest
@@ -28,7 +26,6 @@ from src.cache.price_cache import PriceCache, Tick
 from src.price_ingestion.broadcaster import PriceBroadcaster
 from src.price_ingestion.tick_buffer import TickBuffer
 from tests.conftest import make_tick
-
 
 # ---------------------------------------------------------------------------
 # Minimal ingestion pipeline helper
@@ -195,9 +192,7 @@ async def test_buffer_flushes_at_max_size(mock_redis: AsyncMock, mock_asyncpg_po
 async def test_buffer_retained_then_retried(mock_redis: AsyncMock, mock_asyncpg_pool: MagicMock) -> None:
     """Ticks retained after a flush failure must be written on the next flush attempt."""
     conn = mock_asyncpg_pool.acquire.return_value.__aenter__.return_value
-    conn.copy_records_to_table = AsyncMock(
-        side_effect=[asyncpg.PostgresError("temp failure"), None]
-    )
+    conn.copy_records_to_table = AsyncMock(side_effect=[asyncpg.PostgresError("temp failure"), None])
 
     price_cache = PriceCache(mock_redis)
     tick_buffer = TickBuffer(mock_asyncpg_pool, flush_interval=60.0, max_size=100)

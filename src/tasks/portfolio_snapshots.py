@@ -194,8 +194,6 @@ async def _run_snapshots(snapshot_type: str) -> dict[str, Any]:
     from src.cache.price_cache import PriceCache
     from src.cache.redis_client import RedisClient
     from src.config import get_settings
-    from src.database.models import Account
-    from src.database.repositories.account_repo import AccountRepository
     from src.database.session import get_session_factory
     from src.portfolio.snapshots import SnapshotService
 
@@ -270,7 +268,7 @@ async def _run_snapshots(snapshot_type: str) -> dict[str, Any]:
     }
 
 
-async def _load_active_account_ids(session_factory: Any) -> list[Any]:
+async def _load_active_account_ids(session_factory: Any) -> list[Any]:  # noqa: ANN401
     """Return the UUIDs of all accounts with status ``"active"``.
 
     Uses a single short-lived session to page through all active accounts in
@@ -284,9 +282,8 @@ async def _load_active_account_ids(session_factory: Any) -> list[Any]:
     Returns:
         Flat list of :class:`~uuid.UUID` values.
     """
-    from sqlalchemy import select
 
-    from src.database.models import Account
+    from src.database.repositories.account_repo import AccountRepository  # noqa: PLC0415
 
     ids: list[Any] = []
     batch_size = 1000
@@ -311,9 +308,9 @@ async def _load_active_account_ids(session_factory: Any) -> list[Any]:
 
 
 async def _capture(
-    svc: Any,
+    svc: Any,  # noqa: ANN401
     snapshot_type: str,
-    account_id: Any,
+    account_id: Any,  # noqa: ANN401
 ) -> None:
     """Dispatch to the correct :class:`~src.portfolio.snapshots.SnapshotService`
     capture method based on *snapshot_type*.

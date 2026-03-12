@@ -22,17 +22,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from pathlib import Path
+import re
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from agentexchange.async_client import AsyncAgentExchangeClient
+from agentexchange.models import Price
 import httpx
 import pytest
 import respx
 
-from agentexchange.async_client import AsyncAgentExchangeClient
-from agentexchange.models import Price
 from src.mcp.tools import _TOOL_DEFINITIONS, _dispatch, register_tools
 
 # ---------------------------------------------------------------------------
@@ -128,9 +128,7 @@ class TestConcurrentAsyncAgents:
             """Create an isolated client, call get_price, then close it."""
             with respx.mock(base_url=_BASE_URL, assert_all_called=False) as mock:
                 mock.post("/api/v1/auth/login").mock(side_effect=_login_response)
-                mock.get("/api/v1/market/price/BTCUSDT").mock(
-                    side_effect=_price_response
-                )
+                mock.get("/api/v1/market/price/BTCUSDT").mock(side_effect=_price_response)
 
                 async with AsyncAgentExchangeClient(
                     api_key=f"ak_live_agent_{agent_index:02d}_" + "x" * 30,
@@ -144,9 +142,7 @@ class TestConcurrentAsyncAgents:
 
         assert len(results) == 10
         for price in results:
-            assert isinstance(price, Price), (
-                f"Expected Price, got {type(price).__name__}"
-            )
+            assert isinstance(price, Price), f"Expected Price, got {type(price).__name__}"
             assert price.symbol == "BTCUSDT"
             assert price.price is not None
 
@@ -162,9 +158,7 @@ class TestConcurrentAsyncAgents:
         async def _run_agent(agent_index: int) -> None:
             with respx.mock(base_url=_BASE_URL, assert_all_called=False) as mock:
                 mock.post("/api/v1/auth/login").mock(side_effect=_counting_login)
-                mock.get("/api/v1/market/price/BTCUSDT").mock(
-                    side_effect=_price_response
-                )
+                mock.get("/api/v1/market/price/BTCUSDT").mock(side_effect=_price_response)
 
                 async with AsyncAgentExchangeClient(
                     api_key=f"ak_live_iso_{agent_index:02d}_" + "x" * 30,
@@ -202,10 +196,7 @@ class TestConcurrentAsyncAgents:
                 ) as client:
                     return await client.get_price(symbol)
 
-        tasks = [
-            asyncio.create_task(_run_agent_for_symbol(sym, idx))
-            for idx, sym in enumerate(symbols * 2)
-        ]
+        tasks = [asyncio.create_task(_run_agent_for_symbol(sym, idx)) for idx, sym in enumerate(symbols * 2)]
         results = await asyncio.gather(*tasks)
 
         assert len(results) == 10
@@ -287,12 +278,8 @@ class TestMcpToolDiscovery:
     def test_each_tool_has_object_input_schema(self) -> None:
         """All tool input schemas have ``type: object``."""
         for tool in _TOOL_DEFINITIONS:
-            assert isinstance(tool.inputSchema, dict), (
-                f"Tool '{tool.name}' inputSchema is not a dict"
-            )
-            assert tool.inputSchema.get("type") == "object", (
-                f"Tool '{tool.name}' inputSchema.type != 'object'"
-            )
+            assert isinstance(tool.inputSchema, dict), f"Tool '{tool.name}' inputSchema is not a dict"
+            assert tool.inputSchema.get("type") == "object", f"Tool '{tool.name}' inputSchema.type != 'object'"
 
 
 # ---------------------------------------------------------------------------
@@ -491,12 +478,8 @@ class TestMcpToolExecution:
 
             result = await _dispatch(tool_name, args, client)
 
-            assert len(result) == 1, (
-                f"Tool '{tool_name}' returned {len(result)} items, expected 1"
-            )
-            assert result[0].type == "text", (
-                f"Tool '{tool_name}' returned type '{result[0].type}', expected 'text'"
-            )
+            assert len(result) == 1, f"Tool '{tool_name}' returned {len(result)} items, expected 1"
+            assert result[0].type == "text", f"Tool '{tool_name}' returned type '{result[0].type}', expected 'text'"
 
 
 # ---------------------------------------------------------------------------
@@ -525,8 +508,7 @@ class TestSkillMdValidation:
     def skill_md_content(self) -> str:
         """Load the skill.md file once for the whole class."""
         assert _SKILL_MD_PATH.exists(), (
-            f"docs/skill.md not found at {_SKILL_MD_PATH}. "
-            "Run the doc generation step first."
+            f"docs/skill.md not found at {_SKILL_MD_PATH}. Run the doc generation step first."
         )
         return _SKILL_MD_PATH.read_text(encoding="utf-8")
 
@@ -562,15 +544,11 @@ class TestSkillMdValidation:
 
     def test_skill_md_file_exists(self) -> None:
         """``docs/skill.md`` must exist in the repository."""
-        assert _SKILL_MD_PATH.exists(), (
-            f"docs/skill.md not found at {_SKILL_MD_PATH}"
-        )
+        assert _SKILL_MD_PATH.exists(), f"docs/skill.md not found at {_SKILL_MD_PATH}"
 
     def test_skill_md_is_non_empty(self, skill_md_content: str) -> None:
         """``docs/skill.md`` must contain meaningful content."""
-        assert len(skill_md_content) > 500, (
-            f"docs/skill.md is suspiciously short ({len(skill_md_content)} chars)"
-        )
+        assert len(skill_md_content) > 500, f"docs/skill.md is suspiciously short ({len(skill_md_content)} chars)"
 
     def test_skill_md_declares_api_v1_base_url(self, skill_md_content: str) -> None:
         """``skill.md`` must declare ``/api/v1`` as the base URL.
@@ -589,9 +567,8 @@ class TestSkillMdValidation:
         paths = self._extract_absolute_api_paths(skill_md_content)
 
         bad_paths = [p for p in paths if not p.startswith("/api/v1/")]
-        assert not bad_paths, (
-            f"Found {len(bad_paths)} absolute path(s) not starting with /api/v1/:\n"
-            + "\n".join(f"  {p}" for p in sorted(bad_paths))
+        assert not bad_paths, f"Found {len(bad_paths)} absolute path(s) not starting with /api/v1/:\n" + "\n".join(
+            f"  {p}" for p in sorted(bad_paths)
         )
 
     def test_skill_md_covers_all_mcp_tool_endpoints(self, skill_md_content: str) -> None:
@@ -613,14 +590,11 @@ class TestSkillMdValidation:
             ("/api/v1/account/reset", "/account/reset"),
         ]
         missing = [
-            full
-            for full, rel in core_endpoint_pairs
-            if full not in skill_md_content and rel not in skill_md_content
+            full for full, rel in core_endpoint_pairs if full not in skill_md_content and rel not in skill_md_content
         ]
         assert not missing, (
-            f"The following core endpoint paths are missing from docs/skill.md "
-            f"(neither full /api/v1/ form nor relative form found):\n"
-            + "\n".join(f"  {p}" for p in missing)
+            "The following core endpoint paths are missing from docs/skill.md "
+            "(neither full /api/v1/ form nor relative form found):\n" + "\n".join(f"  {p}" for p in missing)
         )
 
     def test_skill_md_mentions_authentication(self, skill_md_content: str) -> None:
@@ -628,15 +602,11 @@ class TestSkillMdValidation:
         auth_keywords = ["api_key", "X-API-Key", "api_secret", "Authorization"]
         found = [kw for kw in auth_keywords if kw in skill_md_content]
         assert found, (
-            "docs/skill.md does not mention any authentication keywords. "
-            f"Expected at least one of: {auth_keywords}"
+            f"docs/skill.md does not mention any authentication keywords. Expected at least one of: {auth_keywords}"
         )
 
     def test_skill_md_mentions_error_handling(self, skill_md_content: str) -> None:
         """``skill.md`` should mention error codes or handling guidance."""
         error_keywords = ["error", "Error", "4xx", "429", "RateLimit", "insufficient"]
         found = [kw for kw in error_keywords if kw in skill_md_content]
-        assert found, (
-            "docs/skill.md does not mention error handling. "
-            f"Expected at least one of: {error_keywords}"
-        )
+        assert found, f"docs/skill.md does not mention error handling. Expected at least one of: {error_keywords}"

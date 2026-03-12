@@ -15,14 +15,15 @@ Dependency direction:
 
 from __future__ import annotations
 
-import structlog
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func as sa_func, select, update
+from sqlalchemy import func as sa_func
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.database.models import Order
 from src.utils.exceptions import (
@@ -37,9 +38,7 @@ logger = structlog.get_logger(__name__)
 _CANCELLABLE_STATUSES: frozenset[str] = frozenset({"pending", "partially_filled"})
 
 # All terminal statuses — orders in these states require no further action.
-_TERMINAL_STATUSES: frozenset[str] = frozenset(
-    {"filled", "cancelled", "rejected", "expired"}
-)
+_TERMINAL_STATUSES: frozenset[str] = frozenset({"filled", "cancelled", "rejected", "expired"})
 
 
 class OrderRepository:
@@ -124,9 +123,7 @@ class OrderRepository:
                 "order.create.integrity_error",
                 extra={"account_id": str(order.account_id), "error": str(exc)},
             )
-            raise DatabaseError(
-                f"Integrity error while creating order: {exc}"
-            ) from exc
+            raise DatabaseError(f"Integrity error while creating order: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception(
@@ -186,12 +183,7 @@ class OrderRepository:
         if extra_fields:
             values.update(extra_fields)
         try:
-            stmt = (
-                update(Order)
-                .where(Order.id == order_id)
-                .values(**values)
-                .returning(Order)
-            )
+            stmt = update(Order).where(Order.id == order_id).values(**values).returning(Order)
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
@@ -250,12 +242,7 @@ class OrderRepository:
             )
 
         try:
-            stmt = (
-                update(Order)
-                .where(Order.id == order_id)
-                .values(status="cancelled")
-                .returning(Order)
-            )
+            stmt = update(Order).where(Order.id == order_id).values(status="cancelled").returning(Order)
             result = await self._session.execute(stmt)
             row = result.scalars().first()
             if row is None:
@@ -430,12 +417,7 @@ class OrderRepository:
             pending_btc = await repo.list_pending(symbol="BTCUSDT")
         """
         try:
-            stmt = (
-                select(Order)
-                .where(Order.status == "pending")
-                .order_by(Order.id.asc())
-                .limit(limit)
-            )
+            stmt = select(Order).where(Order.status == "pending").order_by(Order.id.asc()).limit(limit)
             if after_id is not None:
                 stmt = stmt.where(Order.id > after_id)
             if symbol is not None:

@@ -42,7 +42,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-
 # ---------------------------------------------------------------------------
 # Shared config base
 # ---------------------------------------------------------------------------
@@ -546,8 +545,7 @@ class ResetRequest(_BaseSchema):
         default=None,
         gt=Decimal("0"),
         description=(
-            "New starting USDT balance after reset. "
-            "Defaults to the account's original starting balance if omitted."
+            "New starting USDT balance after reset. Defaults to the account's original starting balance if omitted."
         ),
         examples=["10000.00"],
     )
