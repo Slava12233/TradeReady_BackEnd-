@@ -149,7 +149,7 @@
 |---|---|---|---|
 | Monitoring | Not Started | `src/monitoring/prometheus_metrics.py`, `health.py`, Grafana dashboards | — |
 | Security | Not Started | Audit log middleware, IP allowlist, HMAC signing | — |
-| Operations | Not Started | Backup scripts, `scripts/create_test_agent.py`, `scripts/backfill_history.py` | — |
+| Operations | In Progress | Backup scripts, `scripts/create_test_agent.py`, `scripts/backfill_history.py` | Backfill script + migration + DataReplayer UNION done (2026-03-11) |
 | Documentation | Not Started | `README.md`, docstrings | — |
 | Launch | Not Started | 72h stability test, beta launch | — |
 

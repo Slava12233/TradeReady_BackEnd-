@@ -14,6 +14,11 @@ Phase 2 tables:
 - ``PortfolioSnapshot``   — periodic equity snapshots for charting
 - ``AuditLog``            — every authenticated request for security
 
+Backtesting tables:
+- ``BacktestSession``     — backtest run configuration and results
+- ``BacktestTrade``       — simulated trade fills within a backtest
+- ``BacktestSnapshot``    — periodic equity snapshots during backtest (hypertable)
+
 All models inherit from the shared ``Base`` declarative base.
 """
 
@@ -266,6 +271,15 @@ class Account(Base):
         nullable=False,
         server_default="'{}'",
     )
+    current_mode: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+        server_default="'live'",
+    )
+    active_strategy_label: Mapped[str | None] = mapped_column(
+        VARCHAR(100),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -296,9 +310,13 @@ class Account(Base):
     snapshots: Mapped[list[PortfolioSnapshot]] = relationship(
         "PortfolioSnapshot", back_populates="account", cascade="all, delete-orphan"
     )
+    backtest_sessions: Mapped[list[BacktestSession]] = relationship(
+        "BacktestSession", back_populates="account", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'suspended', 'archived')", name="ck_accounts_status"),
+        CheckConstraint("current_mode IN ('live', 'backtest')", name="ck_accounts_mode"),
         Index(
             "uq_accounts_email",
             "email",
@@ -995,3 +1013,358 @@ class WaitlistEntry(Base):
 
     def __repr__(self) -> str:
         return f"<WaitlistEntry email={self.email!r} source={self.source!r}>"
+
+
+# ── BacktestSession ──────────────────────────────────────────────────────────
+
+
+class BacktestSession(Base):
+    """A single backtest run with configuration, progress, and results.
+
+    Created by the agent via API with a time range, starting balance, and
+    strategy label.  The engine advances through historical candles step by
+    step, recording trades and snapshots.  Final metrics are persisted on
+    completion.
+
+    Attributes:
+        id:                 Primary key (UUID v4).
+        account_id:         Foreign key → ``accounts.id`` (cascade delete).
+        strategy_label:     Agent-assigned label for the strategy being tested.
+        status:             Lifecycle state: created → running → completed/failed/cancelled.
+        candle_interval:    Candle interval in seconds (default 60 = 1m candles).
+        start_time:         Backtest period start (UTC).
+        end_time:           Backtest period end (UTC).
+        starting_balance:   Virtual USDT balance at backtest start.
+        pairs:              List of trading pairs to include (JSONB, null = all).
+        virtual_clock:      Current simulated time position.
+        current_step:       Number of candles processed so far.
+        total_steps:        Total candles in the time range.
+        progress_pct:       Completion percentage (0–100).
+        final_equity:       Portfolio equity at backtest end (null until complete).
+        total_pnl:          Net PnL at backtest end (null until complete).
+        roi_pct:            Return on investment percentage (null until complete).
+        total_trades:       Number of trades executed.
+        total_fees:         Cumulative fees paid.
+        metrics:            Full performance metrics JSONB (sharpe, drawdown, etc.).
+        started_at:         Wall-clock time when engine started processing.
+        completed_at:       Wall-clock time when engine finished.
+        duration_real_sec:  Actual seconds the backtest took to run.
+        created_at:         UTC timestamp of session creation.
+        updated_at:         UTC timestamp of last modification.
+    """
+
+    __tablename__ = "backtest_sessions"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy_label: Mapped[str] = mapped_column(
+        VARCHAR(100),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'created'",
+    )
+    candle_interval: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="60",
+    )
+    start_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+    )
+    end_time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+    )
+    starting_balance: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    pairs: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    virtual_clock: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    current_step: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    total_steps: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    progress_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        server_default="0",
+    )
+    final_equity: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    total_pnl: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    roi_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 4),
+        nullable=True,
+    )
+    total_trades: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    total_fees: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+        server_default="0",
+    )
+    metrics: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    duration_real_sec: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    account: Mapped[Account] = relationship("Account", back_populates="backtest_sessions")
+    backtest_trades: Mapped[list[BacktestTrade]] = relationship(
+        "BacktestTrade", back_populates="session", cascade="all, delete-orphan"
+    )
+    backtest_snapshots: Mapped[list[BacktestSnapshot]] = relationship(
+        "BacktestSnapshot", back_populates="session", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('created', 'running', 'paused', 'completed', 'failed', 'cancelled')",
+            name="ck_bt_sessions_status",
+        ),
+        Index("idx_bt_sessions_account", "account_id"),
+        Index("idx_bt_sessions_account_status", "account_id", "status"),
+        Index("idx_bt_sessions_account_strategy", "account_id", "strategy_label"),
+        Index(
+            "idx_bt_sessions_account_roi",
+            "account_id",
+            "roi_pct",
+            postgresql_ops={"roi_pct": "DESC NULLS LAST"},
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<BacktestSession id={self.id} strategy={self.strategy_label!r} "
+            f"status={self.status!r} progress={self.progress_pct}%>"
+        )
+
+
+# ── BacktestTrade ────────────────────────────────────────────────────────────
+
+
+class BacktestTrade(Base):
+    """A single simulated trade fill within a backtest session.
+
+    Mirrors the structure of ``Trade`` but belongs to a backtest session
+    rather than the live trading system.  Uses ``simulated_at`` (virtual
+    clock time) instead of ``created_at`` (wall-clock).
+
+    Attributes:
+        id:            Primary key (UUID v4).
+        session_id:    Foreign key → ``backtest_sessions.id`` (cascade delete).
+        symbol:        Trading pair, e.g. ``"BTCUSDT"``.
+        side:          ``"buy"`` or ``"sell"``.
+        type:          Order type that generated this trade.
+        quantity:      Filled base-asset quantity.
+        price:         Execution price in quote asset.
+        quote_amount:  ``quantity * price``.
+        fee:           Simulated trading fee.
+        slippage_pct:  Realised slippage percentage.
+        realized_pnl:  PnL if this trade closed a position (nullable).
+        simulated_at:  Virtual clock timestamp when the trade occurred.
+    """
+
+    __tablename__ = "backtest_trades"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("backtest_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+    )
+    side: Mapped[str] = mapped_column(
+        VARCHAR(4),
+        nullable=False,
+    )
+    type: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+    )
+    quantity: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    price: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    quote_amount: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    fee: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    slippage_pct: Mapped[Decimal] = mapped_column(
+        Numeric(10, 6),
+        nullable=False,
+        server_default="0",
+    )
+    realized_pnl: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    simulated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+    )
+
+    session: Mapped[BacktestSession] = relationship("BacktestSession", back_populates="backtest_trades")
+
+    __table_args__ = (
+        CheckConstraint("side IN ('buy', 'sell')", name="ck_bt_trades_side"),
+        CheckConstraint(
+            "type IN ('market', 'limit', 'stop_loss', 'take_profit')",
+            name="ck_bt_trades_type",
+        ),
+        Index("idx_bt_trades_session", "session_id"),
+        Index("idx_bt_trades_session_time", "session_id", "simulated_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<BacktestTrade id={self.id} symbol={self.symbol!r} "
+            f"side={self.side!r} price={self.price}>"
+        )
+
+
+# ── BacktestSnapshot ─────────────────────────────────────────────────────────
+
+
+class BacktestSnapshot(Base):
+    """Periodic equity snapshot during a backtest run.
+
+    Captured at each step (or at a configured interval) to build the equity
+    curve.  This table is converted to a **TimescaleDB hypertable** partitioned
+    by ``simulated_at`` with 1-day chunks.
+
+    Attributes:
+        id:              Primary key (UUID v4).
+        session_id:      Foreign key → ``backtest_sessions.id`` (cascade delete).
+        simulated_at:    Virtual clock timestamp of the snapshot (hypertable partition key).
+        total_equity:    Total portfolio value in USDT.
+        available_cash:  Free USDT balance.
+        position_value:  Market value of all non-USDT holdings.
+        unrealized_pnl:  Open PnL across all positions.
+        realized_pnl:    Cumulative realised PnL up to this point.
+        positions:       Serialised position data (JSONB).
+    """
+
+    __tablename__ = "backtest_snapshots"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    simulated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        primary_key=True,
+        nullable=False,
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("backtest_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    total_equity: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    available_cash: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    position_value: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    realized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    positions: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    session: Mapped[BacktestSession] = relationship("BacktestSession", back_populates="backtest_snapshots")
+
+    __table_args__ = (
+        Index("idx_bt_snapshots_session_time", "session_id", "simulated_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<BacktestSnapshot session={self.session_id} "
+            f"equity={self.total_equity} at={self.simulated_at}>"
+        )

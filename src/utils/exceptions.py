@@ -778,6 +778,83 @@ class ServiceUnavailableError(TradingPlatformError):
 
 
 # ---------------------------------------------------------------------------
+# Backtesting errors (400 / 404 / 409)
+# ---------------------------------------------------------------------------
+
+
+class BacktestNotFoundError(TradingPlatformError):
+    """Raised when a backtest session cannot be found by ID.
+
+    Error code: ``BACKTEST_NOT_FOUND``
+    HTTP status: 404
+    """
+
+    code = "BACKTEST_NOT_FOUND"
+    http_status = 404
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        session_id: UUID | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if session_id is not None:
+            details["session_id"] = str(session_id)
+        if message is None:
+            message = (
+                f"Backtest session '{session_id}' not found."
+                if session_id
+                else "Backtest session not found."
+            )
+        super().__init__(message, details=details)
+
+
+class BacktestInvalidStateError(TradingPlatformError):
+    """Raised when a backtest operation is attempted in the wrong state.
+
+    Error code: ``BACKTEST_INVALID_STATE``
+    HTTP status: 409
+    """
+
+    code = "BACKTEST_INVALID_STATE"
+    http_status = 409
+
+    def __init__(
+        self,
+        message: str = "Backtest is not in the required state for this operation.",
+        *,
+        current_status: str | None = None,
+        required_status: str | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if current_status is not None:
+            details["current_status"] = current_status
+        if required_status is not None:
+            details["required_status"] = required_status
+        super().__init__(message, details=details)
+
+
+class BacktestNoDataError(TradingPlatformError):
+    """Raised when the requested time range has no historical data.
+
+    Error code: ``BACKTEST_NO_DATA``
+    HTTP status: 400
+    """
+
+    code = "BACKTEST_NO_DATA"
+    http_status = 400
+
+    def __init__(
+        self,
+        message: str = "No historical data available for the requested time range.",
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
+
+
+# ---------------------------------------------------------------------------
 # Public surface — everything callers need to import
 # ---------------------------------------------------------------------------
 
@@ -815,4 +892,8 @@ __all__ = [
     "DatabaseError",
     "CacheError",
     "ServiceUnavailableError",
+    # Backtesting
+    "BacktestNotFoundError",
+    "BacktestInvalidStateError",
+    "BacktestNoDataError",
 ]

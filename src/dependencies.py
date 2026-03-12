@@ -580,3 +580,56 @@ try:
     SnapshotServiceDep = Annotated[_SnapshotService, Depends(get_snapshot_service)]
 except ImportError:
     SnapshotServiceDep = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Backtest engine
+# ---------------------------------------------------------------------------
+
+# The BacktestEngine is a singleton — it holds active sessions in memory.
+_backtest_engine_instance: "BacktestEngine | None" = None  # type: ignore[name-defined]
+
+
+def get_backtest_engine() -> "BacktestEngineDep":  # type: ignore[name-defined]
+    """Return the singleton ``BacktestEngine`` instance.
+
+    The engine is created lazily on the first call.  It holds active
+    backtest sessions in memory across requests.
+    """
+    global _backtest_engine_instance  # noqa: PLW0603
+    if _backtest_engine_instance is None:
+        from src.backtesting.engine import BacktestEngine  # noqa: PLC0415
+        from src.database.session import get_session_factory  # noqa: PLC0415
+
+        _backtest_engine_instance = BacktestEngine(get_session_factory())
+    return _backtest_engine_instance
+
+
+try:
+    from src.backtesting.engine import BacktestEngine as _BacktestEngine
+
+    BacktestEngineDep = Annotated[_BacktestEngine, Depends(get_backtest_engine)]
+except ImportError:
+    BacktestEngineDep = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Backtest repository
+# ---------------------------------------------------------------------------
+
+
+async def get_backtest_repo(
+    db: DbSessionDep,
+) -> "BacktestRepoDep":  # type: ignore[name-defined]
+    """Return a ``BacktestRepository`` wired to the current session."""
+    from src.database.repositories.backtest_repo import BacktestRepository  # noqa: PLC0415
+
+    return BacktestRepository(db)
+
+
+try:
+    from src.database.repositories.backtest_repo import BacktestRepository as _BacktestRepo
+
+    BacktestRepoDep = Annotated[_BacktestRepo, Depends(get_backtest_repo)]
+except ImportError:
+    BacktestRepoDep = None  # type: ignore[assignment]

@@ -321,7 +321,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 extra={
                     "path": request.url.path,
                     "code": exc.code,
-                    "message": exc.message,
+                    "error_message": exc.message,
                 },
             )
             return JSONResponse(exc.to_dict(), status_code=exc.http_status)

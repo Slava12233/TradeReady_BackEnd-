@@ -32,7 +32,13 @@
       "Bash(docker compose up -d celery celery-beat)",
       "Bash(curl -s \"http://localhost:8000/api/v1/analytics/performance?period=7d\" -H \"X-API-Key: ak_live_9AIlbr2dd22DknRucnQHDoB4R7ECwEbR9SNrN77VPwbX7VCCA5MJzv5xa_FsVbas\")",
       "Bash(curl -s \"http://localhost:8000/api/v1/analytics/portfolio/history?interval=1h&limit=10\" -H \"X-API-Key: ak_live_9AIlbr2dd22DknRucnQHDoB4R7ECwEbR9SNrN77VPwbX7VCCA5MJzv5xa_FsVbas\")",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(docker exec:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker restart:*)",
+      "Bash(sleep 5 && curl -s -w \"\\\\n%{http_code}\" http://localhost:8000/api/v1/backtest/list -H \"X-API-Key: test\" 2>/dev/null)",
+      "Bash(sleep 10 && curl -s -w \"\\\\n%{http_code}\" http://localhost:8000/api/v1/backtest/list -H \"X-API-Key: test\" 2>/dev/null)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -c \"import ast; ast.parse\\(open\\('src/api/routes/backtest.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")"
     ]
   }
 }

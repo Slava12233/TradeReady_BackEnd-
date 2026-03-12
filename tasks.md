@@ -265,7 +265,10 @@
 - [ ] Set up automated backups: TimescaleDB daily dump
 - [ ] Set up automated backups: Redis RDB snapshots
 - [ ] Write `scripts/create_test_agent.py` — easy test agent setup
-- [ ] Write `scripts/backfill_history.py` — backfill historical candles from Binance REST
+- [x] Write `scripts/backfill_history.py` — backfill historical candles from Binance REST
+- [x] Create `alembic/versions/006_candles_backfill.py` — candles_backfill hypertable migration
+- [x] Update `src/backtesting/data_replayer.py` — UNION with candles_backfill for historical data
+- [x] Update `src/backtesting/engine.py` — pass step_interval to DataReplayer
 
 ### 5.4 Documentation & README
 

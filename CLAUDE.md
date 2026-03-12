@@ -9,6 +9,7 @@ Before starting ANY task, read these files in order:
 2. `tasks.md` — full task breakdown with statuses
 3. `developmentprogress.md` — current phase, progress, blockers
 4. `developmantPlan.md` — the relevant section(s) for the component you are implementing
+5. `backtesting_tasks.md` — backtesting-specific task breakdown (for any BT-* tasks)
 
 `developmantPlan.md` is the absolute authority. ALL implementation — file names, class names, method signatures, DB schema, API endpoints — MUST match what it specifies. Do not deviate or "improve" without explicit user approval.
 
@@ -56,13 +57,21 @@ pytest tests/unit/test_order_engine.py::test_market_buy_fills  # Single test
 locust -f tests/load/locustfile.py --host=http://localhost:8000
 ```
 
-In tests, instantiate the app via `from src.main import create_app; app = create_app()` — do not import `app` directly, as the factory is the testable surface.
+- `asyncio_mode = "auto"` in pyproject.toml — no need for `@pytest.mark.asyncio` on async tests
+- Ruff skips `ANN` and `S` rules for `tests/**/*.py`
+- In tests, instantiate the app via `from src.main import create_app; app = create_app()` — do not import `app` directly, as the factory is the testable surface.
+- `tests/conftest.py` provides factory fixtures (`make_tick()`, etc.) and `AsyncMock` wiring for Redis/asyncpg. Redis pipeline mocks need `__aenter__`/`__aexit__` for `async with redis.pipeline()`.
+- **Gotcha:** `get_settings()` uses `lru_cache` — tests must patch it before the cached instance is created, or override via dependency injection.
+- **Backtesting tests:**
+  - Unit: `tests/unit/test_time_simulator.py`, `test_data_replayer.py`, `test_backtest_sandbox.py`, `test_backtest_engine.py`, `test_backtest_results.py`
+  - Integration: `tests/integration/test_backtest_e2e.py`, `test_no_lookahead.py`, `test_agent_backtest_workflow.py`, `test_concurrent_backtests.py`, `test_backtest_api.py`
 
 ## Linting, Type Checking, Migrations
 
 ```bash
-ruff check src/ tests/     # Lint (line-length=120, Python 3.12, selects E/W/F/I/B/C4/UP/ANN/S/N)
-mypy src/                  # Type check (strict mode)
+ruff check src/ tests/     # Lint (config in pyproject.toml: line-length=120, Python 3.12)
+ruff check --fix src/      # Auto-fix lint issues
+mypy src/                  # Type check (strict mode; asyncpg/celery/locust have ignore_missing_imports)
 
 alembic revision --autogenerate -m "description"   # Create migration
 alembic upgrade head                                # Apply migrations
@@ -70,13 +79,14 @@ alembic downgrade -1                                # Rollback one
 
 python scripts/seed_pairs.py       # Seed Binance USDT pairs
 python scripts/validate_phase1.py  # Validate Phase 1 health
+python scripts/backfill_history.py # Backfill Binance historical klines into candles_backfill
 ```
 
 ## Architecture Overview
 
 This is a simulated crypto exchange where AI agents trade **virtual USDT** against **real Binance market data**. Supports 600+ USDT pairs with real-time price feeds, order execution, risk controls, and portfolio tracking.
 
-### Nine Core Components
+### Ten Core Components
 
 | # | Component | Key Files |
 |---|-----------|-----------|
@@ -89,6 +99,7 @@ This is a simulated crypto exchange where AI agents trade **virtual USDT** again
 | 7 | **Risk Management** — position limits, daily loss circuit breaker | `src/risk/` |
 | 8 | **API Gateway** — REST + WebSocket, middleware | `src/api/` |
 | 9 | **Monitoring** — Prometheus metrics, health checks, structured logs | `src/monitoring/` |
+| 10 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
 
 ### Dependency Direction (strict)
 ```
@@ -111,6 +122,8 @@ RateLimitMiddleware → AuthMiddleware → LoggingMiddleware → route handler
 
 **Order execution:** `POST /api/v1/trade/order` → RiskManager (8-step validation) → fetch price from Redis → market orders fill immediately with slippage; limit/stop orders queue as pending and are matched by background Celery task.
 
+**Backtesting:** `POST /backtest/create` → `POST /backtest/{id}/start` (bulk preloads all candle data into memory) → agent calls `POST /step` or `/step/batch` in a loop, reading prices and placing orders via sandbox endpoints → engine auto-completes on last step → `GET /results` returns metrics, equity curve, trade log. All data flows through an in-memory `BacktestSandbox` (no live Redis/exchange interaction). The `DataReplayer` enforces `WHERE bucket <= virtual_clock` on every query to prevent look-ahead bias.
+
 ### Redis Key Patterns
 - Current prices: `HSET prices {SYMBOL} {price}`
 - Rate limits: `INCR rate_limit:{api_key}:{endpoint}:{minute}` + `EXPIRE 60`
@@ -120,7 +133,9 @@ RateLimitMiddleware → AuthMiddleware → LoggingMiddleware → route handler
 - All DB access through repository classes in `src/database/repositories/`
 - All write operations must be atomic (SQLAlchemy transactions)
 - `NUMERIC(20,8)` for all price/quantity/balance columns
-- TimescaleDB hypertables for time-series only (`ticks`, `portfolio_snapshots`)
+- TimescaleDB hypertables for time-series only (`ticks`, `portfolio_snapshots`, `backtest_snapshots`)
+- Backtesting tables: `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (migration: `005_backtesting_tables.py`)
+- `candles_backfill` table stores Binance historical klines for periods before live ingestion (populated via `scripts/backfill_history.py`)
 
 ### API Authentication
 All REST endpoints accept either:
@@ -137,6 +152,162 @@ After connecting, send JSON messages to subscribe/unsubscribe:
 {"action": "subscribe",   "channel": "orders"}
 ```
 
+## Backtesting Engine
+
+The backtesting system lets AI agents replay historical market data and test trading strategies without risking real funds. The agent drives everything via API — the UI is **read-only observation**.
+
+### Architecture & Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/backtesting/engine.py` | **BacktestEngine** — orchestrator, manages active sessions (singleton) |
+| `src/backtesting/time_simulator.py` | **TimeSimulator** — virtual clock, steps through time range |
+| `src/backtesting/data_replayer.py` | **DataReplayer** — loads prices from TimescaleDB + candles_backfill |
+| `src/backtesting/sandbox.py` | **BacktestSandbox** — in-memory exchange (balances, orders, positions, trades) |
+| `src/backtesting/results.py` | **Metrics calculator** — Sharpe, Sortino, drawdown, win rate, profit factor |
+| `src/api/routes/backtest.py` | All backtest REST endpoints |
+| `src/api/schemas/backtest.py` | Pydantic request/response models |
+| `src/database/repositories/backtest_repo.py` | DB persistence (sessions, trades, snapshots) |
+| `src/tasks/backtest_cleanup.py` | Celery tasks: auto-cancel stale, delete old detail data |
+| `alembic/versions/005_backtesting_tables.py` | Migration: backtest_sessions, backtest_trades, backtest_snapshots |
+| `scripts/backfill_history.py` | Populate candles_backfill with Binance historical klines |
+
+### API Endpoints
+
+All under `/api/v1/backtest/` prefix, require authentication.
+
+**Lifecycle:**
+- `POST /create` — create session (date range, balance, pairs, strategy label)
+- `POST /{id}/start` — initialize sandbox, bulk preload price data
+- `POST /{id}/step` — advance one candle interval
+- `POST /{id}/step/batch` — advance N candles (body: `{"steps": N}`)
+- `POST /{id}/cancel` — abort early, save partial results
+- `GET  /{id}/status` — progress, current equity, virtual time
+
+**Sandbox trading (scoped to session):**
+- `POST   /{id}/trade/order` — place order in sandbox
+- `GET    /{id}/trade/orders` — list orders
+- `GET    /{id}/trade/orders/open` — pending orders
+- `GET    /{id}/trade/order/{oid}` — order status
+- `DELETE /{id}/trade/order/{oid}` — cancel order
+- `GET    /{id}/trade/history` — trade log
+
+**Sandbox market data:**
+- `GET /{id}/market/price/{symbol}` — price at virtual_time
+- `GET /{id}/market/prices` — all prices at virtual_time
+- `GET /{id}/market/ticker/{symbol}` — 24h stats at virtual_time
+- `GET /{id}/market/candles/{symbol}` — candles before virtual_time
+
+**Sandbox account:**
+- `GET /{id}/account/balance` — sandbox balances
+- `GET /{id}/account/positions` — sandbox positions
+- `GET /{id}/account/portfolio` — sandbox portfolio summary
+
+**Results & analysis:**
+- `GET /{id}/results` — full results + metrics
+- `GET /{id}/results/equity-curve` — equity curve data points
+- `GET /{id}/results/trades` — complete trade log
+- `GET /list` — list all backtests (filters: strategy_label, status, sort_by, limit)
+- `GET /compare` — compare multiple sessions side-by-side
+- `GET /best` — best session by metric
+
+**Mode management (under `/api/v1/account/`):**
+- `GET  /mode` — current operating mode (live/backtest)
+- `POST /mode` — switch mode
+
+**Historical data range (under `/api/v1/market/`):**
+- `GET /data-range` — earliest/latest timestamps, total pairs
+
+### Performance Optimizations
+
+- **Bulk preload**: `DataReplayer.preload_range()` loads ALL candle close prices for the full date range in a single SQL query into an in-memory dict (`_price_cache`). Subsequent `load_prices()` calls serve from cache with zero DB queries.
+- **Bisect lookup**: `_sorted_buckets` list + `bisect.bisect_right()` for O(log n) nearest-bucket lookups when timestamps don't align exactly.
+- **Snapshot frequency**: Equity snapshots captured every 60 steps (not every step), or when orders fill, or on the last step.
+- **DB write batching**: Progress written to DB every 500 steps (not every step), reducing write I/O.
+- **UNION with backfill**: All price queries UNION `candles_1m` (live aggregates) with `candles_backfill` (historical klines at any interval: 1m, 5m, 1h, 1d) to cover periods before live ingestion.
+- **Auto-completion**: Engine auto-calls `complete()` when the last step is reached, persisting all results.
+
+### Orphan Detection
+
+If the server restarts while a backtest is running, the in-memory session is lost but the DB status remains "running". The `/status` and `/list` endpoints detect orphaned sessions (status=running but not in `BacktestEngine._active`) and auto-mark them as "failed" via direct SQL UPDATE.
+
+### Look-Ahead Bias Prevention
+
+**Critical invariant**: Every query in `DataReplayer` filters `WHERE bucket <= virtual_clock`. The agent can never see future prices. This is enforced at the data layer, not the API layer, so there is no way to bypass it.
+
+### Backtest DB Schema
+
+- `backtest_sessions` — one row per backtest run (config, status, metrics JSONB, final equity, ROI, etc.)
+- `backtest_trades` — all trades within a session (FK → sessions ON DELETE CASCADE)
+- `backtest_snapshots` — equity snapshots over time (TimescaleDB hypertable, FK → sessions ON DELETE CASCADE)
+- `accounts` table extended with `current_mode` and `active_strategy_label` columns
+
+### Frontend (Read-Only)
+
+The backtesting UI is observation-only — no create/edit/action buttons.
+
+**Pages:**
+- `/backtest` — list view (active card + completed table + agent mode status)
+- `/backtest/[session_id]` — monitor (running) or results (completed)
+- `/backtest/compare` — side-by-side comparison
+
+**Components** (`Frontend/src/components/backtest/`):
+- `shared/` — status badges, virtual time display, strategy label badge, improvement indicator
+- `list/` — list page, active card, completed table, filters, agent mode status
+- `monitor/` — monitor page, progress timeline, live equity chart, live stats, positions, trades feed
+- `results/` — results page, summary cards, equity curve, drawdown chart, daily PnL, trade log, pair breakdown
+- `compare/` — compare page, overlaid equity chart, metrics table, auto-selector
+
+**Hooks** (`Frontend/src/hooks/`):
+- `use-backtest-list.ts` — TanStack Query, fetches list with filters
+- `use-backtest-status.ts` — polls running backtest every 2s, auto-stops when complete
+- `use-backtest-results.ts` — fetches results + equity curve + trade log
+- `use-backtest-compare.ts` — fetches comparison data, auto-groups by strategy prefix
+
+### Documentation
+
+- `docs/backtesting-guide.md` — technical guide (API lifecycle, strategies, step batching, position sizing)
+- `docs/backtesting-explained.md` — non-technical guide (analogies, plain English)
+- `docs/skill.md` — agent skill reference (includes backtesting workflow + strategy examples)
+- `backtesting_tasks.md` — complete task breakdown with statuses
+
+## Dependency Injection & Configuration
+
+### FastAPI Dependencies (`src/dependencies.py`)
+All service/repo instantiation goes through `src/dependencies.py` using FastAPI's `Depends()`. Pre-defined typed aliases exist for concise route signatures:
+```python
+# Use the typed aliases — NOT raw Annotated[Type, Depends(get_function)]
+async def handler(db: DbSessionDep, cache: PriceCacheDep, settings: SettingsDep):
+```
+Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `AccountRepoDep`, `BalanceRepoDep`, `OrderRepoDep`, `TradeRepoDep`, `TickRepoDep`, `SnapshotRepoDep`, `BalanceManagerDep`, `AccountServiceDep`, `SlippageCalcDep`, `OrderEngineDep`, `RiskManagerDep`, `PortfolioTrackerDep`, `PerformanceMetricsDep`, `SnapshotServiceDep`, `BacktestEngineDep`, `BacktestRepoDep`.
+
+Key patterns:
+- **Lazy imports** inside dependency functions (`# noqa: PLC0415`) to avoid circular imports — do not move these to module level
+- **Per-request lifecycle** for DB sessions (auto-commit on success, rollback on exception); Redis uses a shared pool (never closed per-request)
+- **CircuitBreaker is account-scoped**, not a singleton — construct it per-account with `starting_balance` and `daily_loss_limit_pct` (see comment block in `dependencies.py`)
+- **BacktestEngine is a singleton** — held in a module-level `_backtest_engine_instance` global
+
+### Settings (`src/config.py`)
+- `Settings` extends Pydantic v2 `BaseSettings` with `SettingsConfigDict(env_file=".env", case_sensitive=False)`
+- `get_settings()` is decorated with `@lru_cache(maxsize=1)` — reads `.env` exactly once per process
+- Field validators enforce: `DATABASE_URL` must use `postgresql+asyncpg://` scheme, `JWT_SECRET` must be 32+ chars
+- In tests, patch `src.config.get_settings` BEFORE the cached instance is created, or it will use the real config
+
+### Exception Hierarchy (`src/utils/exceptions.py`)
+All exceptions inherit `TradingPlatformError` which provides:
+- `code` (string) and `http_status` (int) class attributes as defaults
+- `.to_dict()` → `{"error": {"code": ..., "message": ..., "details": ...}}`
+- `details` dict for structured payloads (e.g., `InsufficientBalanceError` includes `available` and `required`)
+
+The global exception handler in `src/main.py` auto-serializes any `TradingPlatformError` subclass.
+
+### Alembic Async Migrations
+- `alembic/env.py` uses async-first pattern: `asyncio.run(run_migrations_online())`
+- Database URL is read from `get_settings()`, not hardcoded in `alembic.ini`
+- Uses `NullPool` for short-lived migration connections
+- `prepend_sys_path = .` in `alembic.ini` is required for `src` module imports
+- Post-write hook runs `ruff format` on generated migrations
+
 ## Code Standards
 
 - **Python 3.12+**, fully typed, `async/await` for all I/O
@@ -144,6 +315,13 @@ After connecting, send JSON messages to subscribe/unsubscribe:
 - **Google-style docstrings** on every public class and function
 - Custom exceptions from `src/utils/exceptions.py`; never bare `except:`
 - All external calls (Redis, DB, Binance WS) wrapped in try/except with logging; fail closed on errors
+- Import order: stdlib → third-party → local (enforced by ruff isort with `known-first-party = ["src", "sdk"]`)
+
+### Security
+- API keys generated via `secrets.token_urlsafe(48)` with `ak_live_` / `sk_live_` prefixes
+- Store password/secret hashes (bcrypt), never plaintext
+- Parameterized queries only (SQLAlchemy handles this — never use raw f-strings in SQL)
+- All secrets via environment variables; see `.env.example`
 
 ### Naming
 - Files: `snake_case.py`, Classes: `PascalCase`, Functions: `snake_case`, Constants: `UPPER_SNAKE_CASE`, Private: `_prefix`
@@ -170,6 +348,9 @@ Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
 | Phase 3: API Layer (REST, WebSocket, Celery) | 🔄 ~85% done |
 | Phase 4: Agent Connectivity (MCP server, SDK, framework guides) | 🔄 In progress |
 | Phase 5: Polish & Launch | ⬜ Not started |
+| **BT-1: Backtesting Backend** (engine, DB, API, tests) | ✅ Complete (31/31 tasks) |
+| **BT-2: Backtesting Frontend** (list, monitor, results, compare) | ✅ Complete (31/31 tasks) |
+| **BT-3: Backtesting Integration** (skill.md, SDK, MCP, E2E, ops) | 🔄 In progress (~10%) |
 
 ## SDK & Frontend
 
@@ -197,6 +378,13 @@ Frontend has its own `CLAUDE.md` at `Frontend/CLAUDE.md` with full UI convention
 - State: Zustand (WS/streaming), TanStack Query (REST), React state (local UI)
 - `@/*` path alias maps to `./src/*`
 
+## Docker
+
+- `docker-compose.yml` — production-like setup with all services
+- `docker-compose.dev.yml` — development overrides (hot reload, debug ports)
+- `docker-compose.phase1.yml` — minimal setup for Phase 1 (TimescaleDB + Redis only)
+- Healthchecks and resource limits defined for all containers
+
 ## Environment Variables
 
 | Variable | Purpose |
@@ -208,5 +396,9 @@ Frontend has its own `CLAUDE.md` at `Frontend/CLAUDE.md` with full UI convention
 | `TRADING_FEE_PCT` | Simulated fee (default 0.1%) |
 | `DEFAULT_STARTING_BALANCE` | New account balance (default 10000 USDT) |
 | `DEFAULT_SLIPPAGE_FACTOR` | Base slippage factor (default 0.1) |
+| `CELERY_BROKER_URL` | Celery broker (defaults to `REDIS_URL`) |
+| `CELERY_RESULT_BACKEND` | Celery results (defaults to `REDIS_URL`) |
+| `TICK_FLUSH_INTERVAL` | Tick buffer flush interval in seconds (default 1.0) |
+| `TICK_BUFFER_MAX_SIZE` | Max ticks buffered before forced flush (default 5000) |
 | `NEXT_PUBLIC_API_BASE_URL` | Frontend: backend REST API base URL |
 | `NEXT_PUBLIC_WS_URL` | Frontend: backend WebSocket URL |

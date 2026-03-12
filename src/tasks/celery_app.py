@@ -48,6 +48,7 @@ app = Celery(
         "src.tasks.portfolio_snapshots",
         "src.tasks.candle_aggregation",
         "src.tasks.cleanup",
+        "src.tasks.backtest_cleanup",
     ],
 )
 
@@ -141,5 +142,16 @@ app.conf.beat_schedule = {
     "cleanup-old-data": {
         "task": "src.tasks.cleanup.cleanup_old_data",
         "schedule": crontab(hour=1, minute=0),  # 01:00 UTC daily
+    },
+    # ── Backtest Cleanup ─────────────────────────────────────────────────
+    # Auto-cancel stale backtests (idle for >1 hour) — every hour.
+    "cancel-stale-backtests": {
+        "task": "src.tasks.backtest_cleanup.cancel_stale_backtests",
+        "schedule": 3600.0,  # every hour
+    },
+    # Delete old backtest detail data (trades, snapshots >90 days) — daily.
+    "cleanup-backtest-detail-data": {
+        "task": "src.tasks.backtest_cleanup.cleanup_backtest_detail_data",
+        "schedule": crontab(hour=2, minute=0),  # 02:00 UTC daily
     },
 }

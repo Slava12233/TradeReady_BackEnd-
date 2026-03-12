@@ -423,6 +423,491 @@ Periods: `1d`, `7d`, `30d`, `all`. Default limit: 20.
 
 ---
 
+## BACKTESTING — Test your strategies against history
+
+You can replay historical market data and trade against it at your own pace.
+This lets you test a strategy against 30 days of data in minutes instead of
+waiting 30 real days. Your trading code works identically in backtest and live mode.
+
+### Check available data range
+```
+GET /market/data-range
+```
+```json
+{
+  "earliest": "2025-01-01T00:00:00Z",
+  "latest": "2026-02-22T23:59:59Z",
+  "total_pairs": 647,
+  "intervals_available": ["1m", "5m", "15m", "1h", "4h", "1d"],
+  "data_gaps": []
+}
+```
+Tells you the earliest and latest dates you can backtest against.
+
+### Create a backtest session
+```
+POST /backtest/create
+Content-Type: application/json
+
+{
+  "start_time": "2026-01-01T00:00:00Z",
+  "end_time": "2026-01-31T23:59:59Z",
+  "starting_balance": 10000,
+  "candle_interval": "1m",
+  "strategy_label": "my_strategy_v1"
+}
+```
+```json
+{
+  "session_id": "bt_550e8400-e29b-41d4-a716-446655440000",
+  "status": "created",
+  "total_steps": 44640,
+  "estimated_pairs": 647
+}
+```
+Use `strategy_label` to track versions of your strategy (e.g., `momentum_v1`, `momentum_v2`).
+
+`pairs` is optional — set to `null` or omit to use all available pairs, or provide a list like `["BTCUSDT", "ETHUSDT"]` to limit scope.
+
+### Start the backtest
+```
+POST /backtest/{session_id}/start
+```
+Initializes the sandboxed environment and sets the virtual clock to `start_time`.
+
+### Step forward one candle
+```
+POST /backtest/{session_id}/step
+```
+```json
+{
+  "virtual_time": "2026-01-01T00:01:00Z",
+  "step": 1,
+  "total_steps": 44640,
+  "progress_pct": 0.002,
+  "prices": {
+    "BTCUSDT": {"open": "42150.00", "high": "42180.00", "low": "42130.00", "close": "42165.30", "volume": "12.34"},
+    "ETHUSDT": {"open": "2280.00", "high": "2285.00", "low": "2278.00", "close": "2282.50", "volume": "145.67"}
+  },
+  "orders_filled": [],
+  "portfolio": {
+    "total_equity": "10000.00",
+    "available_cash": "10000.00",
+    "positions": [],
+    "unrealized_pnl": "0.00"
+  },
+  "is_complete": false,
+  "remaining_steps": 44639
+}
+```
+This single response gives you everything you need to make a decision: current candle data for all pairs, current portfolio state, what orders filled, and progress info.
+
+### Fast-forward multiple candles
+```
+POST /backtest/{session_id}/step/batch
+Content-Type: application/json
+
+{"steps": 60}
+```
+Advances 60 candles at once. Good for skipping quiet periods. `orders_filled` includes ALL fills during the batch, and `prices` shows the final candle.
+
+### Trade during backtest (identical to live)
+```
+POST /backtest/{session_id}/trade/order
+Content-Type: application/json
+
+{"symbol": "BTCUSDT", "side": "buy", "type": "market", "quantity": "0.5"}
+```
+Same request/response format as live trading. Supports market, limit, stop-loss, and take-profit orders.
+
+### All backtest-scoped endpoints (same as live, scoped to session)
+
+**Market data at virtual time:**
+```
+GET /backtest/{sid}/market/price/{symbol}         → price at virtual_time
+GET /backtest/{sid}/market/prices                  → all prices at virtual_time
+GET /backtest/{sid}/market/ticker/{symbol}          → 24h stats at virtual_time
+GET /backtest/{sid}/market/candles/{symbol}         → candles BEFORE virtual_time
+```
+
+**Trading in the sandbox:**
+```
+POST   /backtest/{sid}/trade/order                  → place order
+GET    /backtest/{sid}/trade/order/{order_id}        → order status
+GET    /backtest/{sid}/trade/orders                  → all orders
+GET    /backtest/{sid}/trade/orders/open             → pending orders
+DELETE /backtest/{sid}/trade/order/{order_id}        → cancel order
+GET    /backtest/{sid}/trade/history                 → trade log
+```
+
+**Account state in the sandbox:**
+```
+GET /backtest/{sid}/account/balance                 → sandbox balances
+GET /backtest/{sid}/account/positions               → sandbox positions
+GET /backtest/{sid}/account/portfolio               → sandbox portfolio summary
+```
+
+### Cancel early if results look bad
+```
+POST /backtest/{session_id}/cancel
+```
+Saves partial results. Don't waste time on a losing strategy.
+
+### Get results when complete
+```
+GET /backtest/{session_id}/results
+```
+```json
+{
+  "session_id": "bt_550e...",
+  "status": "completed",
+  "config": {
+    "start_time": "2026-01-01T00:00:00Z",
+    "end_time": "2026-01-31T23:59:59Z",
+    "starting_balance": "10000.00",
+    "strategy_label": "momentum_v2",
+    "candle_interval": "1m"
+  },
+  "summary": {
+    "final_equity": "12458.30",
+    "total_pnl": "2458.30",
+    "roi_pct": "24.58",
+    "total_trades": 156,
+    "total_fees": "234.50",
+    "duration_simulated_days": 31,
+    "duration_real_seconds": 750
+  },
+  "metrics": {
+    "sharpe_ratio": 1.85,
+    "sortino_ratio": 2.31,
+    "max_drawdown_pct": 8.5,
+    "max_drawdown_duration_days": 3,
+    "win_rate": 65.71,
+    "profit_factor": 2.1,
+    "avg_win": "156.30",
+    "avg_loss": "-74.50",
+    "best_trade": "523.00",
+    "worst_trade": "-210.00",
+    "avg_trade_duration_minutes": 340,
+    "trades_per_day": 5.03
+  },
+  "by_pair": [
+    {"symbol": "BTCUSDT", "trades": 45, "win_rate": 71.1, "net_pnl": "1200.00"},
+    {"symbol": "ETHUSDT", "trades": 32, "win_rate": 62.5, "net_pnl": "580.00"}
+  ]
+}
+```
+ROI, Sharpe ratio, max drawdown, win rate, profit factor, per-pair breakdown.
+
+### Get equity curve
+```
+GET /backtest/{session_id}/results/equity-curve
+```
+```json
+{
+  "interval": "1h",
+  "snapshots": [
+    {"time": "2026-01-01T00:00:00Z", "equity": "10000.00"},
+    {"time": "2026-01-01T01:00:00Z", "equity": "10045.30"}
+  ]
+}
+```
+
+### Get full trade log
+```
+GET /backtest/{session_id}/results/trades
+```
+
+### List all your backtests
+```
+GET /backtest/list?strategy_label=my_strategy&sort_by=sharpe_ratio&status=completed&limit=20
+```
+```json
+{
+  "backtests": [
+    {
+      "session_id": "bt_ccc...",
+      "strategy_label": "momentum_v2",
+      "period": "2026-01-01 to 2026-01-31",
+      "status": "completed",
+      "roi_pct": 24.58,
+      "sharpe_ratio": 1.85,
+      "max_drawdown_pct": 8.5,
+      "total_trades": 156,
+      "created_at": "2026-02-23T10:30:00Z"
+    }
+  ]
+}
+```
+All query params are optional. `sort_by`: `roi_pct`, `sharpe_ratio`, `created_at`.
+
+### Compare backtests
+```
+GET /backtest/compare?sessions=bt_aaa,bt_bbb,bt_ccc
+```
+```json
+{
+  "comparisons": [
+    {
+      "session_id": "bt_aaa...",
+      "strategy_label": "momentum_v1",
+      "roi_pct": 18.20,
+      "sharpe_ratio": 1.42,
+      "max_drawdown_pct": 12.3,
+      "win_rate": 58.33
+    },
+    {
+      "session_id": "bt_bbb...",
+      "strategy_label": "momentum_v2",
+      "roi_pct": 24.58,
+      "sharpe_ratio": 1.85,
+      "max_drawdown_pct": 8.5,
+      "win_rate": 65.71
+    }
+  ],
+  "best_by_roi": "bt_bbb...",
+  "best_by_sharpe": "bt_bbb...",
+  "best_by_drawdown": "bt_bbb...",
+  "recommendation": "bt_bbb (momentum_v2) outperforms on all key metrics"
+}
+```
+Side-by-side metrics. Identifies the best performer.
+
+### Find your best backtest
+```
+GET /backtest/best?metric=sharpe_ratio&strategy_label=momentum
+```
+```json
+{
+  "session_id": "bt_bbb...",
+  "strategy_label": "momentum_v2",
+  "sharpe_ratio": 1.85,
+  "roi_pct": 24.58
+}
+```
+Returns your highest-performing backtest session by the given metric.
+
+### Check your current mode
+```
+GET /account/mode
+```
+```json
+{
+  "mode": "live",
+  "live_session": {
+    "started_at": "2026-02-20T00:00:00Z",
+    "current_equity": "12458.30",
+    "strategy_label": "momentum_v2"
+  },
+  "active_backtests": 1,
+  "total_backtests_completed": 14
+}
+```
+
+### Switch between live and backtest mode
+```
+POST /account/mode
+Content-Type: application/json
+
+{"mode": "live", "strategy_label": "momentum_v2"}
+```
+This doesn't stop backtests — you can run backtests while also trading live. The `mode` indicates your primary operating focus.
+
+### The recommended workflow
+
+**STEP 1: Backtest your strategy on a recent period**
+```
+POST /backtest/create → start → step loop → results
+```
+
+**STEP 2: If results are promising, backtest on a DIFFERENT time period**
+This checks if your strategy is robust or just lucky on one period.
+```
+POST /backtest/create (different dates, same strategy) → run → results
+```
+
+**STEP 3: Compare all backtests**
+```
+GET /backtest/compare → see which version performs best across periods
+```
+
+**STEP 4: If satisfied, switch to live trading**
+```
+POST /account/mode {"mode": "live", "strategy_label": "my_strategy_v3"}
+```
+Now you trade against real-time prices with virtual money.
+
+**STEP 5: Periodically re-backtest on newest data**
+Every few days, create a new backtest on the latest data to verify your strategy still works. Markets change.
+
+**STEP 6: If live performance degrades, iterate**
+Run new backtests with tweaked parameters. Compare old vs new. Switch to whichever version is better.
+
+### Building your own strategy
+
+The platform provides the market and the sandbox — **you provide the brain**.
+Your strategy is the decision logic that runs between steps: read prices,
+decide buy/sell/hold, place orders. Here's how to build one from scratch.
+
+#### The basic pattern
+
+Every strategy follows this skeleton:
+
+```python
+# 1. Create and start
+session = POST /backtest/create { dates, balance, pairs, strategy_label }
+POST /backtest/{session_id}/start
+
+# 2. Initialize your strategy state
+price_history = []   # track past prices for indicators
+position = None      # what you're currently holding
+
+# 3. The main loop
+while True:
+    result = POST /backtest/{session_id}/step/batch { "steps": N }
+    prices = result["prices"]
+    portfolio = result["portfolio"]
+
+    # ---- YOUR STRATEGY LOGIC HERE ----
+    # Read prices, compute indicators, make decisions
+    # -----------------------------------
+
+    if result["is_complete"]:
+        break
+
+# 4. Results are auto-saved — check them
+GET /backtest/{session_id}/results
+```
+
+#### Strategy building blocks
+
+You have these tools at each step:
+
+| What you can read | How |
+|---|---|
+| Current close price for any pair | `result["prices"]["BTCUSDT"]` from step response |
+| Full OHLCV candle history | `GET /backtest/{sid}/market/candles/BTCUSDT?limit=200` |
+| Your current USDT balance | `result["portfolio"]["available_cash"]` |
+| Your open positions | `GET /backtest/{sid}/account/positions` |
+| Your total equity | `result["portfolio"]["total_equity"]` |
+| Pending orders | `GET /backtest/{sid}/trade/orders/open` |
+| 24h stats (high/low/volume) | `GET /backtest/{sid}/market/ticker/BTCUSDT` |
+
+And these actions:
+
+| What you can do | How |
+|---|---|
+| Buy at market price | `POST /backtest/{sid}/trade/order {"symbol":"BTCUSDT","side":"buy","type":"market","quantity":"0.1"}` |
+| Sell at market price | Same with `"side":"sell"` |
+| Place a limit buy | `{"type":"limit","price":"60000","side":"buy",...}` — fills when price drops to 60000 |
+| Set a stop loss | `{"type":"stop_loss","price":"58000","side":"sell",...}` — auto-sells if price drops to 58000 |
+| Set a take profit | `{"type":"take_profit","price":"70000","side":"sell",...}` — auto-sells if price rises to 70000 |
+| Cancel a pending order | `DELETE /backtest/{sid}/trade/order/{order_id}` |
+
+#### Example strategies
+
+**Simple Moving Average Crossover:**
+Track short-term (10-period) and long-term (50-period) moving averages.
+Buy when short crosses above long, sell when it crosses below.
+
+```
+Step with batch of 1 each time.
+Keep a list of the last 50 close prices.
+short_ma = average of last 10 prices
+long_ma  = average of last 50 prices
+
+If short_ma > long_ma AND not holding → BUY
+If short_ma < long_ma AND holding     → SELL
+```
+
+**RSI Mean Reversion:**
+Compute the Relative Strength Index (14-period).
+Buy when RSI drops below 30 (oversold), sell when RSI rises above 70 (overbought).
+
+```
+Track last 14 price changes (gains and losses separately).
+RSI = 100 - (100 / (1 + avg_gain / avg_loss))
+
+If RSI < 30 AND not holding → BUY
+If RSI > 70 AND holding     → SELL
+```
+
+**Breakout with Stop Loss:**
+Buy when the price breaks above the 24-hour high. Set a stop loss at 2% below entry.
+
+```
+Use GET /backtest/{sid}/market/ticker/BTCUSDT to get 24h high.
+current_price = result["prices"]["BTCUSDT"]
+
+If current_price > high_24h AND not holding:
+    BUY market order
+    Place stop_loss order at entry_price * 0.98
+    Place take_profit order at entry_price * 1.05
+```
+
+**Multi-Pair Momentum:**
+Rank all pairs by their 24h price change. Buy the top 3 risers, sell any holdings that fell out of the top 3.
+
+```
+Step with batch of 60 (check every hour).
+For each pair, GET ticker to get price_change_pct.
+Sort pairs by price_change_pct descending.
+top_3 = first 3 pairs
+
+Sell any current positions NOT in top_3.
+Buy equal portions of top_3 that you don't already hold.
+```
+
+#### Step batching for efficiency
+
+Not every strategy needs to look at every 1-minute candle:
+
+| Strategy timeframe | Recommended batch size | Why |
+|---|---|---|
+| Scalping (every candle matters) | `steps: 1` | Need to react to every price tick |
+| Hourly signals | `steps: 60` | Skip to the next hour |
+| Daily signals | `steps: 1440` | Skip to the next day |
+| Weekly rebalancing | `steps: 10080` | Skip to the next week |
+
+Larger batches = much faster backtests. A daily strategy on 1 year of data:
+`525,600 steps / 1440 per batch = 365 API calls` instead of 525,600.
+
+**Important:** During a batch, pending limit/stop orders still check against
+every candle. So your stop losses and take profits work correctly even
+when batching.
+
+#### Position sizing
+
+Don't put all your money in one trade. Common approaches:
+
+- **Fixed percentage:** Use 10% of available cash per trade
+  `quantity = (available_cash * 0.10) / current_price`
+- **Equal weight:** Divide evenly across N positions
+  `quantity = (total_equity / N) / current_price`
+- **Risk-based:** Size based on stop loss distance
+  `risk_amount = total_equity * 0.02` (risk 2% per trade)
+  `quantity = risk_amount / (entry_price - stop_price)`
+
+#### Iterating on your strategy
+
+1. **Start simple.** Get a basic strategy running first (even a dumb one).
+2. **Label your versions.** Use `strategy_label: "momentum_v1"`, then `"momentum_v2"` etc.
+3. **Change one thing at a time.** Tweak one parameter, re-run, compare.
+4. **Test multiple time periods.** A strategy that only works in one period is likely overfitting.
+5. **Use the compare endpoint.** `GET /backtest/compare?sessions=id1,id2,id3` shows side-by-side metrics.
+6. **Watch Sharpe, not just ROI.** High ROI with massive drawdowns is worse than moderate ROI with smooth equity.
+
+### Tips for effective backtesting
+
+1. **Always test on at least 2 different time periods.** A strategy that only works on one period is likely overfitting.
+2. **Use strategy_label with version numbers** (v1, v2, v3) so you can track your improvements over time.
+3. **Cancel backtests early** if drawdown exceeds your tolerance. Don't waste steps on a strategy that's clearly failing.
+4. **Compare your results against "buy and hold BTC"** — if your strategy doesn't beat simply holding BTC, it might not be worth the complexity.
+5. **Pay attention to Sharpe ratio, not just ROI.** A strategy with 50% ROI but -40% max drawdown is worse than 20% ROI with -8% max drawdown.
+6. **Step-batch through periods where you have no signal.** If your strategy only trades on 1h candles, batch 60 steps at a time to skip the 1-minute candles you don't need.
+
+---
+
 ## Error Handling
 
 All errors return this format:

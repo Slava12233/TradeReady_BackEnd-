@@ -84,3 +84,5 @@ alembic/versions/__pycache__/
 # ─── Monitoring data ─────────────────────────────────────────────────────────
 prometheus_data/
 grafana_data/
+
+Frontend/
