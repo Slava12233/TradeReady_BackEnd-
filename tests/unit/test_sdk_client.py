@@ -23,9 +23,12 @@ from typing import Any
 from unittest.mock import patch
 from uuid import UUID
 
-from agentexchange.async_client import AsyncAgentExchangeClient
-from agentexchange.client import AgentExchangeClient
-from agentexchange.exceptions import (
+import pytest
+
+pytest.importorskip("agentexchange", reason="agentexchange SDK not installed")
+from agentexchange.async_client import AsyncAgentExchangeClient  # noqa: E402
+from agentexchange.client import AgentExchangeClient  # noqa: E402
+from agentexchange.exceptions import (  # noqa: E402
     AgentExchangeError,
     AuthenticationError,
     ConflictError,
@@ -39,7 +42,7 @@ from agentexchange.exceptions import (
     ValidationError,
     raise_for_response,
 )
-from agentexchange.models import (
+from agentexchange.models import (  # noqa: E402
     AccountInfo,
     Balance,
     Candle,
@@ -54,10 +57,9 @@ from agentexchange.models import (
     Ticker,
     Trade,
 )
-from agentexchange.ws_client import AgentExchangeWS
-import httpx
-import pytest
-import respx
+from agentexchange.ws_client import AgentExchangeWS  # noqa: E402
+import httpx  # noqa: E402
+import respx  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants

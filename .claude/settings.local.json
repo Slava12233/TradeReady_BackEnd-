@@ -117,7 +117,8 @@
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/ tests/ 2>&1 | grep \": \" | grep -oP '[A-Z]+\\\\d+' | sort | uniq -c | sort -rn)",
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && ruff check src/dependencies.py 2>&1 | grep UP040 | wc -l)",
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && mypy src/ --ignore-missing-imports 2>&1 | tail -3)",
-      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && pytest tests/unit/ -q --tb=line 2>&1 | tail -5)"
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && pytest tests/unit/ -q --tb=line 2>&1 | tail -5)",
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -m ruff check tests/unit/test_mcp_tools.py tests/unit/test_sdk_client.py 2>&1)"
     ]
   }
 }

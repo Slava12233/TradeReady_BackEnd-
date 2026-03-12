@@ -27,8 +27,9 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-import mcp.types as types
-from src.mcp.tools import (
+mcp = pytest.importorskip("mcp", reason="mcp package not installed")
+import mcp.types as types  # noqa: E402
+from src.mcp.tools import (  # noqa: E402
     _TOOL_DEFINITIONS,
     _call_api,
     _dispatch,
