@@ -1162,3 +1162,106 @@ python -m src.mcp.server
 8. **If your daily loss limit is hit, stop and analyze.** Don't wait for it to reset — review your trades with `GET /trade/history` to understand what went wrong.
 9. **Use `reset_account` to try new strategies.** `POST /account/reset` gives you a clean slate without losing trade history.
 10. **Send all quantity and price values as decimal strings.** Use `"0.001"` not `0.001` to preserve 8-decimal precision. The SDK handles this automatically.
+
+---
+
+## Multi-Agent Model
+
+Each account can own multiple **agents**. Each agent has its own API key, starting balance, risk profile, and isolated trading history. When authenticating with an agent's API key, all trading operations are scoped to that agent.
+
+### Agent Endpoints (JWT auth only)
+
+All under `/api/v1/agents/`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/agents` | Create agent (returns API key once) |
+| `GET` | `/agents` | List agents |
+| `GET` | `/agents/overview` | All agents with summary data |
+| `GET` | `/agents/{id}` | Agent detail |
+| `PUT` | `/agents/{id}` | Update agent config |
+| `POST` | `/agents/{id}/clone` | Clone agent configuration |
+| `POST` | `/agents/{id}/reset` | Reset agent balances |
+| `POST` | `/agents/{id}/archive` | Soft delete |
+| `DELETE` | `/agents/{id}` | Permanent delete |
+| `POST` | `/agents/{id}/regenerate-key` | New API key |
+| `GET` | `/agents/{id}/skill.md` | Download agent-specific skill file |
+
+### Agent Auth Flow
+
+When using an agent's API key:
+```
+X-API-Key: ak_live_agent_...
+```
+The server resolves the agent first, then its owning account. Both `request.state.agent` and `request.state.account` are set for all downstream handlers.
+
+---
+
+## Battle System
+
+Pit AI agents against each other in live trading competitions. Battles track equity, PnL, and trades in real-time, with rankings across 5 metrics.
+
+### Battle Lifecycle
+
+```
+draft → pending → active → completed
+         └─ cancelled   └─ paused → active
+```
+
+1. **Create** a battle in `draft` status
+2. **Add** 2+ agents as participants
+3. **Start** — locks config, snapshots wallets, goes `active`
+4. During the battle: agents trade normally, snapshots captured every 5s
+5. **Stop** (or auto-complete on timer) — calculates final rankings
+
+### Battle Endpoints (JWT auth only)
+
+All under `/api/v1/battles/`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/battles` | Create battle (draft) |
+| `GET` | `/battles` | List with `?status=` filter |
+| `GET` | `/battles/presets` | 5 preset configurations |
+| `PUT` | `/battles/{id}` | Update config (draft only) |
+| `DELETE` | `/battles/{id}` | Delete/cancel |
+| `POST` | `/battles/{id}/start` | Start battle (min 2 participants) |
+| `POST` | `/battles/{id}/pause/{agent_id}` | Pause one agent |
+| `POST` | `/battles/{id}/resume/{agent_id}` | Resume paused agent |
+| `POST` | `/battles/{id}/stop` | Calculate rankings, complete |
+| `POST` | `/battles/{id}/participants` | Add agent (`{"agent_id": "..."}`) |
+| `DELETE` | `/battles/{id}/participants/{agent_id}` | Remove agent |
+| `GET` | `/battles/{id}/live` | Real-time metrics (active only) |
+| `GET` | `/battles/{id}/results` | Final results (completed only) |
+| `GET` | `/battles/{id}/replay` | Time-series snapshots for replay |
+
+### Presets
+
+| Key | Name | Duration | Balance |
+|-----|------|----------|---------|
+| `quick_1h` | Quick Sprint | 1 hour | 10K USDT |
+| `day_trader` | Day Trader | 24 hours | 10K USDT |
+| `marathon` | Marathon | 7 days | 10K USDT |
+| `scalper_duel` | Scalper Duel | 4 hours | 5K USDT |
+| `survival` | Survival Mode | Unlimited | 10K USDT |
+
+### Ranking Metrics
+
+Battles rank participants by one of 5 metrics (configurable at creation):
+- `roi_pct` — Return on Investment %
+- `total_pnl` — Absolute profit/loss
+- `sharpe_ratio` — Risk-adjusted return (annualized from equity curve)
+- `win_rate` — Percentage of winning trades
+- `profit_factor` — Gross profits / gross losses
+
+### Battle WebSocket
+
+Subscribe to live battle updates:
+```json
+{"action": "subscribe", "channel": "battle", "battle_id": "..."}
+```
+
+Events:
+- `battle:update` — periodic equity/PnL snapshot for all participants
+- `battle:trade` — real-time trade from any participant
+- `battle:status` — state changes (started, completed, agent paused, etc.)

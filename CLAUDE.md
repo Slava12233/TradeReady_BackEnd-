@@ -33,7 +33,7 @@ Original planning docs are archived in `development/` for reference:
 - `development/developmentprogress.md` — development changelog
 - `development/context.md` — architecture decisions log
 - `development/codereviewtasks.md` — code review tasks
-- `development/multiagent_battle_tasks.md` — multi-agent & battle feature task breakdown (Phase 1 complete)
+- `development/multiagent_battle_tasks.md` — multi-agent & battle feature task breakdown (all 6 phases complete)
 
 These are **reference only** — do not update them. The source of truth is the code itself.
 
@@ -117,10 +117,11 @@ This is a simulated crypto exchange where AI agents trade **virtual USDT** again
 | 9 | **Monitoring** — Prometheus metrics, health checks, structured logs | `src/monitoring/` |
 | 10 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
 | 11 | **Agent Management** — multi-agent CRUD, per-agent wallets, API keys | `src/agents/` |
+| 12 | **Battle System** — agent vs agent competitions with rankings, replays | `src/battles/` |
 
 ### Multi-Agent Architecture
 
-Each account can own multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. The system is in a **dual-support transition**: both `account_id` and `agent_id` coexist on trading tables (`balances`, `orders`, `trades`, `positions`).
+Each account can own multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. Trading tables (`balances`, `orders`, `trades`, `positions`) are keyed by `agent_id`. Migration `011` drops the legacy `account_id` columns from trading tables.
 
 #### Key Files
 
@@ -194,6 +195,93 @@ The frontend supports the multi-agent model with a Slack-style agent switcher an
 - **Query keys**: All account/trade/analytics hooks include `activeAgentId` in their TanStack Query keys, so data refetches automatically when the user switches agents
 - **Settings page**: Split into "Account Settings" (developer) and "Agent Settings" (per-agent) tabs
 - **Navigation**: Sidebar has agent switcher below logo, plus "Agents" and "Battles" nav items
+
+### Battle System (Phases 3–6)
+
+Agent vs agent trading competitions with live monitoring, replay, and rankings.
+
+#### Backend Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/database/models.py` | `Battle`, `BattleParticipant`, `BattleSnapshot` models |
+| `src/database/repositories/battle_repo.py` | `BattleRepository` — CRUD for battles, participants, snapshots |
+| `src/battles/service.py` | `BattleService` — lifecycle: create, start, pause, stop, cancel |
+| `src/battles/snapshot_engine.py` | `SnapshotEngine` — periodic equity capture (every 5s) |
+| `src/battles/ranking.py` | `RankingCalculator` — ROI, PnL, Sharpe, Win Rate, Profit Factor |
+| `src/battles/wallet_manager.py` | `WalletManager` — fresh wallet mode with snapshot/restore |
+| `src/battles/presets.py` | 5 preset configs: Quick Sprint, Day Trader, Marathon, Scalper Duel, Survival |
+| `src/api/routes/battles.py` | 16 REST endpoints (JWT auth only) |
+| `src/api/schemas/battles.py` | Pydantic v2 schemas for battles |
+| `src/api/websocket/channels.py` | `BattleChannel` — real-time updates, trades, status events |
+| `src/tasks/battle_snapshots.py` | Celery tasks: snapshot capture (5s), auto-completion (10s) |
+
+#### Battle State Machine
+
+```
+draft → pending → active → completed
+         └─ cancelled   └─ paused → active
+```
+
+#### Battle API Endpoints
+
+All under `/api/v1/battles/`, JWT auth only:
+
+- `POST   /battles` — create battle (draft)
+- `GET    /battles` — list with status filter
+- `GET    /battles/presets` — 5 preset configurations
+- `PUT    /battles/{id}` — update config (draft only)
+- `DELETE /battles/{id}` — delete/cancel
+- `POST   /battles/{id}/start` — lock config, snapshot wallets, go active
+- `POST   /battles/{id}/pause/{agent_id}` — pause one agent
+- `POST   /battles/{id}/resume/{agent_id}` — resume paused agent
+- `POST   /battles/{id}/stop` — calculate rankings, complete
+- `POST   /battles/{id}/participants` — add agent
+- `DELETE /battles/{id}/participants/{agent_id}` — remove agent
+- `GET    /battles/{id}/live` — real-time metrics
+- `GET    /battles/{id}/results` — final results (completed only)
+- `GET    /battles/{id}/replay` — time-series snapshots for replay
+
+#### Battle WebSocket Events
+
+Channel: `battle:{battle_id}`. Three event types:
+- `battle:update` — periodic snapshot with all participants' equity/PnL/trades
+- `battle:trade` — real-time trade from any participant
+- `battle:status` — state changes (started, paused, resumed, completed, agent blown up)
+
+#### Battle Frontend Key Files
+
+| File | Purpose |
+|------|---------|
+| `Frontend/src/stores/battle-store.ts` | Zustand: active battle state |
+| `Frontend/src/hooks/use-battles.ts` | TanStack Query: CRUD + lifecycle mutations |
+| `Frontend/src/hooks/use-battle-live.ts` | WebSocket integration for live battle data |
+| `Frontend/src/hooks/use-battle-replay.ts` | Playback state machine (play/pause/scrub/speed) |
+| `Frontend/src/hooks/use-battle-notifications.ts` | Converts WS battle events to in-app notifications |
+| `Frontend/src/components/battles/` | 22 battle components (cards, charts, podium, timeline, replay, export) |
+| `Frontend/src/app/(dashboard)/battles/page.tsx` | Battle list page |
+| `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` | Live dashboard + results view |
+
+#### Battle Results View (completed battles)
+
+The `/battles/[id]` page auto-detects completed status and shows:
+- `BattlePodium` — top 3 on podium with confetti
+- `BattleMetricsTable` + `BattleTimeline` — final standings + key moments
+- `EquityRaceChart` + `BattleReplayControls` — scrubable equity replay (1x/2x/5x/10x)
+- `BattleExport` — CSV trades, CSV equity, JSON full export
+- Rematch button — clones battle config into new draft
+
+#### Dependencies
+
+```python
+BattleRepoDep = Annotated[BattleRepository, Depends(get_battle_repo)]
+BattleServiceDep = Annotated[BattleService, Depends(get_battle_service)]
+```
+
+#### Migrations
+
+- `010_create_battle_tables.py` — battles + battle_participants + battle_snapshots (hypertable)
+- `011_drop_account_trading_columns.py` — drops legacy account trading columns and account_id from trading tables
 
 ### Dependency Direction (strict)
 ```

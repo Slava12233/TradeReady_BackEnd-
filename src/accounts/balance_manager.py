@@ -350,7 +350,7 @@ class BalanceManager:
         if agent_id is not None:
             balance = await self._repo.get_by_agent(agent_id, asset)
         else:
-            balance = await self._repo.get(account_id, asset)
+            balance = await self._repo.get(account_id, asset)  # Legacy fallback
         if balance is None:
             return False
 

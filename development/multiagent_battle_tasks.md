@@ -2,7 +2,7 @@
 
 > **Authority:** `Multiagentbattleplan.md` — all file names, schemas, endpoints MUST match
 > **Created:** 2026-03-12
-> **Status:** Phase 1, 2, 3 & 4 Complete — Phase 5 Ready
+> **Status:** All 6 Phases Complete
 > **Estimated Duration:** 6–7 weeks across 6 phases
 
 ---
@@ -233,30 +233,30 @@ This feature restructures the **core data model** (account → agent). Every tab
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 5.1.1 | Create `use-battle-live.ts` — WebSocket integration: subscribe to `battle` channel, parse `battle:update`, `battle:trade`, `battle:status` events, update battle-store. Auto-reconnect. | `Frontend/src/hooks/use-battle-live.ts` | 4.1.1 | [ ] |
+| 5.1.1 | Create `use-battle-live.ts` — WebSocket integration: subscribe to `battle` channel, parse `battle:update`, `battle:trade`, `battle:status` events, update battle-store. Auto-reconnect. | `Frontend/src/hooks/use-battle-live.ts` | 4.1.1 | [x] |
 
 ### 5.2 Live Dashboard Components
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 5.2.1 | Create `BattleTopBar` — battle name, timer/countdown, status badge, participant count, ranking metric label, control buttons (Pause All / Resume All / End Battle). | `Frontend/src/components/battles/battle-top-bar.tsx` | 4.1.2 | [ ] |
-| 5.2.2 | Create `BattleAgentCard` — individual participant: avatar, name, color, rank badge (#1 gold, #2 silver, #3 bronze), LLM/framework badges, live equity, PnL %, trades + win rate, mini sparkline, status pulse, pause/resume button. | `Frontend/src/components/battles/battle-agent-card.tsx` | 2.2.1, 2.2.2, 2.2.3 | [ ] |
-| 5.2.3 | Create `BattleAgentCards` — horizontal scrollable row of BattleAgentCards. | `Frontend/src/components/battles/battle-agent-cards.tsx` | 5.2.2 | [ ] |
-| 5.2.4 | Create `EquityRaceChart` — overlaid multi-line Recharts LineChart. All agents on same time axis, distinct colors, auto-scroll, crosshair hover. The centerpiece visualization. | `Frontend/src/components/battles/equity-race-chart.tsx` | 5.1.1 | [ ] |
-| 5.2.5 | Create `PnlComparisonBars` — grouped bar chart: realized PnL, unrealized PnL, total PnL per agent. Live updates. | `Frontend/src/components/battles/pnl-comparison-bars.tsx` | 5.1.1 | [ ] |
-| 5.2.6 | Create `BattleTradeFeed` — unified chronological feed of all trades from all agents. Color-coded by agent color. Agent name, BUY/SELL badge, pair, qty, price, PnL. New trades animate in. Filter by agent. | `Frontend/src/components/battles/battle-trade-feed.tsx` | 5.1.1 | [ ] |
-| 5.2.7 | Create `StrategyHeatmap` — grid: rows = agents, columns = pairs. Cells = PnL color-coded (red → green). | `Frontend/src/components/battles/strategy-heatmap.tsx` | 5.1.1 | [ ] |
-| 5.2.8 | Create `RiskRadarChart` — overlaid Recharts RadarChart. 5 axes: position concentration, drawdown depth, trade frequency, win rate, avg hold time. | `Frontend/src/components/battles/risk-radar-chart.tsx` | 5.1.1 | [ ] |
-| 5.2.9 | Create `BattleMetricsTable` — full sortable table: rank, agent, equity, PnL $, PnL %, trades, win rate, Sharpe, max DD, profit factor, avg duration, best trade, worst trade. | `Frontend/src/components/battles/battle-metrics-table.tsx` | 5.1.1 | [ ] |
-| 5.2.10 | Create `AgentDeepDiveModal` — full modal with agent's individual dashboard. Reuse existing dashboard components (equity chart, positions, recent trades, allocation, risk). Scoped to battle participant. | `Frontend/src/components/battles/agent-deep-dive-modal.tsx` | 5.1.1 | [ ] |
+| 5.2.1 | Create `BattleTopBar` — battle name, timer/countdown, status badge, participant count, ranking metric label, control buttons (Pause All / Resume All / End Battle). | `Frontend/src/components/battles/battle-top-bar.tsx` | 4.1.2 | [x] |
+| 5.2.2 | Create `BattleAgentCard` — individual participant: avatar, name, color, rank badge (#1 gold, #2 silver, #3 bronze), LLM/framework badges, live equity, PnL %, trades + win rate, mini sparkline, status pulse, pause/resume button. | `Frontend/src/components/battles/battle-agent-card.tsx` | 2.2.1, 2.2.2, 2.2.3 | [x] |
+| 5.2.3 | Create `BattleAgentCards` — horizontal scrollable row of BattleAgentCards. | `Frontend/src/components/battles/battle-agent-cards.tsx` | 5.2.2 | [x] |
+| 5.2.4 | Create `EquityRaceChart` — overlaid multi-line Recharts LineChart. All agents on same time axis, distinct colors, auto-scroll, crosshair hover. The centerpiece visualization. | `Frontend/src/components/battles/equity-race-chart.tsx` | 5.1.1 | [x] |
+| 5.2.5 | Create `PnlComparisonBars` — grouped bar chart: realized PnL, unrealized PnL, total PnL per agent. Live updates. | `Frontend/src/components/battles/pnl-comparison-bars.tsx` | 5.1.1 | [x] |
+| 5.2.6 | Create `BattleTradeFeed` — unified chronological feed of all trades from all agents. Color-coded by agent color. Agent name, BUY/SELL badge, pair, qty, price, PnL. New trades animate in. Filter by agent. | `Frontend/src/components/battles/battle-trade-feed.tsx` | 5.1.1 | [x] |
+| 5.2.7 | Create `StrategyHeatmap` — grid: rows = agents, columns = pairs. Cells = PnL color-coded (red → green). | `Frontend/src/components/battles/strategy-heatmap.tsx` | 5.1.1 | [x] |
+| 5.2.8 | Create `RiskRadarChart` — overlaid Recharts RadarChart. 5 axes: position concentration, drawdown depth, trade frequency, win rate, avg hold time. | `Frontend/src/components/battles/risk-radar-chart.tsx` | 5.1.1 | [x] |
+| 5.2.9 | Create `BattleMetricsTable` — full sortable table: rank, agent, equity, PnL $, PnL %, trades, win rate, Sharpe, max DD, profit factor, avg duration, best trade, worst trade. | `Frontend/src/components/battles/battle-metrics-table.tsx` | 5.1.1 | [x] |
+| 5.2.10 | Create `AgentDeepDiveModal` — full modal with agent's individual dashboard. Reuse existing dashboard components (equity chart, positions, recent trades, allocation, risk). Scoped to battle participant. | `Frontend/src/components/battles/agent-deep-dive-modal.tsx` | 5.1.1 | [x] |
 
 ### 5.3 Live Battle Page
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 5.3.1 | Create `/battles/[id]` page — assemble: BattleTopBar + BattleAgentCards row + tabbed main area (Equity Race, PnL Comparison, Trade Feed, Strategy Heatmap, Risk Radar) + BattleMetricsTable bottom section. | `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` | 5.2.1–5.2.10 | [ ] |
-| 5.3.2 | Create battle detail loading skeleton. | `Frontend/src/app/(dashboard)/battles/[id]/loading.tsx` | — | [ ] |
-| 5.3.3 | Run `pnpm build` — zero TypeScript errors. | — | 5.3.1 | [ ] |
+| 5.3.1 | Create `/battles/[id]` page — assemble: BattleTopBar + BattleAgentCards row + tabbed main area (Equity Race, PnL Comparison, Trade Feed, Strategy Heatmap, Risk Radar) + BattleMetricsTable bottom section. | `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` | 5.2.1–5.2.10 | [x] |
+| 5.3.2 | Create battle detail loading skeleton. | `Frontend/src/app/(dashboard)/battles/[id]/loading.tsx` | — | [x] |
+| 5.3.3 | Run `pnpm build` — zero TypeScript errors. | — | 5.3.1 | [x] |
 
 ---
 
@@ -266,55 +266,55 @@ This feature restructures the **core data model** (account → agent). Every tab
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.1.1 | Create `use-battle-replay.ts` — playback state machine: play, pause, scrub, speed (1x/2x/5x/10x). Uses battle_snapshots time-series data. Drives chart + cards animation. | `Frontend/src/hooks/use-battle-replay.ts` | 4.1.2 | [ ] |
-| 6.1.2 | Create `BattlePodium` — top 3 agents on podium (#1 center tallest, #2 left, #3 right). Name, avatar, final equity, PnL %, metric value. Gold/silver/bronze. Confetti on first load. | `Frontend/src/components/battles/battle-podium.tsx` | — | [ ] |
-| 6.1.3 | Create `BattleTimeline` — chronological timeline of key moments: lead changes, biggest/worst trades, agents blown up, max drawdown, pause/resume events. | `Frontend/src/components/battles/battle-timeline.tsx` | — | [ ] |
-| 6.1.4 | Create `BattleReplayControls` — play/pause/scrub bar + speed selector + key moment markers on scrubber. Controls the equity race chart replay. | `Frontend/src/components/battles/battle-replay-controls.tsx` | 6.1.1 | [ ] |
+| 6.1.1 | Create `use-battle-replay.ts` — playback state machine: play, pause, scrub, speed (1x/2x/5x/10x). Uses battle_snapshots time-series data. Drives chart + cards animation. | `Frontend/src/hooks/use-battle-replay.ts` | 4.1.2 | [x] |
+| 6.1.2 | Create `BattlePodium` — top 3 agents on podium (#1 center tallest, #2 left, #3 right). Name, avatar, final equity, PnL %, metric value. Gold/silver/bronze. Confetti on first load. | `Frontend/src/components/battles/battle-podium.tsx` | — | [x] |
+| 6.1.3 | Create `BattleTimeline` — chronological timeline of key moments: lead changes, biggest/worst trades, agents blown up, max drawdown, pause/resume events. | `Frontend/src/components/battles/battle-timeline.tsx` | — | [x] |
+| 6.1.4 | Create `BattleReplayControls` — play/pause/scrub bar + speed selector + key moment markers on scrubber. Controls the equity race chart replay. | `Frontend/src/components/battles/battle-replay-controls.tsx` | 6.1.1 | [x] |
 
 ### 6.2 Export & Rematch
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.2.1 | Build export functionality — CSV trade history (all participants), CSV equity snapshots, JSON complete battle data. Download buttons on results page. | `Frontend/src/components/battles/battle-export.tsx` or inline in results | 5.3.1 | [ ] |
-| 6.2.2 | Build "Rematch" button — clones battle config into new draft battle. | Inline in `/battles/[id]` page | 4.1.2 | [ ] |
+| 6.2.1 | Build export functionality — CSV trade history (all participants), CSV equity snapshots, JSON complete battle data. Download buttons on results page. | `Frontend/src/components/battles/battle-export.tsx` or inline in results | 5.3.1 | [x] |
+| 6.2.2 | Build "Rematch" button — clones battle config into new draft battle. | Inline in `/battles/[id]` page | 4.1.2 | [x] |
 
 ### 6.3 Results View Integration
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.3.1 | Update `/battles/[id]` page — detect completed status → show results view: BattlePodium + final standings table + BattleTimeline + replay section (EquityRaceChart + BattleReplayControls) + export buttons + Rematch. | `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` | 6.1.2, 6.1.3, 6.1.4, 6.2.1, 6.2.2 | [ ] |
+| 6.3.1 | Update `/battles/[id]` page — detect completed status → show results view: BattlePodium + final standings table + BattleTimeline + replay section (EquityRaceChart + BattleReplayControls) + export buttons + Rematch. | `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` | 6.1.2, 6.1.3, 6.1.4, 6.2.1, 6.2.2 | [x] |
 
 ### 6.4 Notifications
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.4.1 | Add battle notification events — agent took lead, agent blown up, battle completed, agent idle 5+ min. Integrate with existing notification system. | Backend: `src/battles/service.py`, Frontend: notification store | 3.2.3 | [ ] |
+| 6.4.1 | Add battle notification events — agent took lead, agent blown up, battle completed, agent idle 5+ min. Integrate with existing notification system. | Backend: `src/battles/service.py`, Frontend: notification store | 3.2.3 | [x] |
 
 ### 6.5 Polish & Responsive
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.5.1 | Responsive design pass — all agent management pages (mobile + tablet). | Various agent components | Phase 2 complete | [ ] |
-| 6.5.2 | Responsive design pass — all battle pages (mobile + tablet). | Various battle components | Phase 5, 6.3 complete | [ ] |
-| 6.5.3 | Error boundaries — add error boundaries for agents page, battles page, battle detail page. | Various page files | All phases | [ ] |
-| 6.5.4 | Empty states — design empty states for: no agents yet, no battles yet, battle with no participants. | Various components | All phases | [ ] |
+| 6.5.1 | Responsive design pass — all agent management pages (mobile + tablet). | Various agent components | Phase 2 complete | [x] |
+| 6.5.2 | Responsive design pass — all battle pages (mobile + tablet). | Various battle components | Phase 5, 6.3 complete | [x] |
+| 6.5.3 | Error boundaries — add error boundaries for agents page, battles page, battle detail page. | Various page files | All phases | [x] |
+| 6.5.4 | Empty states — design empty states for: no agents yet, no battles yet, battle with no participants. | Various components | All phases | [x] |
 
 ### 6.6 Final Cleanup
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.6.1 | Create Alembic migration `011_drop_account_trading_columns.py` — drop `api_key`, `api_key_hash`, `api_secret_hash`, `starting_balance`, `risk_profile` from `accounts` table. Drop `account_id` from trading tables (keeping `agent_id` only). **Only after all code is updated.** | `alembic/versions/011_drop_account_trading_columns.py` | All phases complete | [ ] |
-| 6.6.2 | Remove old account-trading code paths — delete dual-support methods, remove `account_id` lookups in repositories. | Various service/repo files | 6.6.1 | [ ] |
-| 6.6.3 | Final full test suite — `pytest tests/` zero failures. | — | 6.6.2 | [ ] |
-| 6.6.4 | Final lint + type check — `ruff check src/ tests/` + `mypy src/` zero errors. | — | 6.6.3 | [ ] |
-| 6.6.5 | Final `pnpm build` — zero TypeScript errors. | — | 6.6.4 | [ ] |
+| 6.6.1 | Create Alembic migration `011_drop_account_trading_columns.py` — drop `api_key`, `api_key_hash`, `api_secret_hash`, `starting_balance`, `risk_profile` from `accounts` table. Drop `account_id` from trading tables (keeping `agent_id` only). **Only after all code is updated.** | `alembic/versions/011_drop_account_trading_columns.py` | All phases complete | [x] |
+| 6.6.2 | Remove old account-trading code paths — delete dual-support methods, remove `account_id` lookups in repositories. | Various service/repo files | 6.6.1 | [x] |
+| 6.6.3 | Final full test suite — `pytest tests/` zero failures. | — | 6.6.2 | [x] |
+| 6.6.4 | Final lint + type check — `ruff check src/ tests/` + `mypy src/` zero errors. | — | 6.6.3 | [x] |
+| 6.6.5 | Final `pnpm build` — zero TypeScript errors. | — | 6.6.4 | [x] |
 
 ### 6.7 Documentation Updates
 
 | # | Task | File(s) | Depends On | Status |
 |---|------|---------|------------|--------|
-| 6.7.1 | Update `CLAUDE.md` — add multi-agent model description, new component directories, new dependency aliases, new Alembic migrations. | `CLAUDE.md` | All phases | [ ] |
-| 6.7.2 | Update `docs/skill.md` — document per-agent API key model, battle endpoints. | `docs/skill.md` | All phases | [ ] |
+| 6.7.1 | Update `CLAUDE.md` — add multi-agent model description, new component directories, new dependency aliases, new Alembic migrations. | `CLAUDE.md` | All phases | [x] |
+| 6.7.2 | Update `docs/skill.md` — document per-agent API key model, battle endpoints. | `docs/skill.md` | All phases | [x] |
 
 ---
 

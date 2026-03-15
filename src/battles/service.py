@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
+from src.api.websocket.channels import BattleChannel
 from src.battles.presets import get_preset_config
 from src.battles.ranking import ParticipantMetrics, RankingCalculator
 from src.battles.wallet_manager import WalletManager
@@ -29,6 +30,15 @@ from src.database.repositories.trade_repo import TradeRepository
 from src.utils.exceptions import PermissionDeniedError
 
 logger = structlog.get_logger(__name__)
+
+# Notification event types emitted via WebSocket status channel
+NOTIFY_BATTLE_STARTED = "battle_started"
+NOTIFY_BATTLE_COMPLETED = "battle_completed"
+NOTIFY_BATTLE_CANCELLED = "battle_cancelled"
+NOTIFY_AGENT_PAUSED = "agent_paused"
+NOTIFY_AGENT_RESUMED = "agent_resumed"
+NOTIFY_AGENT_BLOWN_UP = "agent_blown_up"
+NOTIFY_AGENT_TOOK_LEAD = "agent_took_lead"
 
 # Valid state transitions
 _VALID_TRANSITIONS: dict[str, set[str]] = {
@@ -70,6 +80,31 @@ class BattleService:
         self._trade_repo = TradeRepository(session)
         self._wallet_manager = WalletManager(session)
         self._ranking = RankingCalculator()
+
+    @staticmethod
+    def _emit_notification(
+        battle_id: UUID,
+        event: str,
+        data: dict[str, object] | None = None,
+    ) -> None:
+        """Emit a battle notification via the WebSocket status channel.
+
+        This is a fire-and-forget log + serialization helper.  The actual
+        broadcast happens in the route layer or Celery task where a
+        :class:`ConnectionManager` reference is available.  Here we only
+        build the payload and log it so the route layer can pick it up
+        from ``battle._pending_notifications`` if we decide to buffer.
+        For now we simply log, and the route handlers broadcast directly.
+        """
+        payload = BattleChannel.serialize_status(
+            str(battle_id), event, data or {}
+        )
+        logger.info(
+            "battle.notification",
+            battle_id=str(battle_id),
+            event=event,
+            payload=payload,
+        )
 
     def _validate_transition(self, current: str, target: str) -> None:
         """Validate a state transition is allowed."""
@@ -258,9 +293,15 @@ class BattleService:
                 )
 
         now = datetime.now(UTC)
-        return await self._battle_repo.update_status(
+        result = await self._battle_repo.update_status(
             battle_id, "active", started_at=now
         )
+        self._emit_notification(
+            battle_id,
+            NOTIFY_BATTLE_STARTED,
+            {"battle_name": battle.name, "participant_count": len(participants)},
+        )
+        return result
 
     async def pause_agent(
         self,
@@ -285,9 +326,15 @@ class BattleService:
                 current_status=participant.status,
             )
 
-        return await self._battle_repo.update_participant(
+        result = await self._battle_repo.update_participant(
             battle_id, agent_id, status="paused"
         )
+        self._emit_notification(
+            battle_id,
+            NOTIFY_AGENT_PAUSED,
+            {"agent_id": str(agent_id), "battle_name": battle.name},
+        )
+        return result
 
     async def resume_agent(
         self,
@@ -312,9 +359,15 @@ class BattleService:
                 current_status=participant.status,
             )
 
-        return await self._battle_repo.update_participant(
+        result = await self._battle_repo.update_participant(
             battle_id, agent_id, status="active"
         )
+        self._emit_notification(
+            battle_id,
+            NOTIFY_AGENT_RESUMED,
+            {"agent_id": str(agent_id), "battle_name": battle.name},
+        )
+        return result
 
     async def stop_battle(self, battle_id: UUID, account_id: UUID) -> Battle:
         """Stop a battle — calculate final rankings and complete.
@@ -376,9 +429,20 @@ class BattleService:
                     )
 
         now = datetime.now(UTC)
-        return await self._battle_repo.update_status(
+        result = await self._battle_repo.update_status(
             battle_id, "completed", ended_at=now
         )
+        winner_agent_id = str(ranked[0].agent_id) if ranked else None
+        self._emit_notification(
+            battle_id,
+            NOTIFY_BATTLE_COMPLETED,
+            {
+                "battle_name": battle.name,
+                "winner_agent_id": winner_agent_id,
+                "participant_count": len(participants),
+            },
+        )
+        return result
 
     async def cancel_battle(self, battle_id: UUID, account_id: UUID) -> Battle:
         """Cancel a battle — no rankings, data preserved."""
@@ -403,9 +467,15 @@ class BattleService:
                         )
 
         now = datetime.now(UTC)
-        return await self._battle_repo.update_status(
+        result = await self._battle_repo.update_status(
             battle_id, "cancelled", ended_at=now
         )
+        self._emit_notification(
+            battle_id,
+            NOTIFY_BATTLE_CANCELLED,
+            {"battle_name": battle.name},
+        )
+        return result
 
     # ------------------------------------------------------------------
     # Live data
