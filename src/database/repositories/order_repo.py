@@ -518,3 +518,63 @@ class OrderRepository:
                 extra={"account_id": str(account_id), "error": str(exc)},
             )
             raise DatabaseError("Failed to count open orders for account.") from exc
+
+    # ------------------------------------------------------------------
+    # Agent-scoped queries (multi-agent transition)
+    # ------------------------------------------------------------------
+
+    async def list_by_agent(
+        self,
+        agent_id: UUID,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[Order]:
+        """Return orders belonging to a specific agent."""
+        try:
+            stmt = (
+                select(Order)
+                .where(Order.agent_id == agent_id)
+                .order_by(Order.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await self._session.execute(stmt)
+            return result.scalars().all()
+        except SQLAlchemyError as exc:
+            logger.exception("order.list_by_agent.db_error", extra={"agent_id": str(agent_id)})
+            raise DatabaseError("Failed to list orders by agent.") from exc
+
+    async def list_open_by_agent(self, agent_id: UUID) -> Sequence[Order]:
+        """Return all open orders for a specific agent."""
+        try:
+            stmt = (
+                select(Order)
+                .where(
+                    Order.agent_id == agent_id,
+                    Order.status.in_(list(_CANCELLABLE_STATUSES)),
+                )
+                .order_by(Order.created_at.desc())
+            )
+            result = await self._session.execute(stmt)
+            return result.scalars().all()
+        except SQLAlchemyError as exc:
+            logger.exception("order.list_open_by_agent.db_error", extra={"agent_id": str(agent_id)})
+            raise DatabaseError("Failed to list open orders by agent.") from exc
+
+    async def count_open_by_agent(self, agent_id: UUID) -> int:
+        """Count open orders for a specific agent."""
+        try:
+            stmt = (
+                select(sa_func.count())
+                .select_from(Order)
+                .where(
+                    Order.agent_id == agent_id,
+                    Order.status.in_(list(_CANCELLABLE_STATUSES)),
+                )
+            )
+            result = await self._session.execute(stmt)
+            return result.scalar_one()
+        except SQLAlchemyError as exc:
+            logger.exception("order.count_open_by_agent.db_error", extra={"agent_id": str(agent_id)})
+            raise DatabaseError("Failed to count open orders by agent.") from exc

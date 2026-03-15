@@ -490,6 +490,131 @@ class PortfolioChannel:
 
 
 # ---------------------------------------------------------------------------
+# BattleChannel
+# ---------------------------------------------------------------------------
+
+
+class BattleChannel:
+    """Per-battle live update channel.
+
+    Clients subscribe with a ``battle_id`` to receive live updates for a
+    specific battle.  Three event types are broadcast:
+
+    * ``battle:update``  — periodic equity/PnL snapshot (every 1–2s)
+    * ``battle:trade``   — real-time trade from any participant
+    * ``battle:status``  — state changes (pause, resume, blown up, completed)
+
+    Subscription key format: ``battle:{battle_id}``.
+
+    Wire format (update)::
+
+        {
+            "channel": "battle",
+            "battle_id": "uuid",
+            "type": "update",
+            "timestamp": "2026-03-15T15:30:45Z",
+            "participants": [...]
+        }
+    """
+
+    PREFIX: str = "battle"
+
+    @classmethod
+    def channel_name(cls, battle_id: str) -> str:
+        """Return the subscription key for a specific battle.
+
+        Args:
+            battle_id: The battle UUID string.
+
+        Returns:
+            Subscription key, e.g. ``"battle:abc-123-..."``.
+        """
+        return f"{cls.PREFIX}:{battle_id}"
+
+    @classmethod
+    def serialize_update(
+        cls,
+        battle_id: str,
+        participants: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Build the wire-format envelope for a periodic update.
+
+        Args:
+            battle_id:    The battle UUID string.
+            participants: List of participant metric dicts.
+
+        Returns:
+            Envelope dict ready for broadcast.
+        """
+        timestamp = datetime.datetime.now(datetime.UTC)
+        return {
+            "channel": cls.PREFIX,
+            "battle_id": battle_id,
+            "type": "update",
+            "timestamp": _iso_timestamp(timestamp),
+            "participants": participants,
+        }
+
+    @classmethod
+    def serialize_trade(
+        cls,
+        battle_id: str,
+        raw: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build the wire-format envelope for a trade event.
+
+        Args:
+            battle_id: The battle UUID string.
+            raw:       Raw trade event dict.
+
+        Returns:
+            Envelope dict ready for broadcast.
+        """
+        return {
+            "channel": cls.PREFIX,
+            "battle_id": battle_id,
+            "type": "trade",
+            "agent_id": str(raw.get("agent_id", "")),
+            "agent_name": str(raw.get("agent_name", "")),
+            "agent_color": str(raw.get("agent_color", "")),
+            "side": str(raw.get("side", "")),
+            "symbol": str(raw.get("symbol", "")),
+            "quantity": _str_decimal(raw.get("quantity", "0")),
+            "price": _str_decimal(raw.get("price", "0")),
+            "pnl": _str_decimal(raw.get("pnl", "0")),
+        }
+
+    @classmethod
+    def serialize_status(
+        cls,
+        battle_id: str,
+        event: str,
+        raw: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build the wire-format envelope for a status event.
+
+        Args:
+            battle_id: The battle UUID string.
+            event:     Event type (agent_paused, agent_resumed, battle_completed, etc.).
+            raw:       Optional extra data.
+
+        Returns:
+            Envelope dict ready for broadcast.
+        """
+        timestamp = datetime.datetime.now(datetime.UTC)
+        payload: dict[str, Any] = {
+            "channel": cls.PREFIX,
+            "battle_id": battle_id,
+            "type": "status",
+            "event": event,
+            "timestamp": _iso_timestamp(timestamp),
+        }
+        if raw:
+            payload.update(raw)
+        return payload
+
+
+# ---------------------------------------------------------------------------
 # Channel registry helpers
 # ---------------------------------------------------------------------------
 
@@ -497,7 +622,7 @@ class PortfolioChannel:
 PRIVATE_CHANNELS: frozenset[str] = frozenset({OrderChannel.NAME, PortfolioChannel.NAME})
 
 #: All public channel prefixes (routed via broadcast_to_channel).
-PUBLIC_CHANNEL_PREFIXES: frozenset[str] = frozenset({TickerChannel.PREFIX, CandleChannel.PREFIX})
+PUBLIC_CHANNEL_PREFIXES: frozenset[str] = frozenset({TickerChannel.PREFIX, CandleChannel.PREFIX, BattleChannel.PREFIX})
 
 
 def resolve_channel_name(action_payload: dict[str, Any]) -> str | None:
@@ -542,5 +667,11 @@ def resolve_channel_name(action_payload: dict[str, Any]) -> str | None:
 
     if channel == PortfolioChannel.NAME:
         return PortfolioChannel.channel_name()
+
+    if channel == BattleChannel.PREFIX:
+        battle_id = action_payload.get("battle_id", "").strip()
+        if not battle_id:
+            return None
+        return BattleChannel.channel_name(battle_id)
 
     return None

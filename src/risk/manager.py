@@ -231,6 +231,9 @@ class RiskManager:
         self,
         account_id: UUID,
         order: OrderRequest,
+        *,
+        agent_id: UUID | None = None,
+        risk_profile_override: dict[str, Any] | None = None,
     ) -> RiskCheckResult:
         """Run the 8-step risk validation chain against *order*.
 
@@ -275,7 +278,13 @@ class RiskManager:
                 logger.warning("order.rejected", extra={"reason": result.rejection_reason})
         """
         account = await self._account_repo.get_by_id(account_id)
+        if risk_profile_override is not None:
+            # Use agent's risk_profile instead of account's
+            original_profile = account.risk_profile
+            account.risk_profile = risk_profile_override
         limits = self._build_risk_limits(account)
+        if risk_profile_override is not None:
+            account.risk_profile = original_profile  # type: ignore[assignment,unused-ignore]
 
         # ── Step 1: Account active ────────────────────────────────────────
         result = self._check_account_active(account)

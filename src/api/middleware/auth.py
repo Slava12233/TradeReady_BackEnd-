@@ -41,8 +41,9 @@ from starlette.responses import Response
 
 from src.accounts.auth import verify_jwt
 from src.config import get_settings
-from src.database.models import Account
+from src.database.models import Account, Agent
 from src.database.repositories.account_repo import AccountRepository
+from src.database.repositories.agent_repo import AgentNotFoundError, AgentRepository
 from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,
@@ -142,24 +143,47 @@ def _extract_bearer_token(request: Request) -> str | None:
 async def _resolve_account_from_api_key(
     api_key: str,
     repo: AccountRepository,
-) -> Account:
+    agent_repo: AgentRepository | None = None,
+) -> tuple[Account, Agent | None]:
     """Fetch and validate an account by plaintext API key.
 
-    The API key is stored in plaintext in the ``accounts.api_key`` column for
-    O(1) lookup.  After retrieval we verify the account is active.
+    First tries the ``agents`` table (new multi-agent flow), then falls back
+    to the ``accounts`` table (legacy single-account flow).
 
     Args:
-        api_key: The raw value from the ``X-API-Key`` header.
-        repo:    An :class:`~src.database.repositories.account_repo.AccountRepository`
-                 bound to the current request's DB session.
+        api_key:    The raw value from the ``X-API-Key`` header.
+        repo:       AccountRepository bound to the current request's DB session.
+        agent_repo: AgentRepository bound to the current request's DB session.
 
     Returns:
-        The authenticated :class:`~src.database.models.Account` instance.
+        A tuple of (Account, Agent | None).  When the key belongs to an agent,
+        both are returned.  When the key belongs to a legacy account, the
+        agent is ``None``.
 
     Raises:
-        AuthenticationError:  If no account exists with the given API key.
+        AuthenticationError:   If no account or agent exists with the given key.
         AccountSuspendedError: If the account's status is not ``"active"``.
     """
+    # Try agents table first (new multi-agent flow)
+    if agent_repo is not None:
+        try:
+            agent = await agent_repo.get_by_api_key(api_key)
+            # Agent found — resolve its owning account
+            try:
+                account = await repo.get_by_id(agent.account_id)
+            except AccountNotFoundError:
+                raise AuthenticationError("Agent's owning account no longer exists.") from None
+
+            if account.status != "active":
+                raise AccountSuspendedError(account_id=account.id)
+            if agent.status == "archived":
+                raise AuthenticationError("Agent is archived.")
+
+            return account, agent
+        except AgentNotFoundError:
+            pass  # Fall through to legacy account lookup
+
+    # Legacy: try accounts table directly
     try:
         account = await repo.get_by_api_key(api_key)
     except AccountNotFoundError:
@@ -168,7 +192,7 @@ async def _resolve_account_from_api_key(
     if account.status != "active":
         raise AccountSuspendedError(account_id=account.id)
 
-    return account
+    return account, None
 
 
 async def _resolve_account_from_jwt(
@@ -208,24 +232,17 @@ async def _resolve_account_from_jwt(
     return account
 
 
-async def _authenticate_request(request: Request) -> Account | None:
-    """Attempt to authenticate *request* and return the resolved account.
+async def _authenticate_request(request: Request) -> tuple[Account | None, Agent | None]:
+    """Attempt to authenticate *request* and return the resolved account and agent.
 
     Tries ``X-API-Key`` first, then ``Authorization: Bearer``.  Returns
-    ``None`` when no credential header is present at all (not an error — the
-    caller decides whether credentials are required for the given path).
-
-    A fresh :class:`~src.database.repositories.account_repo.AccountRepository`
-    is created per call, using the session factory directly so this helper can
-    be used both inside the middleware (where no session is injected) and inside
-    the fallback dependency.
+    ``(None, None)`` when no credential header is present at all.
 
     Args:
         request: The incoming FastAPI / Starlette request object.
 
     Returns:
-        The authenticated :class:`~src.database.models.Account`, or ``None``
-        if no credential header was supplied.
+        A tuple of (Account | None, Agent | None).
 
     Raises:
         AuthenticationError:  On invalid/missing credentials when a header IS
@@ -239,18 +256,20 @@ async def _authenticate_request(request: Request) -> Account | None:
     bearer_token = _extract_bearer_token(request)
 
     if api_key is None and bearer_token is None:
-        return None
+        return None, None
 
     session_factory = get_session_factory()
     async with session_factory() as session:
         repo = AccountRepository(session)
+        agent_repo = AgentRepository(session)
 
         if api_key is not None:
-            return await _resolve_account_from_api_key(api_key, repo)
+            return await _resolve_account_from_api_key(api_key, repo, agent_repo)
 
         # bearer_token is not None at this point
         assert bearer_token is not None  # noqa: S101  (for type narrowing)
-        return await _resolve_account_from_jwt(bearer_token, repo)
+        account = await _resolve_account_from_jwt(bearer_token, repo)
+        return account, None
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +328,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         try:
-            account = await _authenticate_request(request)
+            account, agent = await _authenticate_request(request)
         except TradingPlatformError as exc:
             logger.warning(
                 "auth.failed",
@@ -335,6 +354,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(error.to_dict(), status_code=error.http_status)
 
         request.state.account = account
+        request.state.agent = agent  # May be None for legacy auth
         return await call_next(request)
 
 
@@ -361,19 +381,6 @@ async def get_current_account(request: Request) -> Account:
         AuthenticationError:  If no valid credential is present.
         AccountSuspendedError: If the account is suspended.
         InvalidTokenError:    If a Bearer JWT is invalid or expired.
-
-    Example::
-
-        from typing import Annotated
-        from fastapi import Depends
-        from src.api.middleware.auth import get_current_account
-        from src.database.models import Account
-
-        @router.get("/info")
-        async def account_info(
-            account: Annotated[Account, Depends(get_current_account)],
-        ):
-            return {"account_id": str(account.id)}
     """
     account: Account | None = getattr(request.state, "account", None)
 
@@ -382,15 +389,58 @@ async def get_current_account(request: Request) -> Account:
 
     # Fallback: middleware was bypassed (e.g. unit tests or direct router mount)
     try:
-        resolved = await _authenticate_request(request)
+        resolved_account, _agent = await _authenticate_request(request)
     except TradingPlatformError:
         raise
 
-    if resolved is None:
+    if resolved_account is None:
         raise AuthenticationError("Authentication credentials are required.")
 
-    return resolved
+    return resolved_account
 
 
-# Convenience type alias for use in route signatures.
+async def get_current_agent(request: Request) -> Agent | None:
+    """FastAPI dependency that returns the currently authenticated agent.
+
+    Reads ``request.state.agent`` populated by :class:`AuthMiddleware`.
+    For JWT auth, resolves agent from the ``X-Agent-Id`` header.
+
+    Returns ``None`` when no agent context exists (e.g. legacy account-only auth
+    or JWT auth without an agent header).
+
+    Args:
+        request: Injected by FastAPI automatically.
+
+    Returns:
+        The authenticated Agent ORM instance, or None.
+    """
+    agent: Agent | None = getattr(request.state, "agent", None)
+    if agent is not None:
+        return agent
+
+    # For JWT auth, resolve agent from X-Agent-Id header
+    agent_id_raw = request.headers.get("X-Agent-Id", "").strip()
+    if agent_id_raw:
+        from uuid import UUID as _UUID  # noqa: PLC0415
+
+        from src.database.session import get_session_factory  # noqa: PLC0415
+
+        try:
+            agent_uuid = _UUID(agent_id_raw)
+        except ValueError:
+            return None
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            agent_repo = AgentRepository(session)
+            try:
+                return await agent_repo.get_by_id(agent_uuid)
+            except AgentNotFoundError:
+                return None
+
+    return None
+
+
+# Convenience type aliases for use in route signatures.
 CurrentAccountDep = Annotated[Account, Depends(get_current_account)]
+CurrentAgentDep = Annotated[Agent | None, Depends(get_current_agent)]

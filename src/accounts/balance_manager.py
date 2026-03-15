@@ -123,6 +123,7 @@ class BalanceManager:
         *,
         asset: str,
         amount: Decimal,
+        agent_id: UUID | None = None,
     ) -> Balance:
         """Add ``amount`` to the *available* balance for an account / asset.
 
@@ -165,6 +166,7 @@ class BalanceManager:
         *,
         asset: str,
         amount: Decimal,
+        agent_id: UUID | None = None,
     ) -> Balance:
         """Subtract ``amount`` from the *available* balance for an account / asset.
 
@@ -213,6 +215,7 @@ class BalanceManager:
         *,
         asset: str,
         amount: Decimal,
+        agent_id: UUID | None = None,
     ) -> Balance:
         """Move ``amount`` from ``available`` → ``locked`` for an account / asset.
 
@@ -259,6 +262,7 @@ class BalanceManager:
         *,
         asset: str,
         amount: Decimal,
+        agent_id: UUID | None = None,
     ) -> Balance:
         """Move ``amount`` from ``locked`` → ``available`` for an account / asset.
 
@@ -309,6 +313,7 @@ class BalanceManager:
         asset: str,
         amount: Decimal,
         use_locked: bool = False,
+        agent_id: UUID | None = None,
     ) -> bool:
         """Return ``True`` if the account has at least ``amount`` of ``asset``.
 
@@ -342,7 +347,10 @@ class BalanceManager:
                 field="amount",
             )
 
-        balance = await self._repo.get(account_id, asset)
+        if agent_id is not None:
+            balance = await self._repo.get_by_agent(agent_id, asset)
+        else:
+            balance = await self._repo.get(account_id, asset)
         if balance is None:
             return False
 
@@ -353,7 +361,7 @@ class BalanceManager:
     # Balance read helpers
     # ------------------------------------------------------------------
 
-    async def get_balance(self, account_id: UUID, asset: str) -> Balance | None:
+    async def get_balance(self, account_id: UUID, asset: str, *, agent_id: UUID | None = None) -> Balance | None:
         """Return the balance row for an account / asset pair, or ``None``.
 
         Args:
@@ -373,9 +381,11 @@ class BalanceManager:
             if bal:
                 print(bal.available)
         """
+        if agent_id is not None:
+            return await self._repo.get_by_agent(agent_id, asset)
         return await self._repo.get(account_id, asset)
 
-    async def get_all_balances(self, account_id: UUID) -> Sequence[Balance]:
+    async def get_all_balances(self, account_id: UUID, *, agent_id: UUID | None = None) -> Sequence[Balance]:
         """Return all balance rows owned by an account.
 
         Args:
@@ -394,6 +404,8 @@ class BalanceManager:
             for b in balances:
                 print(b.asset, b.available)
         """
+        if agent_id is not None:
+            return await self._repo.get_all_by_agent(agent_id)
         return await self._repo.get_all(account_id)
 
     # ------------------------------------------------------------------
@@ -426,6 +438,7 @@ class BalanceManager:
         quantity: Decimal,
         execution_price: Decimal,
         from_locked: bool = False,
+        agent_id: UUID | None = None,
     ) -> TradeSettlement:
         """Atomically settle a filled order, deducting fees and updating balances.
 

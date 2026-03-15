@@ -43,7 +43,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from src.api.middleware.auth import CurrentAccountDep
+from src.api.middleware.auth import CurrentAccountDep, CurrentAgentDep
 from src.api.schemas.trading import (
     CancelAllResponse,
     CancelResponse,
@@ -142,6 +142,7 @@ def _trade_to_item(trade: Trade) -> TradeHistoryItem:
 async def place_order(
     body: OrderRequest,
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     risk: RiskManagerDep,
     engine: OrderEngineDep,
 ) -> OrderResponse:
@@ -188,13 +189,23 @@ async def place_order(
         price=body.price,
     )
 
+    # Resolve agent context for agent-scoped operations
+    agent_id = agent.id if agent is not None else None
+    risk_profile = dict(agent.risk_profile) if agent is not None and agent.risk_profile else None
+
     # Step 1: risk validation
-    risk_result = await risk.validate_order(account.id, engine_request)
+    risk_result = await risk.validate_order(
+        account.id,
+        engine_request,
+        agent_id=agent_id,
+        risk_profile_override=risk_profile,
+    )
     if not risk_result.approved:
         logger.warning(
             "trading.place_order.risk_rejected",
             extra={
                 "account_id": str(account.id),
+                "agent_id": str(agent_id) if agent_id else None,
                 "symbol": body.symbol,
                 "reason": risk_result.rejection_reason,
             },
@@ -205,7 +216,7 @@ async def place_order(
         )
 
     # Step 2: execute / queue
-    result = await engine.place_order(account.id, engine_request)
+    result = await engine.place_order(account.id, engine_request, agent_id=agent_id)
 
     logger.info(
         "trading.place_order.success",

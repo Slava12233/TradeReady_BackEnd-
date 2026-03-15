@@ -14,6 +14,14 @@ Phase 2 tables:
 - ``PortfolioSnapshot``   — periodic equity snapshots for charting
 - ``AuditLog``            — every authenticated request for security
 
+Multi-agent tables:
+- ``Agent``               — trading agents owned by accounts with own API keys
+
+Battle tables:
+- ``Battle``              — battle configuration and lifecycle
+- ``BattleParticipant``   — agents participating in a battle
+- ``BattleSnapshot``      — time-series equity snapshots during battle (hypertable)
+
 Backtesting tables:
 - ``BacktestSession``     — backtest run configuration and results
 - ``BacktestTrade``       — simulated trade fills within a backtest
@@ -290,6 +298,7 @@ class Account(Base):
         onupdate=func.now(),
     )
 
+    agents: Mapped[list[Agent]] = relationship("Agent", back_populates="account", cascade="all, delete-orphan")
     balances: Mapped[list[Balance]] = relationship("Balance", back_populates="account", cascade="all, delete-orphan")
     sessions: Mapped[list[TradingSession]] = relationship(
         "TradingSession", back_populates="account", cascade="all, delete-orphan"
@@ -302,6 +311,9 @@ class Account(Base):
     )
     backtest_sessions: Mapped[list[BacktestSession]] = relationship(
         "BacktestSession", back_populates="account", cascade="all, delete-orphan"
+    )
+    battles: Mapped[list[Battle]] = relationship(
+        "Battle", back_populates="account", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -317,6 +329,121 @@ class Account(Base):
 
     def __repr__(self) -> str:
         return f"<Account id={self.id} display_name={self.display_name!r} status={self.status!r}>"
+
+
+# ── Agent ────────────────────────────────────────────────────────────────────
+
+
+class Agent(Base):
+    """A trading agent owned by an account.
+
+    Each account can have multiple agents, each with its own API key,
+    starting balance, risk profile, and trading identity.  Agents are the
+    primary scoping entity for all trading operations (orders, balances,
+    positions, trades).
+
+    Attributes:
+        id:               Primary key (UUID v4, server-generated).
+        account_id:       Foreign key → ``accounts.id`` (cascade delete).
+        display_name:     Human-readable name for the agent.
+        api_key:          Plaintext key used as lookup token (prefixed ``ak_live_``).
+        api_key_hash:     bcrypt hash of ``api_key`` for verification.
+        starting_balance: Virtual USDT balance credited at creation.
+        llm_model:        LLM model name (e.g. ``"gpt-4o"``, ``"claude-opus-4-20250514"``).
+        framework:        Agent framework (e.g. ``"langchain"``, ``"custom"``).
+        strategy_tags:    JSONB list of strategy descriptors.
+        risk_profile:     JSON dict with per-agent risk limit overrides.
+        avatar_url:       URL or data-URI for the agent's avatar image.
+        color:            Hex color code for UI identification (e.g. ``"#FF5733"``).
+        status:           Lifecycle state: ``active``, ``paused``, ``archived``.
+        created_at:       UTC timestamp of agent creation.
+        updated_at:       UTC timestamp of last modification.
+    """
+
+    __tablename__ = "agents"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    display_name: Mapped[str] = mapped_column(
+        VARCHAR(100),
+        nullable=False,
+    )
+    api_key: Mapped[str] = mapped_column(
+        VARCHAR(128),
+        unique=True,
+        nullable=False,
+    )
+    api_key_hash: Mapped[str] = mapped_column(
+        VARCHAR(128),
+        nullable=False,
+    )
+    starting_balance: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+        server_default="10000.00",
+    )
+    llm_model: Mapped[str | None] = mapped_column(
+        VARCHAR(100),
+        nullable=True,
+    )
+    framework: Mapped[str | None] = mapped_column(
+        VARCHAR(100),
+        nullable=True,
+    )
+    strategy_tags: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="'[]'",
+    )
+    risk_profile: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="'{}'",
+    )
+    avatar_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    color: Mapped[str | None] = mapped_column(
+        VARCHAR(7),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'active'",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    account: Mapped[Account] = relationship("Account", back_populates="agents")
+
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'paused', 'archived')", name="ck_agents_status"),
+        Index("idx_agents_account", "account_id"),
+        Index("idx_agents_api_key", "api_key", unique=True),
+        Index("idx_agents_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Agent id={self.id} display_name={self.display_name!r} status={self.status!r}>"
 
 
 # ── Balance ───────────────────────────────────────────────────────────────────
@@ -350,6 +477,11 @@ class Balance(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     asset: Mapped[str] = mapped_column(
         VARCHAR(20),
         nullable=False,
@@ -377,6 +509,7 @@ class Balance(Base):
         CheckConstraint("available >= 0", name="ck_balances_available_non_negative"),
         CheckConstraint("locked >= 0", name="ck_balances_locked_non_negative"),
         Index("idx_balances_account", "account_id"),
+        Index("idx_balances_agent", "agent_id"),
         # Enforces one row per (account, asset) pair.
         Index("uq_balances_account_asset", "account_id", "asset", unique=True),
     )
@@ -418,6 +551,11 @@ class TradingSession(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     starting_balance: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,
@@ -448,6 +586,7 @@ class TradingSession(Base):
     __table_args__ = (
         CheckConstraint("status IN ('active', 'closed')", name="ck_sessions_status"),
         Index("idx_sessions_account", "account_id"),
+        Index("idx_trading_sessions_agent", "agent_id"),
     )
 
     def __repr__(self) -> str:
@@ -500,6 +639,11 @@ class Order(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
     )
     session_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -587,6 +731,7 @@ class Order(Base):
             name="ck_orders_status",
         ),
         Index("idx_orders_account", "account_id"),
+        Index("idx_orders_agent", "agent_id"),
         Index("idx_orders_account_status", "account_id", "status"),
         # Partial index: only pending orders need fast symbol-based lookup.
         Index(
@@ -639,6 +784,11 @@ class Trade(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     order_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("orders.id", ondelete="CASCADE"),
@@ -690,6 +840,7 @@ class Trade(Base):
     __table_args__ = (
         CheckConstraint("side IN ('buy', 'sell')", name="ck_trades_side"),
         Index("idx_trades_account", "account_id"),
+        Index("idx_trades_agent", "agent_id"),
         Index("idx_trades_account_time", "account_id", "created_at"),
         Index("idx_trades_symbol", "symbol", "created_at"),
     )
@@ -734,6 +885,11 @@ class Position(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     symbol: Mapped[str] = mapped_column(
         VARCHAR(20),
         nullable=False,
@@ -777,6 +933,7 @@ class Position(Base):
 
     __table_args__ = (
         Index("idx_positions_account", "account_id"),
+        Index("idx_positions_agent", "agent_id"),
         Index("uq_positions_account_symbol", "account_id", "symbol", unique=True),
     )
 
@@ -834,6 +991,11 @@ class PortfolioSnapshot(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     snapshot_type: Mapped[str] = mapped_column(
         VARCHAR(10),
         nullable=False,
@@ -880,6 +1042,7 @@ class PortfolioSnapshot(Base):
             "snapshot_type",
             "created_at",
         ),
+        Index("idx_portfolio_snapshots_agent", "agent_id"),
     )
 
     def __repr__(self) -> str:
@@ -1332,3 +1495,253 @@ class BacktestSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<BacktestSnapshot session={self.session_id} equity={self.total_equity} at={self.simulated_at}>"
+
+
+# ── Battle ──────────────────────────────────────────────────────────────────
+
+
+class Battle(Base):
+    """A competitive battle between multiple trading agents.
+
+    Battles progress through a state machine:
+    ``draft`` → ``pending`` → ``active`` → ``completed``
+    with optional ``paused`` and ``cancelled`` states.
+
+    Attributes:
+        id:              Primary key (UUID v4, server-generated).
+        account_id:      Foreign key → ``accounts.id`` (cascade delete).
+        name:            Human-readable battle name.
+        status:          Lifecycle state.
+        config:          JSONB battle configuration (duration, pairs, wallet mode, etc.).
+        preset:          Optional preset name (e.g. ``"quick_1h"``).
+        ranking_metric:  Metric used to rank participants.
+        started_at:      UTC timestamp when battle became active.
+        ended_at:        UTC timestamp when battle completed.
+        created_at:      UTC timestamp of battle creation.
+    """
+
+    __tablename__ = "battles"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(
+        VARCHAR(200),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'draft'",
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="'{}'",
+    )
+    preset: Mapped[str | None] = mapped_column(
+        VARCHAR(50),
+        nullable=True,
+    )
+    ranking_metric: Mapped[str] = mapped_column(
+        VARCHAR(30),
+        nullable=False,
+        server_default="'roi_pct'",
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    account: Mapped[Account] = relationship("Account", back_populates="battles")
+    participants: Mapped[list[BattleParticipant]] = relationship(
+        "BattleParticipant", back_populates="battle", cascade="all, delete-orphan"
+    )
+    battle_snapshots: Mapped[list[BattleSnapshot]] = relationship(
+        "BattleSnapshot", back_populates="battle", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'pending', 'active', 'paused', 'completed', 'cancelled')",
+            name="ck_battles_status",
+        ),
+        CheckConstraint(
+            "ranking_metric IN ('roi_pct', 'total_pnl', 'sharpe_ratio', 'win_rate', 'profit_factor')",
+            name="ck_battles_ranking_metric",
+        ),
+        Index("idx_battles_account", "account_id"),
+        Index("idx_battles_status", "account_id", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Battle id={self.id} name={self.name!r} status={self.status!r}>"
+
+
+# ── BattleParticipant ──────────────────────────────────────────────────────
+
+
+class BattleParticipant(Base):
+    """An agent participating in a battle.
+
+    Tracks the agent's starting snapshot balance, final equity, rank, and
+    per-participant status (active, paused, stopped, blown_up).
+
+    Attributes:
+        id:                Primary key (UUID v4).
+        battle_id:         Foreign key → ``battles.id`` (cascade delete).
+        agent_id:          Foreign key → ``agents.id``.
+        snapshot_balance:  Starting balance snapshot when battle begins.
+        final_equity:      Final equity when battle ends.
+        final_rank:        Rank based on the battle's ranking metric.
+        status:            Per-participant status.
+        joined_at:         UTC timestamp when the agent joined the battle.
+    """
+
+    __tablename__ = "battle_participants"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    battle_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("battles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    snapshot_balance: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    final_equity: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    final_rank: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'active'",
+    )
+    joined_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    battle: Mapped[Battle] = relationship("Battle", back_populates="participants")
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'stopped', 'blown_up')",
+            name="ck_bp_status",
+        ),
+        Index("idx_bp_battle", "battle_id"),
+        Index("idx_bp_agent", "agent_id"),
+        Index("uq_bp_battle_agent", "battle_id", "agent_id", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BattleParticipant battle={self.battle_id} agent={self.agent_id} status={self.status!r}>"
+
+
+# ── BattleSnapshot ─────────────────────────────────────────────────────────
+
+
+class BattleSnapshot(Base):
+    """Time-series equity snapshot for a battle participant.
+
+    Captured every ~5 seconds during an active battle by the snapshot engine.
+    This table is converted to a **TimescaleDB hypertable** partitioned by
+    ``timestamp``.
+
+    Attributes:
+        id:              Auto-incrementing primary key (BIGSERIAL).
+        battle_id:       Foreign key → ``battles.id`` (cascade delete).
+        agent_id:        Foreign key → ``agents.id``.
+        timestamp:       UTC timestamp of the snapshot (hypertable partition key).
+        equity:          Total portfolio equity in USDT.
+        unrealized_pnl:  Unrealised PnL across all open positions.
+        realized_pnl:    Cumulative realised PnL.
+        trade_count:     Total trades executed so far.
+        open_positions:  Number of currently open positions.
+    """
+
+    __tablename__ = "battle_snapshots"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        primary_key=True,
+        nullable=False,
+    )
+    battle_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("battles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    equity: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    unrealized_pnl: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    realized_pnl: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    trade_count: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    open_positions: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    battle: Mapped[Battle] = relationship("Battle", back_populates="battle_snapshots")
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        Index("idx_battle_snap", "battle_id", "agent_id", "timestamp"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BattleSnapshot battle={self.battle_id} agent={self.agent_id} equity={self.equity}>"

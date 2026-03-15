@@ -49,6 +49,7 @@ app = Celery(
         "src.tasks.candle_aggregation",
         "src.tasks.cleanup",
         "src.tasks.backtest_cleanup",
+        "src.tasks.battle_snapshots",
     ],
 )
 
@@ -153,5 +154,16 @@ app.conf.beat_schedule = {
     "cleanup-backtest-detail-data": {
         "task": "src.tasks.backtest_cleanup.cleanup_backtest_detail_data",
         "schedule": crontab(hour=2, minute=0),  # 02:00 UTC daily
+    },
+    # ── Battle Snapshots ─────────────────────────────────────────────────
+    # Capture equity snapshots for all active battle participants every 5 seconds.
+    "capture-battle-snapshots": {
+        "task": "src.tasks.battle_snapshots.capture_battle_snapshots",
+        "schedule": 5.0,  # seconds
+    },
+    # Check for battles that have exceeded their duration and auto-complete.
+    "check-battle-completion": {
+        "task": "src.tasks.battle_snapshots.check_battle_completion",
+        "schedule": 10.0,  # seconds
     },
 }

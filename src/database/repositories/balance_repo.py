@@ -132,6 +132,53 @@ class BalanceRepository:
             )
             raise DatabaseError("Failed to fetch all balances.") from exc
 
+    async def get_all_by_agent(self, agent_id: UUID) -> Sequence[Balance]:
+        """Return every balance row owned by an agent.
+
+        Args:
+            agent_id: The owning agent's UUID.
+
+        Returns:
+            A (possibly empty) sequence of Balance instances.
+
+        Raises:
+            DatabaseError: On any SQLAlchemy / database error.
+        """
+        try:
+            stmt = select(Balance).where(Balance.agent_id == agent_id).order_by(Balance.asset.asc())
+            result = await self._session.execute(stmt)
+            return result.scalars().all()
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "balance.get_all_by_agent.db_error",
+                extra={"agent_id": str(agent_id), "error": str(exc)},
+            )
+            raise DatabaseError("Failed to fetch balances by agent.") from exc
+
+    async def get_by_agent(self, agent_id: UUID, asset: str) -> Balance | None:
+        """Fetch the balance row for a specific agent / asset pair.
+
+        Args:
+            agent_id: The owning agent's UUID.
+            asset:    The asset ticker.
+
+        Returns:
+            The Balance instance, or None if no row exists.
+
+        Raises:
+            DatabaseError: On any SQLAlchemy / database error.
+        """
+        try:
+            stmt = select(Balance).where(Balance.agent_id == agent_id, Balance.asset == asset)
+            result = await self._session.execute(stmt)
+            return result.scalars().first()
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "balance.get_by_agent.db_error",
+                extra={"agent_id": str(agent_id), "asset": asset, "error": str(exc)},
+            )
+            raise DatabaseError("Failed to fetch balance by agent.") from exc
+
     # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------

@@ -461,3 +461,29 @@ class TradeRepository:
                 },
             )
             raise DatabaseError(f"Failed to aggregate daily PnL for account '{account_id}'.") from exc
+
+    # ------------------------------------------------------------------
+    # Agent-scoped queries (multi-agent transition)
+    # ------------------------------------------------------------------
+
+    async def list_by_agent(
+        self,
+        agent_id: UUID,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[Trade]:
+        """Return trades belonging to a specific agent."""
+        try:
+            stmt = (
+                select(Trade)
+                .where(Trade.agent_id == agent_id)
+                .order_by(Trade.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await self._session.execute(stmt)
+            return result.scalars().all()
+        except SQLAlchemyError as exc:
+            logger.exception("trade.list_by_agent.db_error", extra={"agent_id": str(agent_id)})
+            raise DatabaseError("Failed to list trades by agent.") from exc

@@ -877,4 +877,61 @@ __all__ = [
     "BacktestNotFoundError",
     "BacktestInvalidStateError",
     "BacktestNoDataError",
+    # Battles
+    "BattleNotFoundError",
+    "BattleInvalidStateError",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Battle errors (400 / 404 / 409)
+# ---------------------------------------------------------------------------
+
+
+class BattleNotFoundError(TradingPlatformError):
+    """Raised when a battle cannot be found by ID.
+
+    Error code: ``BATTLE_NOT_FOUND``
+    HTTP status: 404
+    """
+
+    code = "BATTLE_NOT_FOUND"
+    http_status = 404
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        battle_id: UUID | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if battle_id is not None:
+            details["battle_id"] = str(battle_id)
+        if message is None:
+            message = f"Battle '{battle_id}' not found." if battle_id else "Battle not found."
+        super().__init__(message, details=details)
+
+
+class BattleInvalidStateError(TradingPlatformError):
+    """Raised when a battle operation is attempted in the wrong state.
+
+    Error code: ``BATTLE_INVALID_STATE``
+    HTTP status: 409
+    """
+
+    code = "BATTLE_INVALID_STATE"
+    http_status = 409
+
+    def __init__(
+        self,
+        message: str = "Battle is not in the required state for this operation.",
+        *,
+        current_status: str | None = None,
+        required_status: str | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if current_status is not None:
+            details["current_status"] = current_status
+        if required_status is not None:
+            details["required_status"] = required_status
+        super().__init__(message, details=details)

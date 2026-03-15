@@ -249,6 +249,51 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# Agent repository
+# ---------------------------------------------------------------------------
+
+
+async def get_agent_repo(
+    db: DbSessionDep,
+) -> AgentRepoDep:
+    """Return an ``AgentRepository`` wired to the current session."""
+    from src.database.repositories.agent_repo import AgentRepository  # noqa: PLC0415
+
+    return AgentRepository(db)
+
+
+try:
+    from src.database.repositories.agent_repo import AgentRepository as _AgentRepo
+
+    AgentRepoDep: TypeAlias = Annotated[_AgentRepo, Depends(get_agent_repo)]
+except ImportError:
+    AgentRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Agent service
+# ---------------------------------------------------------------------------
+
+
+async def get_agent_service(
+    db: DbSessionDep,
+    settings: SettingsDep,
+) -> AgentServiceDep:
+    """Return an ``AgentService`` wired to the current session and settings."""
+    from src.agents.service import AgentService  # noqa: PLC0415
+
+    return AgentService(db, settings)
+
+
+try:
+    from src.agents.service import AgentService as _AgentService
+
+    AgentServiceDep: TypeAlias = Annotated[_AgentService, Depends(get_agent_service)]
+except ImportError:
+    AgentServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
 # Balance manager
 # ---------------------------------------------------------------------------
 
@@ -632,3 +677,48 @@ try:
     BacktestRepoDep: TypeAlias = Annotated[_BacktestRepo, Depends(get_backtest_repo)]
 except ImportError:
     BacktestRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Battle repository
+# ---------------------------------------------------------------------------
+
+
+async def get_battle_repo(
+    db: DbSessionDep,
+) -> BattleRepoDep:
+    """Return a ``BattleRepository`` wired to the current session."""
+    from src.database.repositories.battle_repo import BattleRepository  # noqa: PLC0415
+
+    return BattleRepository(db)
+
+
+try:
+    from src.database.repositories.battle_repo import BattleRepository as _BattleRepo
+
+    BattleRepoDep: TypeAlias = Annotated[_BattleRepo, Depends(get_battle_repo)]
+except ImportError:
+    BattleRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Battle service
+# ---------------------------------------------------------------------------
+
+
+async def get_battle_service(
+    db: DbSessionDep,
+    settings: SettingsDep,
+) -> BattleServiceDep:
+    """Return a ``BattleService`` wired to the current session and settings."""
+    from src.battles.service import BattleService  # noqa: PLC0415
+
+    return BattleService(db, settings)
+
+
+try:
+    from src.battles.service import BattleService as _BattleService
+
+    BattleServiceDep: TypeAlias = Annotated[_BattleService, Depends(get_battle_service)]
+except ImportError:
+    BattleServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]

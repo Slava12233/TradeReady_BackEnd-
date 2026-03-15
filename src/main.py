@@ -24,9 +24,11 @@ from src.api.middleware.auth import AuthMiddleware
 from src.api.middleware.logging import LoggingMiddleware
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.api.routes.account import router as account_router
+from src.api.routes.agents import router as agents_router
 from src.api.routes.analytics import router as analytics_router
 from src.api.routes.auth import router as auth_router
 from src.api.routes.backtest import router as backtest_router
+from src.api.routes.battles import router as battles_router
 from src.api.routes.market import router as market_router
 from src.api.routes.trading import router as trading_router
 from src.api.routes.waitlist import router as waitlist_router
@@ -225,8 +227,10 @@ def create_app() -> FastAPI:
     application.include_router(market_router)
     application.include_router(trading_router)
     application.include_router(account_router)
+    application.include_router(agents_router)
     application.include_router(analytics_router)
     application.include_router(backtest_router)
+    application.include_router(battles_router)
     application.include_router(waitlist_router)
 
     # ── WebSocket endpoint ────────────────────────────────────────────────────

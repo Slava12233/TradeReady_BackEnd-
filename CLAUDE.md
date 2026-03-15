@@ -2,23 +2,40 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Mandatory Pre/Post Task Protocol
+## Production-First Development Protocol
 
-Before starting ANY task, read these files in order:
-1. `context.md` — architecture, stack, design decisions (single source of truth for architecture)
-2. `tasks.md` — full task breakdown with statuses
-3. `developmentprogress.md` — current phase, progress, blockers
-4. `developmantPlan.md` — the relevant section(s) for the component you are implementing
-5. `backtesting_tasks.md` — backtesting-specific task breakdown (for any BT-* tasks)
+This platform is **deployed in production with CI/CD pipelines**. Every change must be production-ready.
 
-`developmantPlan.md` is the absolute authority. ALL implementation — file names, class names, method signatures, DB schema, API endpoints — MUST match what it specifies. Do not deviate or "improve" without explicit user approval.
+### Before ANY Change
+1. Understand the existing code — read the files you're modifying
+2. Check existing tests for the area you're changing
+3. Run `ruff check` and `mypy` on affected files before committing
 
-After completing any task, update:
-- `tasks.md` — mark task `[x]` Done
-- `developmentprogress.md` — update progress %, add changelog entry
-- `context.md` — only if architecture/stack decisions changed
+### After ANY Change
+1. **Tests pass**: Run `pytest` for affected areas — fix broken tests or update them if behavior intentionally changed
+2. **Lint clean**: `ruff check src/ tests/` must pass with zero errors
+3. **Type safe**: `mypy src/` must pass
+4. **No regressions**: If changing an API endpoint, verify the response shape hasn't broken consumers
+5. **Migration safe**: New DB changes need Alembic migrations that work on the live database (no destructive ALTER without a plan)
 
-**One file at a time:** Create exactly ONE source file per step, explain its purpose and connections, then wait for user confirmation before proceeding.
+### Test Quality Standards
+- Tests must cover the actual behavior, not just exist for coverage numbers
+- When modifying code, update tests to match — stale tests that pass on wrong behavior are worse than no tests
+- Integration tests must use the app factory: `from src.main import create_app; app = create_app()`
+- New features need tests before merging. Bug fixes should include a regression test.
+
+### Historical Development Files
+Original planning docs are archived in `development/` for reference:
+- `development/developmantPlan.md` — original system design (class signatures, DB schema, API spec)
+- `development/backtestingdevelopment.md` — backtesting engine design doc
+- `development/backtesting_tasks.md` — backtesting task breakdown
+- `development/tasks.md` — main task breakdown
+- `development/developmentprogress.md` — development changelog
+- `development/context.md` — architecture decisions log
+- `development/codereviewtasks.md` — code review tasks
+- `development/multiagent_battle_tasks.md` — multi-agent & battle feature task breakdown (Phase 1 complete)
+
+These are **reference only** — do not update them. The source of truth is the code itself.
 
 ## Running the Platform
 
@@ -78,7 +95,6 @@ alembic upgrade head                                # Apply migrations
 alembic downgrade -1                                # Rollback one
 
 python scripts/seed_pairs.py       # Seed Binance USDT pairs
-python scripts/validate_phase1.py  # Validate Phase 1 health
 python scripts/backfill_history.py # Backfill Binance historical klines into candles_backfill
 ```
 
@@ -100,6 +116,84 @@ This is a simulated crypto exchange where AI agents trade **virtual USDT** again
 | 8 | **API Gateway** — REST + WebSocket, middleware | `src/api/` |
 | 9 | **Monitoring** — Prometheus metrics, health checks, structured logs | `src/monitoring/` |
 | 10 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
+| 11 | **Agent Management** — multi-agent CRUD, per-agent wallets, API keys | `src/agents/` |
+
+### Multi-Agent Architecture
+
+Each account can own multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. The system is in a **dual-support transition**: both `account_id` and `agent_id` coexist on trading tables (`balances`, `orders`, `trades`, `positions`).
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/database/models.py` | `Agent` model + nullable `agent_id` FK on trading tables |
+| `src/database/repositories/agent_repo.py` | `AgentRepository` — CRUD, api_key lookup, list/archive/delete |
+| `src/agents/service.py` | `AgentService` — create, clone, reset, archive, regenerate API key |
+| `src/agents/avatar_generator.py` | Deterministic identicon avatar from agent UUID |
+| `src/api/schemas/agents.py` | Pydantic v2 schemas: `AgentCreate`, `AgentUpdate`, `AgentResponse`, etc. |
+| `src/api/routes/agents.py` | Agent management REST endpoints (JWT auth only) |
+
+#### Agent API Endpoints
+
+All under `/api/v1/agents/`, JWT auth only:
+
+- `POST   /agents` — create agent (returns API key once)
+- `GET    /agents` — list agents
+- `GET    /agents/overview` — all agents with summary data
+- `GET    /agents/{id}` — agent detail
+- `PUT    /agents/{id}` — update agent config
+- `POST   /agents/{id}/clone` — clone agent configuration
+- `POST   /agents/{id}/reset` — reset agent balances
+- `POST   /agents/{id}/archive` — soft delete
+- `DELETE /agents/{id}` — permanent delete
+- `POST   /agents/{id}/regenerate-key` — new API key
+- `GET    /agents/{id}/skill.md` — download agent-specific skill file
+
+#### Agent Auth Flow
+
+- **API key auth** (`X-API-Key`): `_resolve_account_from_api_key()` tries agents table first, falls back to legacy accounts table. Sets both `request.state.agent` and `request.state.account`.
+- **JWT auth** (`Authorization: Bearer`): Resolves account from JWT. Agent context comes from `X-Agent-Id` header via `get_current_agent()`.
+- **Dependency aliases**: `CurrentAgentDep` (from `src.api.middleware.auth`), `AgentRepoDep`, `AgentServiceDep` (from `src.dependencies`).
+
+#### Agent Scoping in Services
+
+All core services accept optional `agent_id: UUID | None = None` during the transition:
+- `BalanceManager.credit/debit/get_balance/get_all_balances` — uses `repo.get_by_agent()` when `agent_id` provided
+- `OrderEngine.place_order` — sets `agent_id` on Order and Trade rows
+- `RiskManager.validate_order` — accepts `risk_profile_override` from agent's config
+- `PortfolioTracker.get_portfolio/get_positions/get_pnl` — scopes to agent
+
+#### Migrations
+
+- `007_create_agents_table.py` — creates `agents` table (additive only)
+- `008_add_agent_id_to_trading_tables.py` — adds nullable `agent_id` FK to trading tables
+- `009_enforce_agent_id_not_null.py` — enforces NOT NULL on `agent_id` (run after backfill)
+- `scripts/migrate_accounts_to_agents.py` — creates agent row per existing account
+- `scripts/backfill_agent_ids.py` — backfills `agent_id` on all trading table rows
+
+### Multi-Agent UI (Phase 2)
+
+The frontend supports the multi-agent model with a Slack-style agent switcher and agent-scoped data fetching.
+
+#### Key Frontend Files
+
+| File | Purpose |
+|------|---------|
+| `Frontend/src/stores/agent-store.ts` | Zustand store: `activeAgentId` (persisted), agent list cache |
+| `Frontend/src/hooks/use-agents.ts` | TanStack Query: CRUD + list agents |
+| `Frontend/src/hooks/use-active-agent.ts` | Combines store + query, auto-selects first agent |
+| `Frontend/src/hooks/use-agent-overview.ts` | Fetches agent overview with live stats |
+| `Frontend/src/components/agents/` | Agent UI components (avatar, card, grid, create modal, edit drawer, filters, status badge, color dot) |
+| `Frontend/src/components/layout/agent-switcher.tsx` | Sidebar dropdown for switching agents |
+| `Frontend/src/app/(dashboard)/agents/page.tsx` | Agent management page (cross-agent view) |
+| `Frontend/src/app/(dashboard)/battles/page.tsx` | Battles placeholder (Phase 3) |
+
+#### Agent Scoping in Frontend
+
+- **API client** (`api-client.ts`): Injects `X-Agent-Id` header on JWT-authenticated requests using `activeAgentId` from localStorage
+- **Query keys**: All account/trade/analytics hooks include `activeAgentId` in their TanStack Query keys, so data refetches automatically when the user switches agents
+- **Settings page**: Split into "Account Settings" (developer) and "Agent Settings" (per-agent) tabs
+- **Navigation**: Sidebar has agent switcher below logo, plus "Agents" and "Battles" nav items
 
 ### Dependency Direction (strict)
 ```
@@ -269,7 +363,6 @@ The backtesting UI is observation-only — no create/edit/action buttons.
 - `docs/backtesting-guide.md` — technical guide (API lifecycle, strategies, step batching, position sizing)
 - `docs/backtesting-explained.md` — non-technical guide (analogies, plain English)
 - `docs/skill.md` — agent skill reference (includes backtesting workflow + strategy examples)
-- `backtesting_tasks.md` — complete task breakdown with statuses
 
 ## Dependency Injection & Configuration
 
@@ -279,7 +372,7 @@ All service/repo instantiation goes through `src/dependencies.py` using FastAPI'
 # Use the typed aliases — NOT raw Annotated[Type, Depends(get_function)]
 async def handler(db: DbSessionDep, cache: PriceCacheDep, settings: SettingsDep):
 ```
-Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `AccountRepoDep`, `BalanceRepoDep`, `OrderRepoDep`, `TradeRepoDep`, `TickRepoDep`, `SnapshotRepoDep`, `BalanceManagerDep`, `AccountServiceDep`, `SlippageCalcDep`, `OrderEngineDep`, `RiskManagerDep`, `PortfolioTrackerDep`, `PerformanceMetricsDep`, `SnapshotServiceDep`, `BacktestEngineDep`, `BacktestRepoDep`.
+Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `AccountRepoDep`, `BalanceRepoDep`, `OrderRepoDep`, `TradeRepoDep`, `TickRepoDep`, `SnapshotRepoDep`, `BalanceManagerDep`, `AccountServiceDep`, `SlippageCalcDep`, `OrderEngineDep`, `RiskManagerDep`, `PortfolioTrackerDep`, `PerformanceMetricsDep`, `SnapshotServiceDep`, `BacktestEngineDep`, `BacktestRepoDep`, `AgentRepoDep`, `AgentServiceDep`.
 
 Key patterns:
 - **Lazy imports** inside dependency functions (`# noqa: PLC0415`) to avoid circular imports — do not move these to module level
@@ -339,26 +432,13 @@ type(scope): description
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
 Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
 
-## Current Phase Status
-
-| Phase | Status |
-|-------|--------|
-| Phase 1: Foundation (price feed, Redis, TimescaleDB) | ✅ Complete |
-| Phase 2: Trading Engine (orders, accounts, risk, portfolio) | ✅ Complete |
-| Phase 3: API Layer (REST, WebSocket, Celery) | 🔄 ~85% done |
-| Phase 4: Agent Connectivity (MCP server, SDK, framework guides) | 🔄 In progress |
-| Phase 5: Polish & Launch | ⬜ Not started |
-| **BT-1: Backtesting Backend** (engine, DB, API, tests) | ✅ Complete (31/31 tasks) |
-| **BT-2: Backtesting Frontend** (list, monitor, results, compare) | ✅ Complete (31/31 tasks) |
-| **BT-3: Backtesting Integration** (skill.md, SDK, MCP, E2E, ops) | 🔄 In progress (~10%) |
-
 ## SDK & Frontend
 
 **Python SDK** (`sdk/`): `AgentExchangeClient` (sync), `AsyncAgentExchangeClient` (async), `AgentExchangeWS` (streaming). Install locally: `pip install -e sdk/`
 
 **MCP Server** (`src/mcp/`): 12 trading tools over stdio transport. Env vars: `MCP_API_KEY` (required), `API_BASE_URL` (default `http://localhost:8000`), `MCP_JWT_TOKEN` (optional).
 
-**Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. Development plans in `UiDevelopmentPlan.md` and `UIdevelopmentProgress.md`.
+**Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. Has its own `CLAUDE.md` at `Frontend/CLAUDE.md` with full UI conventions.
 
 ### Frontend Commands
 
@@ -371,18 +451,15 @@ pnpm test:e2e         # Playwright E2E tests
 pnpm dlx shadcn@latest add <component-name>  # Add shadcn/ui component
 ```
 
-Frontend has its own `CLAUDE.md` at `Frontend/CLAUDE.md` with full UI conventions. Key points:
-- `UiDevelopmentPlan.md` is the authority for frontend (like `developmantPlan.md` is for backend)
-- Read `UIcontext.md`, `UItasks.md`, `UIdevelopmentProgress.md` before frontend tasks
+Key frontend points:
 - Tailwind v4 configured via `@theme inline` in `src/app/globals.css` (no `tailwind.config.ts`)
 - State: Zustand (WS/streaming), TanStack Query (REST), React state (local UI)
 - `@/*` path alias maps to `./src/*`
 
 ## Docker
 
-- `docker-compose.yml` — production-like setup with all services
+- `docker-compose.yml` — production setup with all services
 - `docker-compose.dev.yml` — development overrides (hot reload, debug ports)
-- `docker-compose.phase1.yml` — minimal setup for Phase 1 (TimescaleDB + Redis only)
 - Healthchecks and resource limits defined for all containers
 
 ## Environment Variables

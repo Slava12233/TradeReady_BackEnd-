@@ -190,6 +190,8 @@ class OrderEngine:
         self,
         account_id: UUID,
         order: OrderRequest,
+        *,
+        agent_id: UUID | None = None,
     ) -> OrderResult:
         """Validate and place an order on behalf of an account.
 
@@ -236,6 +238,7 @@ class OrderEngine:
                 base_asset=pair.base_asset,
                 quote_asset=pair.quote_asset,
                 reference_price=reference_price,
+                agent_id=agent_id,
             )
 
         # limit / stop_loss / take_profit
@@ -245,6 +248,7 @@ class OrderEngine:
             base_asset=pair.base_asset,
             quote_asset=pair.quote_asset,
             market_price=reference_price,
+            agent_id=agent_id,
         )
 
     async def cancel_order(self, account_id: UUID, order_id: UUID) -> bool:
@@ -510,6 +514,8 @@ class OrderEngine:
         base_asset: str,
         quote_asset: str,
         reference_price: Decimal,
+        *,
+        agent_id: UUID | None = None,
     ) -> OrderResult:
         """Create, execute, and commit a market order in a single transaction.
 
@@ -559,6 +565,7 @@ class OrderEngine:
 
         db_order = Order(
             account_id=account_id,
+            agent_id=agent_id,
             symbol=order.symbol,
             side=order.side,
             type=order.type,
@@ -576,6 +583,7 @@ class OrderEngine:
             quantity=order.quantity,
             execution_price=slippage.execution_price,
             from_locked=False,
+            agent_id=agent_id,
         )
 
         filled_at = datetime.now(tz=UTC)
@@ -593,6 +601,7 @@ class OrderEngine:
 
         trade = Trade(
             account_id=account_id,
+            agent_id=agent_id,
             order_id=db_order.id,
             symbol=order.symbol,
             side=order.side,
@@ -655,6 +664,8 @@ class OrderEngine:
         base_asset: str,
         quote_asset: str,
         market_price: Decimal,
+        *,
+        agent_id: UUID | None = None,
     ) -> OrderResult:
         """Create a pending (limit/stop_loss/take_profit) order and lock funds.
 
@@ -705,6 +716,7 @@ class OrderEngine:
 
         db_order = Order(
             account_id=account_id,
+            agent_id=agent_id,
             symbol=order.symbol,
             side=order.side,
             type=order.type,
@@ -714,7 +726,7 @@ class OrderEngine:
         )
         db_order = await self._order_repo.create(db_order)
 
-        await self._balance_manager.lock(account_id, asset=lock_asset, amount=lock_amount)
+        await self._balance_manager.lock(account_id, asset=lock_asset, amount=lock_amount, agent_id=agent_id)
 
         try:
             await self._session.commit()

@@ -200,7 +200,7 @@ class PortfolioTracker:
     # Public API
     # ------------------------------------------------------------------
 
-    async def get_portfolio(self, account_id: UUID) -> PortfolioSummary:
+    async def get_portfolio(self, account_id: UUID, *, agent_id: UUID | None = None) -> PortfolioSummary:
         """Return a complete real-time portfolio snapshot for *account_id*.
 
         Fetches all open positions, valuates them using current Redis prices,
@@ -223,12 +223,12 @@ class PortfolioTracker:
             print(f"Equity: {summary.total_equity} USDT")
             print(f"ROI: {summary.roi_pct:.2f}%")
         """
-        starting_balance = await self._get_starting_balance(account_id)
-        usdt_balance = await self._get_usdt_balance(account_id)
+        starting_balance = await self._get_starting_balance(account_id, agent_id=agent_id)
+        usdt_balance = await self._get_usdt_balance(account_id, agent_id=agent_id)
         available_cash = Decimal(str(usdt_balance.available)) if usdt_balance else _ZERO
         locked_cash = Decimal(str(usdt_balance.locked)) if usdt_balance else _ZERO
 
-        positions = await self.get_positions(account_id)
+        positions = await self.get_positions(account_id, agent_id=agent_id)
 
         total_position_value = sum((p.market_value for p in positions), _ZERO)
         unrealized_pnl = sum((p.unrealized_pnl for p in positions), _ZERO)
@@ -261,7 +261,7 @@ class PortfolioTracker:
             positions=positions,
         )
 
-    async def get_positions(self, account_id: UUID) -> list[PositionView]:
+    async def get_positions(self, account_id: UUID, *, agent_id: UUID | None = None) -> list[PositionView]:
         """Return all open positions for *account_id* valued at current prices.
 
         Only positions with ``quantity > 0`` are returned.  Each position is
@@ -286,7 +286,7 @@ class PortfolioTracker:
             for pos in positions:
                 print(f"{pos.symbol}: {pos.quantity} @ {pos.current_price}")
         """
-        orm_positions = await self._fetch_positions(account_id)
+        orm_positions = await self._fetch_positions(account_id, agent_id=agent_id)
         views: list[PositionView] = []
 
         for pos in orm_positions:
@@ -320,7 +320,7 @@ class PortfolioTracker:
 
         return views
 
-    async def get_pnl(self, account_id: UUID) -> PnLBreakdown:
+    async def get_pnl(self, account_id: UUID, *, agent_id: UUID | None = None) -> PnLBreakdown:
         """Return a detailed PnL breakdown for *account_id*.
 
         Computes unrealized PnL from open positions at current market prices,
@@ -345,7 +345,7 @@ class PortfolioTracker:
             print(f"Realized:   {pnl.realized_pnl}")
             print(f"Daily:      {pnl.daily_realized}")
         """
-        positions = await self.get_positions(account_id)
+        positions = await self.get_positions(account_id, agent_id=agent_id)
         unrealized_pnl = sum((p.unrealized_pnl for p in positions), _ZERO)
         realized_pnl = await self._sum_realized_pnl(account_id)
         daily_realized = await self._sum_daily_realized_pnl(account_id)
@@ -371,7 +371,7 @@ class PortfolioTracker:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _get_starting_balance(self, account_id: UUID) -> Decimal:
+    async def _get_starting_balance(self, account_id: UUID, *, agent_id: UUID | None = None) -> Decimal:
         """Fetch the starting_balance column from the accounts table.
 
         Falls back to ``settings.default_starting_balance`` when the account
@@ -383,6 +383,14 @@ class PortfolioTracker:
             DatabaseError:        On SQLAlchemy failure.
         """
         try:
+            if agent_id is not None:
+                from src.database.models import Agent  # noqa: PLC0415
+
+                stmt = select(Agent.starting_balance).where(Agent.id == agent_id)
+                result = await self._session.execute(stmt)
+                raw = result.scalar_one_or_none()
+                if raw is not None:
+                    return Decimal(str(raw))
             stmt = select(Account.starting_balance).where(Account.id == account_id)
             result = await self._session.execute(stmt)
             raw = result.scalar_one_or_none()
@@ -397,13 +405,15 @@ class PortfolioTracker:
             raise AccountNotFoundError(account_id=account_id)
         return Decimal(str(raw))
 
-    async def _get_usdt_balance(self, account_id: UUID) -> Balance | None:
+    async def _get_usdt_balance(self, account_id: UUID, *, agent_id: UUID | None = None) -> Balance | None:
         """Return the USDT Balance row for *account_id*, or ``None``.
 
         Raises:
             DatabaseError: On SQLAlchemy failure.
         """
         try:
+            if agent_id is not None:
+                return await self._balance_repo.get_by_agent(agent_id, _USDT)
             return await self._balance_repo.get(account_id, _USDT)
         except DatabaseError:
             raise
@@ -414,21 +424,17 @@ class PortfolioTracker:
             )
             raise DatabaseError(f"Failed to fetch USDT balance for account '{account_id}'.") from exc
 
-    async def _fetch_positions(self, account_id: UUID) -> list[Position]:
+    async def _fetch_positions(self, account_id: UUID, *, agent_id: UUID | None = None) -> list[Position]:
         """Return all ORM Position rows with quantity > 0 for *account_id*.
 
         Raises:
             DatabaseError: On SQLAlchemy failure.
         """
         try:
-            stmt = (
-                select(Position)
-                .where(
-                    Position.account_id == account_id,
-                    Position.quantity > 0,
-                )
-                .order_by(Position.symbol)
-            )
+            filters = [Position.account_id == account_id, Position.quantity > 0]
+            if agent_id is not None:
+                filters.append(Position.agent_id == agent_id)
+            stmt = select(Position).where(*filters).order_by(Position.symbol)
             result = await self._session.execute(stmt)
             return list(result.scalars().all())
         except SQLAlchemyError as exc:
