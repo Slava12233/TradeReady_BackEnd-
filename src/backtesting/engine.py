@@ -52,6 +52,7 @@ class BacktestConfig:
     candle_interval: int = 60
     pairs: list[str] | None = None
     strategy_label: str = "default"
+    agent_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +105,7 @@ class _ActiveSession:
 
     session_id: str
     account_id: UUID
+    agent_id: UUID | None
     config: BacktestConfig
     simulator: TimeSimulator
     sandbox: BacktestSandbox
@@ -168,6 +170,7 @@ class BacktestEngine:
 
         session = BacktestSessionModel(
             account_id=account_id,
+            agent_id=config.agent_id,
             strategy_label=config.strategy_label,
             status="created",
             candle_interval=config.candle_interval,
@@ -223,9 +226,15 @@ class BacktestEngine:
             interval_seconds=config.candle_interval,
         )
 
+        # Load agent risk profile if agent_id is set
+        risk_limits: dict[str, Any] | None = None
+        if session.agent_id is not None:
+            risk_limits = await self._load_agent_risk_profile(session.agent_id, db)
+
         sandbox = BacktestSandbox(
             session_id=session_id,
             starting_balance=config.starting_balance,
+            risk_limits=risk_limits,
         )
 
         replayer = DataReplayer(db, config.pairs, step_interval=config.candle_interval)
@@ -246,6 +255,7 @@ class BacktestEngine:
         active = _ActiveSession(
             session_id=session_id,
             account_id=session.account_id,
+            agent_id=session.agent_id,
             config=config,
             simulator=simulator,
             sandbox=sandbox,
@@ -526,6 +536,23 @@ class BacktestEngine:
                 f"Backtest session '{session_id}' is not active.",
             )
         return active
+
+    async def _load_agent_risk_profile(self, agent_id: UUID, db: AsyncSession) -> dict[str, Any] | None:
+        """Load risk profile from the Agent row. Returns None if agent not found or profile empty."""
+        from sqlalchemy import select
+
+        from src.database.models import Agent  # noqa: PLC0415
+
+        stmt = select(Agent).where(Agent.id == agent_id)
+        result = await db.execute(stmt)
+        agent = result.scalars().first()
+        if agent is None:
+            logger.warning("backtest.agent_not_found", agent_id=str(agent_id))
+            return None
+        profile = agent.risk_profile
+        if not profile:
+            return None
+        return profile
 
     async def _load_session(self, session_id: str, db: AsyncSession) -> BacktestSessionModel:
         """Load session from DB."""

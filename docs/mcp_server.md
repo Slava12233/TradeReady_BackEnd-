@@ -133,6 +133,8 @@ The server uses the **stdio transport** (the MCP standard). Any client that can:
 
 ## Available Tools (12)
 
+> **Note:** The MCP server currently exposes 12 live trading tools. Backtesting, battle, and agent management are available via the REST API but not yet via MCP.
+
 ### Market Data
 
 | Tool | Description | Parameters |

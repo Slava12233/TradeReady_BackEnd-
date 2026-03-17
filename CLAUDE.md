@@ -1,6 +1,96 @@
 # CLAUDE.md
 
+<!-- last-updated: 2026-03-17 -->
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+> **Self-maintenance rule:** When modifying code in any folder, update that folder's `CLAUDE.md` if behavior, files, or patterns changed. Update the `<!-- last-updated -->` timestamp when you do.
+
+## CLAUDE.md Index
+
+Each module has its own `CLAUDE.md` with detailed file inventories, public APIs, patterns, and gotchas. Read the local file before working in that folder.
+
+### Backend (`src/`)
+
+| Path | Description |
+|------|-------------|
+| `src/accounts/CLAUDE.md` | Account service, registration, auth, API keys, balance management |
+| `src/agents/CLAUDE.md` | Multi-agent CRUD, clone, reset, avatar generation |
+| `src/api/CLAUDE.md` | API gateway overview, middleware stack, route registry |
+| `src/api/routes/CLAUDE.md` | All REST endpoints (86+), auth requirements, patterns |
+| `src/api/schemas/CLAUDE.md` | Pydantic v2 schemas, validation patterns |
+| `src/api/middleware/CLAUDE.md` | Auth, rate limiting, logging middleware — execution order |
+| `src/api/websocket/CLAUDE.md` | WebSocket channels, protocol, subscription model |
+| `src/backtesting/CLAUDE.md` | Backtest engine, sandbox, time simulation, data replay |
+| `src/battles/CLAUDE.md` | Battle system, ranking, snapshots, historical engine |
+| `src/cache/CLAUDE.md` | Redis cache layer, key patterns, pub/sub |
+| `src/database/CLAUDE.md` | ORM models, async session management, repository pattern |
+| `src/database/repositories/CLAUDE.md` | All repository classes, query patterns |
+| `src/mcp/CLAUDE.md` | MCP server, 12 tools, stdio transport |
+| `src/metrics/CLAUDE.md` | Unified metrics calculator, adapters |
+| `src/monitoring/CLAUDE.md` | Prometheus metrics, health checks |
+| `src/order_engine/CLAUDE.md` | Order execution, matching, slippage |
+| `src/portfolio/CLAUDE.md` | Portfolio tracking, PnL calculation, snapshots |
+| `src/price_ingestion/CLAUDE.md` | Binance WS, tick buffering, flush cycle |
+| `src/risk/CLAUDE.md` | Risk manager, circuit breaker, position limits |
+| `src/tasks/CLAUDE.md` | Celery tasks, beat schedule, cleanup jobs |
+| `src/utils/CLAUDE.md` | Exception hierarchy, shared utilities |
+
+### Tests
+
+| Path | Description |
+|------|-------------|
+| `tests/CLAUDE.md` | Test philosophy, conftest fixtures, async patterns, gotchas |
+| `tests/unit/CLAUDE.md` | Unit test inventory (62 files, 974 tests), mock patterns |
+| `tests/integration/CLAUDE.md` | Integration test setup (20 files, 433 tests), app factory |
+
+### Infrastructure & Other
+
+| Path | Description |
+|------|-------------|
+| `alembic/CLAUDE.md` | Migration workflow, async env, naming convention, inventory |
+| `Frontend/CLAUDE.md` | Next.js 16 / React 19 / Tailwind v4 frontend conventions |
+| `Frontend/src/app/CLAUDE.md` | App Router structure, layouts, route groups |
+| `Frontend/src/components/CLAUDE.md` | Component organization (130+ files), shadcn/ui patterns |
+| `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
+| `Frontend/src/components/battles/CLAUDE.md` | Battle UI components (planned, not yet built) |
+| `Frontend/src/hooks/CLAUDE.md` | Hook inventory (23 hooks), TanStack Query patterns |
+| `Frontend/src/lib/CLAUDE.md` | API client, utilities, constants, chart config |
+| `Frontend/src/stores/CLAUDE.md` | Zustand stores (6), persistence, agent state |
+| `sdk/CLAUDE.md` | Python SDK — sync/async clients, WebSocket client |
+| `scripts/CLAUDE.md` | Available scripts, when to run each, dependencies |
+| `docs/CLAUDE.md` | Documentation inventory, audience for each doc |
+
+---
+
+## Sub-Agents (`.claude/agents/`)
+
+Custom agents that can be delegated to for specialized tasks:
+
+| Agent | Purpose | When to Use |
+|-------|---------|-------------|
+| `code-reviewer` | Reviews code against all project standards by reading relevant CLAUDE.md files | After every code change |
+| `test-runner` | Maps changed files to tests, runs them, writes missing tests | After every code change (after code-reviewer) |
+| `migration-helper` | Generates and validates Alembic migrations for safety (destructive ops, two-phase NOT NULL, rollback paths) | Before creating or running any migration |
+| `api-sync-checker` | Compares Pydantic schemas vs TypeScript types, verifies frontend/backend route sync | After changing API routes, schemas, or frontend API code |
+| `doc-updater` | Updates docs/skill.md, api_reference.md, module CLAUDE.md files when code changes | After API, schema, or module changes |
+| `security-auditor` | Audits for auth bypasses, injection risks, secret exposure, agent isolation violations | After security-sensitive changes |
+| `perf-checker` | Detects N+1 queries, blocking async calls, missing indexes, unbounded growth | After changes to DB queries, async code, or hot paths |
+| `context-manager` | Maintains a rolling summary of all development activity — changes, decisions, bugs, learnings, WIP | After every significant change (proactively) |
+
+### Mandatory Agent Rules
+
+- **After ANY code change**, delegate to `code-reviewer` then `test-runner` in sequence. Do not skip either step.
+- **Before ANY migration**, delegate to `migration-helper` to validate or generate the migration safely.
+- **After API/schema changes**, delegate to `api-sync-checker` to verify frontend/backend are in sync, then `doc-updater` to update documentation.
+- **For security-sensitive changes** (auth, middleware, agent scoping, input handling), delegate to `security-auditor`.
+- **For performance-sensitive changes** (DB queries, async code, caching, ingestion), delegate to `perf-checker`.
+- If the `test-runner` agent identifies missing test coverage, it will write new tests following `tests/CLAUDE.md` standards.
+- If tests fail, fix the code (or tests if behavior intentionally changed), then re-run via `test-runner` until all pass.
+- **After every significant change**, delegate to `context-manager` to log what changed, why, and any decisions/learnings. This keeps `development/context.md` fresh so future conversations have full context.
+- **Keep agents up to date**: When the project evolves — new modules, new test patterns, new conventions, renamed files — update the relevant `.claude/agents/*.md` files. Agents are only as useful as the instructions they contain.
+
+---
 
 ## Production-First Development Protocol
 
@@ -25,17 +115,7 @@ This platform is **deployed in production with CI/CD pipelines**. Every change m
 - New features need tests before merging. Bug fixes should include a regression test.
 
 ### Historical Development Files
-Original planning docs are archived in `development/` for reference:
-- `development/developmantPlan.md` — original system design (class signatures, DB schema, API spec)
-- `development/backtestingdevelopment.md` — backtesting engine design doc
-- `development/backtesting_tasks.md` — backtesting task breakdown
-- `development/tasks.md` — main task breakdown
-- `development/developmentprogress.md` — development changelog
-- `development/context.md` — architecture decisions log
-- `development/codereviewtasks.md` — code review tasks
-- `development/multiagent_battle_tasks.md` — multi-agent & battle feature task breakdown (all 6 phases complete)
-
-These are **reference only** — do not update them. The source of truth is the code itself.
+Original planning docs are archived in `development/` for reference. These are **reference only** — do not update them. The source of truth is the code itself.
 
 ## Running the Platform
 
@@ -75,13 +155,10 @@ locust -f tests/load/locustfile.py --host=http://localhost:8000
 ```
 
 - `asyncio_mode = "auto"` in pyproject.toml — no need for `@pytest.mark.asyncio` on async tests
-- Ruff skips `ANN` and `S` rules for `tests/**/*.py`
-- In tests, instantiate the app via `from src.main import create_app; app = create_app()` — do not import `app` directly, as the factory is the testable surface.
-- `tests/conftest.py` provides factory fixtures (`make_tick()`, etc.) and `AsyncMock` wiring for Redis/asyncpg. Redis pipeline mocks need `__aenter__`/`__aexit__` for `async with redis.pipeline()`.
-- **Gotcha:** `get_settings()` uses `lru_cache` — tests must patch it before the cached instance is created, or override via dependency injection.
-- **Backtesting tests:**
-  - Unit: `tests/unit/test_time_simulator.py`, `test_data_replayer.py`, `test_backtest_sandbox.py`, `test_backtest_engine.py`, `test_backtest_results.py`
-  - Integration: `tests/integration/test_backtest_e2e.py`, `test_no_lookahead.py`, `test_agent_backtest_workflow.py`, `test_concurrent_backtests.py`, `test_backtest_api.py`
+- In tests, instantiate the app via `from src.main import create_app; app = create_app()` — do not import `app` directly
+- **Gotcha:** `get_settings()` uses `lru_cache` — tests must patch it before the cached instance is created
+
+See `tests/CLAUDE.md` for full fixture inventory, mock patterns, and test-specific gotchas.
 
 ## Linting, Type Checking, Migrations
 
@@ -102,10 +179,10 @@ python scripts/backfill_history.py # Backfill Binance historical klines into can
 
 This is a simulated crypto exchange where AI agents trade **virtual USDT** against **real Binance market data**. Supports 600+ USDT pairs with real-time price feeds, order execution, risk controls, and portfolio tracking.
 
-### Ten Core Components
+### Core Components
 
-| # | Component | Key Files |
-|---|-----------|-----------|
+| # | Component | Module |
+|---|-----------|--------|
 | 1 | **Price Ingestion** — Binance WS → Redis + TimescaleDB | `src/price_ingestion/` |
 | 2 | **Redis Cache** — sub-ms price lookups, rate limiting, pub/sub | `src/cache/` |
 | 3 | **TimescaleDB** — tick history, OHLCV candles, trades | `src/database/` |
@@ -118,170 +195,33 @@ This is a simulated crypto exchange where AI agents trade **virtual USDT** again
 | 10 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
 | 11 | **Agent Management** — multi-agent CRUD, per-agent wallets, API keys | `src/agents/` |
 | 12 | **Battle System** — agent vs agent competitions with rankings, replays | `src/battles/` |
+| 13 | **Unified Metrics** — shared calculator for backtests & battles | `src/metrics/` |
 
 ### Multi-Agent Architecture
 
-Each account can own multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. Trading tables (`balances`, `orders`, `trades`, `positions`) are keyed by `agent_id`. Migration `011` drops the legacy `account_id` columns from trading tables.
+Each account can own multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. Trading tables (`balances`, `orders`, `trades`, `positions`) are keyed by `agent_id`.
 
-#### Key Files
+- **API key auth** (`X-API-Key`): tries agents table first, falls back to legacy accounts table
+- **JWT auth** (`Authorization: Bearer`): resolves account from JWT, agent context via `X-Agent-Id` header
+- All core services accept `agent_id` for scoping (balances, orders, risk, portfolio, backtests)
 
-| File | Purpose |
-|------|---------|
-| `src/database/models.py` | `Agent` model + nullable `agent_id` FK on trading tables |
-| `src/database/repositories/agent_repo.py` | `AgentRepository` — CRUD, api_key lookup, list/archive/delete |
-| `src/agents/service.py` | `AgentService` — create, clone, reset, archive, regenerate API key |
-| `src/agents/avatar_generator.py` | Deterministic identicon avatar from agent UUID |
-| `src/api/schemas/agents.py` | Pydantic v2 schemas: `AgentCreate`, `AgentUpdate`, `AgentResponse`, etc. |
-| `src/api/routes/agents.py` | Agent management REST endpoints (JWT auth only) |
+See `src/agents/CLAUDE.md` and `src/api/middleware/CLAUDE.md` for full details.
 
-#### Agent API Endpoints
+### Battle System
 
-All under `/api/v1/agents/`, JWT auth only:
+Agent vs agent trading competitions with live monitoring, replay, and rankings. Supports both `"live"` and `"historical"` modes.
 
-- `POST   /agents` — create agent (returns API key once)
-- `GET    /agents` — list agents
-- `GET    /agents/overview` — all agents with summary data
-- `GET    /agents/{id}` — agent detail
-- `PUT    /agents/{id}` — update agent config
-- `POST   /agents/{id}/clone` — clone agent configuration
-- `POST   /agents/{id}/reset` — reset agent balances
-- `POST   /agents/{id}/archive` — soft delete
-- `DELETE /agents/{id}` — permanent delete
-- `POST   /agents/{id}/regenerate-key` — new API key
-- `GET    /agents/{id}/skill.md` — download agent-specific skill file
+**State machine:** `draft → pending → active → completed` (with `cancelled` and `paused` branches)
 
-#### Agent Auth Flow
+See `src/battles/CLAUDE.md` for full architecture, and `src/api/routes/CLAUDE.md` for the 20 battle endpoints.
 
-- **API key auth** (`X-API-Key`): `_resolve_account_from_api_key()` tries agents table first, falls back to legacy accounts table. Sets both `request.state.agent` and `request.state.account`.
-- **JWT auth** (`Authorization: Bearer`): Resolves account from JWT. Agent context comes from `X-Agent-Id` header via `get_current_agent()`.
-- **Dependency aliases**: `CurrentAgentDep` (from `src.api.middleware.auth`), `AgentRepoDep`, `AgentServiceDep` (from `src.dependencies`).
+### Backtesting Engine
 
-#### Agent Scoping in Services
+Agent-driven historical replay with in-memory sandbox trading. The UI is read-only observation.
 
-All core services accept optional `agent_id: UUID | None = None` during the transition:
-- `BalanceManager.credit/debit/get_balance/get_all_balances` — uses `repo.get_by_agent()` when `agent_id` provided
-- `OrderEngine.place_order` — sets `agent_id` on Order and Trade rows
-- `RiskManager.validate_order` — accepts `risk_profile_override` from agent's config
-- `PortfolioTracker.get_portfolio/get_positions/get_pnl` — scopes to agent
+**Critical invariant**: `DataReplayer` filters `WHERE bucket <= virtual_clock` — no look-ahead bias possible.
 
-#### Migrations
-
-- `007_create_agents_table.py` — creates `agents` table (additive only)
-- `008_add_agent_id_to_trading_tables.py` — adds nullable `agent_id` FK to trading tables
-- `009_enforce_agent_id_not_null.py` — enforces NOT NULL on `agent_id` (run after backfill)
-- `scripts/migrate_accounts_to_agents.py` — creates agent row per existing account
-- `scripts/backfill_agent_ids.py` — backfills `agent_id` on all trading table rows
-
-### Multi-Agent UI (Phase 2)
-
-The frontend supports the multi-agent model with a Slack-style agent switcher and agent-scoped data fetching.
-
-#### Key Frontend Files
-
-| File | Purpose |
-|------|---------|
-| `Frontend/src/stores/agent-store.ts` | Zustand store: `activeAgentId` (persisted), agent list cache |
-| `Frontend/src/hooks/use-agents.ts` | TanStack Query: CRUD + list agents |
-| `Frontend/src/hooks/use-active-agent.ts` | Combines store + query, auto-selects first agent |
-| `Frontend/src/hooks/use-agent-overview.ts` | Fetches agent overview with live stats |
-| `Frontend/src/components/agents/` | Agent UI components (avatar, card, grid, create modal, edit drawer, filters, status badge, color dot) |
-| `Frontend/src/components/layout/agent-switcher.tsx` | Sidebar dropdown for switching agents |
-| `Frontend/src/app/(dashboard)/agents/page.tsx` | Agent management page (cross-agent view) |
-| `Frontend/src/app/(dashboard)/battles/page.tsx` | Battles placeholder (Phase 3) |
-
-#### Agent Scoping in Frontend
-
-- **API client** (`api-client.ts`): Injects `X-Agent-Id` header on JWT-authenticated requests using `activeAgentId` from localStorage
-- **Query keys**: All account/trade/analytics hooks include `activeAgentId` in their TanStack Query keys, so data refetches automatically when the user switches agents
-- **Settings page**: Split into "Account Settings" (developer) and "Agent Settings" (per-agent) tabs
-- **Navigation**: Sidebar has agent switcher below logo, plus "Agents" and "Battles" nav items
-
-### Battle System (Phases 3–6)
-
-Agent vs agent trading competitions with live monitoring, replay, and rankings.
-
-#### Backend Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/database/models.py` | `Battle`, `BattleParticipant`, `BattleSnapshot` models |
-| `src/database/repositories/battle_repo.py` | `BattleRepository` — CRUD for battles, participants, snapshots |
-| `src/battles/service.py` | `BattleService` — lifecycle: create, start, pause, stop, cancel |
-| `src/battles/snapshot_engine.py` | `SnapshotEngine` — periodic equity capture (every 5s) |
-| `src/battles/ranking.py` | `RankingCalculator` — ROI, PnL, Sharpe, Win Rate, Profit Factor |
-| `src/battles/wallet_manager.py` | `WalletManager` — fresh wallet mode with snapshot/restore |
-| `src/battles/presets.py` | 5 preset configs: Quick Sprint, Day Trader, Marathon, Scalper Duel, Survival |
-| `src/api/routes/battles.py` | 16 REST endpoints (JWT auth only) |
-| `src/api/schemas/battles.py` | Pydantic v2 schemas for battles |
-| `src/api/websocket/channels.py` | `BattleChannel` — real-time updates, trades, status events |
-| `src/tasks/battle_snapshots.py` | Celery tasks: snapshot capture (5s), auto-completion (10s) |
-
-#### Battle State Machine
-
-```
-draft → pending → active → completed
-         └─ cancelled   └─ paused → active
-```
-
-#### Battle API Endpoints
-
-All under `/api/v1/battles/`, JWT auth only:
-
-- `POST   /battles` — create battle (draft)
-- `GET    /battles` — list with status filter
-- `GET    /battles/presets` — 5 preset configurations
-- `PUT    /battles/{id}` — update config (draft only)
-- `DELETE /battles/{id}` — delete/cancel
-- `POST   /battles/{id}/start` — lock config, snapshot wallets, go active
-- `POST   /battles/{id}/pause/{agent_id}` — pause one agent
-- `POST   /battles/{id}/resume/{agent_id}` — resume paused agent
-- `POST   /battles/{id}/stop` — calculate rankings, complete
-- `POST   /battles/{id}/participants` — add agent
-- `DELETE /battles/{id}/participants/{agent_id}` — remove agent
-- `GET    /battles/{id}/live` — real-time metrics
-- `GET    /battles/{id}/results` — final results (completed only)
-- `GET    /battles/{id}/replay` — time-series snapshots for replay
-
-#### Battle WebSocket Events
-
-Channel: `battle:{battle_id}`. Three event types:
-- `battle:update` — periodic snapshot with all participants' equity/PnL/trades
-- `battle:trade` — real-time trade from any participant
-- `battle:status` — state changes (started, paused, resumed, completed, agent blown up)
-
-#### Battle Frontend Key Files
-
-| File | Purpose |
-|------|---------|
-| `Frontend/src/stores/battle-store.ts` | Zustand: active battle state |
-| `Frontend/src/hooks/use-battles.ts` | TanStack Query: CRUD + lifecycle mutations |
-| `Frontend/src/hooks/use-battle-live.ts` | WebSocket integration for live battle data |
-| `Frontend/src/hooks/use-battle-replay.ts` | Playback state machine (play/pause/scrub/speed) |
-| `Frontend/src/hooks/use-battle-notifications.ts` | Converts WS battle events to in-app notifications |
-| `Frontend/src/components/battles/` | 22 battle components (cards, charts, podium, timeline, replay, export) |
-| `Frontend/src/app/(dashboard)/battles/page.tsx` | Battle list page |
-| `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` | Live dashboard + results view |
-
-#### Battle Results View (completed battles)
-
-The `/battles/[id]` page auto-detects completed status and shows:
-- `BattlePodium` — top 3 on podium with confetti
-- `BattleMetricsTable` + `BattleTimeline` — final standings + key moments
-- `EquityRaceChart` + `BattleReplayControls` — scrubable equity replay (1x/2x/5x/10x)
-- `BattleExport` — CSV trades, CSV equity, JSON full export
-- Rematch button — clones battle config into new draft
-
-#### Dependencies
-
-```python
-BattleRepoDep = Annotated[BattleRepository, Depends(get_battle_repo)]
-BattleServiceDep = Annotated[BattleService, Depends(get_battle_service)]
-```
-
-#### Migrations
-
-- `010_create_battle_tables.py` — battles + battle_participants + battle_snapshots (hypertable)
-- `011_drop_account_trading_columns.py` — drops legacy account trading columns and account_id from trading tables
+See `src/backtesting/CLAUDE.md` for full lifecycle, performance optimizations, and sandbox details.
 
 ### Dependency Direction (strict)
 ```
@@ -304,20 +244,7 @@ RateLimitMiddleware → AuthMiddleware → LoggingMiddleware → route handler
 
 **Order execution:** `POST /api/v1/trade/order` → RiskManager (8-step validation) → fetch price from Redis → market orders fill immediately with slippage; limit/stop orders queue as pending and are matched by background Celery task.
 
-**Backtesting:** `POST /backtest/create` → `POST /backtest/{id}/start` (bulk preloads all candle data into memory) → agent calls `POST /step` or `/step/batch` in a loop, reading prices and placing orders via sandbox endpoints → engine auto-completes on last step → `GET /results` returns metrics, equity curve, trade log. All data flows through an in-memory `BacktestSandbox` (no live Redis/exchange interaction). The `DataReplayer` enforces `WHERE bucket <= virtual_clock` on every query to prevent look-ahead bias.
-
-### Redis Key Patterns
-- Current prices: `HSET prices {SYMBOL} {price}`
-- Rate limits: `INCR rate_limit:{api_key}:{endpoint}:{minute}` + `EXPIRE 60`
-- Circuit breaker: `HSET circuit_breaker:{account_id} daily_pnl {value}`
-
-### Database
-- All DB access through repository classes in `src/database/repositories/`
-- All write operations must be atomic (SQLAlchemy transactions)
-- `NUMERIC(20,8)` for all price/quantity/balance columns
-- TimescaleDB hypertables for time-series only (`ticks`, `portfolio_snapshots`, `backtest_snapshots`)
-- Backtesting tables: `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (migration: `005_backtesting_tables.py`)
-- `candles_backfill` table stores Binance historical klines for periods before live ingestion (populated via `scripts/backfill_history.py`)
+**Backtesting:** `POST /backtest/create` → `/start` (bulk preloads candle data) → agent calls `/step` or `/step/batch` in a loop → engine auto-completes on last step → `GET /results` returns metrics.
 
 ### API Authentication
 All REST endpoints accept either:
@@ -326,131 +253,16 @@ All REST endpoints accept either:
 
 WebSocket authenticates via `?api_key=ak_live_...` query param (close code 4401 on failure).
 
-### WebSocket Protocol
-After connecting, send JSON messages to subscribe/unsubscribe:
-```json
-{"action": "subscribe",   "channel": "ticker", "symbol": "BTCUSDT"}
-{"action": "unsubscribe", "channel": "ticker", "symbol": "BTCUSDT"}
-{"action": "subscribe",   "channel": "orders"}
-```
+### Database
+- All DB access through repository classes in `src/database/repositories/`
+- All write operations must be atomic (SQLAlchemy transactions)
+- `NUMERIC(20,8)` for all price/quantity/balance columns
+- TimescaleDB hypertables for time-series only (`ticks`, `portfolio_snapshots`, `backtest_snapshots`)
 
-## Backtesting Engine
-
-The backtesting system lets AI agents replay historical market data and test trading strategies without risking real funds. The agent drives everything via API — the UI is **read-only observation**.
-
-### Architecture & Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/backtesting/engine.py` | **BacktestEngine** — orchestrator, manages active sessions (singleton) |
-| `src/backtesting/time_simulator.py` | **TimeSimulator** — virtual clock, steps through time range |
-| `src/backtesting/data_replayer.py` | **DataReplayer** — loads prices from TimescaleDB + candles_backfill |
-| `src/backtesting/sandbox.py` | **BacktestSandbox** — in-memory exchange (balances, orders, positions, trades) |
-| `src/backtesting/results.py` | **Metrics calculator** — Sharpe, Sortino, drawdown, win rate, profit factor |
-| `src/api/routes/backtest.py` | All backtest REST endpoints |
-| `src/api/schemas/backtest.py` | Pydantic request/response models |
-| `src/database/repositories/backtest_repo.py` | DB persistence (sessions, trades, snapshots) |
-| `src/tasks/backtest_cleanup.py` | Celery tasks: auto-cancel stale, delete old detail data |
-| `alembic/versions/005_backtesting_tables.py` | Migration: backtest_sessions, backtest_trades, backtest_snapshots |
-| `scripts/backfill_history.py` | Populate candles_backfill with Binance historical klines |
-
-### API Endpoints
-
-All under `/api/v1/backtest/` prefix, require authentication.
-
-**Lifecycle:**
-- `POST /create` — create session (date range, balance, pairs, strategy label)
-- `POST /{id}/start` — initialize sandbox, bulk preload price data
-- `POST /{id}/step` — advance one candle interval
-- `POST /{id}/step/batch` — advance N candles (body: `{"steps": N}`)
-- `POST /{id}/cancel` — abort early, save partial results
-- `GET  /{id}/status` — progress, current equity, virtual time
-
-**Sandbox trading (scoped to session):**
-- `POST   /{id}/trade/order` — place order in sandbox
-- `GET    /{id}/trade/orders` — list orders
-- `GET    /{id}/trade/orders/open` — pending orders
-- `GET    /{id}/trade/order/{oid}` — order status
-- `DELETE /{id}/trade/order/{oid}` — cancel order
-- `GET    /{id}/trade/history` — trade log
-
-**Sandbox market data:**
-- `GET /{id}/market/price/{symbol}` — price at virtual_time
-- `GET /{id}/market/prices` — all prices at virtual_time
-- `GET /{id}/market/ticker/{symbol}` — 24h stats at virtual_time
-- `GET /{id}/market/candles/{symbol}` — candles before virtual_time
-
-**Sandbox account:**
-- `GET /{id}/account/balance` — sandbox balances
-- `GET /{id}/account/positions` — sandbox positions
-- `GET /{id}/account/portfolio` — sandbox portfolio summary
-
-**Results & analysis:**
-- `GET /{id}/results` — full results + metrics
-- `GET /{id}/results/equity-curve` — equity curve data points
-- `GET /{id}/results/trades` — complete trade log
-- `GET /list` — list all backtests (filters: strategy_label, status, sort_by, limit)
-- `GET /compare` — compare multiple sessions side-by-side
-- `GET /best` — best session by metric
-
-**Mode management (under `/api/v1/account/`):**
-- `GET  /mode` — current operating mode (live/backtest)
-- `POST /mode` — switch mode
-
-**Historical data range (under `/api/v1/market/`):**
-- `GET /data-range` — earliest/latest timestamps, total pairs
-
-### Performance Optimizations
-
-- **Bulk preload**: `DataReplayer.preload_range()` loads ALL candle close prices for the full date range in a single SQL query into an in-memory dict (`_price_cache`). Subsequent `load_prices()` calls serve from cache with zero DB queries.
-- **Bisect lookup**: `_sorted_buckets` list + `bisect.bisect_right()` for O(log n) nearest-bucket lookups when timestamps don't align exactly.
-- **Snapshot frequency**: Equity snapshots captured every 60 steps (not every step), or when orders fill, or on the last step.
-- **DB write batching**: Progress written to DB every 500 steps (not every step), reducing write I/O.
-- **UNION with backfill**: All price queries UNION `candles_1m` (live aggregates) with `candles_backfill` (historical klines at any interval: 1m, 5m, 1h, 1d) to cover periods before live ingestion.
-- **Auto-completion**: Engine auto-calls `complete()` when the last step is reached, persisting all results.
-
-### Orphan Detection
-
-If the server restarts while a backtest is running, the in-memory session is lost but the DB status remains "running". The `/status` and `/list` endpoints detect orphaned sessions (status=running but not in `BacktestEngine._active`) and auto-mark them as "failed" via direct SQL UPDATE.
-
-### Look-Ahead Bias Prevention
-
-**Critical invariant**: Every query in `DataReplayer` filters `WHERE bucket <= virtual_clock`. The agent can never see future prices. This is enforced at the data layer, not the API layer, so there is no way to bypass it.
-
-### Backtest DB Schema
-
-- `backtest_sessions` — one row per backtest run (config, status, metrics JSONB, final equity, ROI, etc.)
-- `backtest_trades` — all trades within a session (FK → sessions ON DELETE CASCADE)
-- `backtest_snapshots` — equity snapshots over time (TimescaleDB hypertable, FK → sessions ON DELETE CASCADE)
-- `accounts` table extended with `current_mode` and `active_strategy_label` columns
-
-### Frontend (Read-Only)
-
-The backtesting UI is observation-only — no create/edit/action buttons.
-
-**Pages:**
-- `/backtest` — list view (active card + completed table + agent mode status)
-- `/backtest/[session_id]` — monitor (running) or results (completed)
-- `/backtest/compare` — side-by-side comparison
-
-**Components** (`Frontend/src/components/backtest/`):
-- `shared/` — status badges, virtual time display, strategy label badge, improvement indicator
-- `list/` — list page, active card, completed table, filters, agent mode status
-- `monitor/` — monitor page, progress timeline, live equity chart, live stats, positions, trades feed
-- `results/` — results page, summary cards, equity curve, drawdown chart, daily PnL, trade log, pair breakdown
-- `compare/` — compare page, overlaid equity chart, metrics table, auto-selector
-
-**Hooks** (`Frontend/src/hooks/`):
-- `use-backtest-list.ts` — TanStack Query, fetches list with filters
-- `use-backtest-status.ts` — polls running backtest every 2s, auto-stops when complete
-- `use-backtest-results.ts` — fetches results + equity curve + trade log
-- `use-backtest-compare.ts` — fetches comparison data, auto-groups by strategy prefix
-
-### Documentation
-
-- `docs/backtesting-guide.md` — technical guide (API lifecycle, strategies, step batching, position sizing)
-- `docs/backtesting-explained.md` — non-technical guide (analogies, plain English)
-- `docs/skill.md` — agent skill reference (includes backtesting workflow + strategy examples)
+### Redis Key Patterns
+- Current prices: `HSET prices {SYMBOL} {price}`
+- Rate limits: `INCR rate_limit:{api_key}:{endpoint}:{minute}` + `EXPIRE 60`
+- Circuit breaker: `HSET circuit_breaker:{account_id} daily_pnl {value}`
 
 ## Dependency Injection & Configuration
 
@@ -465,7 +277,7 @@ Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `
 Key patterns:
 - **Lazy imports** inside dependency functions (`# noqa: PLC0415`) to avoid circular imports — do not move these to module level
 - **Per-request lifecycle** for DB sessions (auto-commit on success, rollback on exception); Redis uses a shared pool (never closed per-request)
-- **CircuitBreaker is account-scoped**, not a singleton — construct it per-account with `starting_balance` and `daily_loss_limit_pct` (see comment block in `dependencies.py`)
+- **CircuitBreaker is account-scoped**, not a singleton — construct it per-account with `starting_balance` and `daily_loss_limit_pct`
 - **BacktestEngine is a singleton** — held in a module-level `_backtest_engine_instance` global
 
 ### Settings (`src/config.py`)
@@ -478,16 +290,8 @@ Key patterns:
 All exceptions inherit `TradingPlatformError` which provides:
 - `code` (string) and `http_status` (int) class attributes as defaults
 - `.to_dict()` → `{"error": {"code": ..., "message": ..., "details": ...}}`
-- `details` dict for structured payloads (e.g., `InsufficientBalanceError` includes `available` and `required`)
 
-The global exception handler in `src/main.py` auto-serializes any `TradingPlatformError` subclass.
-
-### Alembic Async Migrations
-- `alembic/env.py` uses async-first pattern: `asyncio.run(run_migrations_online())`
-- Database URL is read from `get_settings()`, not hardcoded in `alembic.ini`
-- Uses `NullPool` for short-lived migration connections
-- `prepend_sys_path = .` in `alembic.ini` is required for `src` module imports
-- Post-write hook runs `ruff format` on generated migrations
+The global exception handler in `src/main.py` auto-serializes any `TradingPlatformError` subclass. See `src/utils/CLAUDE.md` for the full hierarchy.
 
 ## Code Standards
 
@@ -522,11 +326,11 @@ Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
 
 ## SDK & Frontend
 
-**Python SDK** (`sdk/`): `AgentExchangeClient` (sync), `AsyncAgentExchangeClient` (async), `AgentExchangeWS` (streaming). Install locally: `pip install -e sdk/`
+**Python SDK** (`sdk/`): `AgentExchangeClient` (sync), `AsyncAgentExchangeClient` (async), `AgentExchangeWS` (streaming). Install locally: `pip install -e sdk/`. See `sdk/CLAUDE.md`.
 
-**MCP Server** (`src/mcp/`): 12 trading tools over stdio transport. Env vars: `MCP_API_KEY` (required), `API_BASE_URL` (default `http://localhost:8000`), `MCP_JWT_TOKEN` (optional).
+**MCP Server** (`src/mcp/`): 12 trading tools over stdio transport. See `src/mcp/CLAUDE.md`.
 
-**Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. Has its own `CLAUDE.md` at `Frontend/CLAUDE.md` with full UI conventions.
+**Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. See `Frontend/CLAUDE.md`.
 
 ### Frontend Commands
 
@@ -538,11 +342,6 @@ pnpm test             # Unit tests (vitest)
 pnpm test:e2e         # Playwright E2E tests
 pnpm dlx shadcn@latest add <component-name>  # Add shadcn/ui component
 ```
-
-Key frontend points:
-- Tailwind v4 configured via `@theme inline` in `src/app/globals.css` (no `tailwind.config.ts`)
-- State: Zustand (WS/streaming), TanStack Query (REST), React state (local UI)
-- `@/*` path alias maps to `./src/*`
 
 ## Docker
 

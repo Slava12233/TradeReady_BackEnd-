@@ -1,24 +1,24 @@
 """Backtest performance metrics calculator.
 
 Computes risk-adjusted returns, drawdown, and per-pair statistics from
-backtest trades and equity snapshots.  All calculations use ``Decimal``
-for precision.
+backtest trades and equity snapshots.  Internally delegates to the unified
+metrics calculator in ``src.metrics.calculator``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
-import math
+from decimal import Decimal
 from typing import Any
 
 from src.backtesting.sandbox import SandboxSnapshot, SandboxTrade
+from src.metrics.adapters import from_sandbox_snapshots, from_sandbox_trades
+from src.metrics.calculator import UnifiedMetrics, calculate_unified_metrics
 
 _QUANT4 = Decimal("0.0001")
 _QUANT2 = Decimal("0.01")
 _QUANT8 = Decimal("0.00000001")
 _ZERO = Decimal("0")
-_ANNUALIZE = Decimal(str(math.sqrt(365)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +77,24 @@ class EquityPoint:
     equity: str
 
 
+def _unified_to_backtest_metrics(um: UnifiedMetrics, avg_trade_duration: Decimal) -> BacktestMetrics:
+    """Map UnifiedMetrics to the BacktestMetrics dataclass."""
+    return BacktestMetrics(
+        sharpe_ratio=um.sharpe_ratio,
+        sortino_ratio=um.sortino_ratio,
+        max_drawdown_pct=um.max_drawdown_pct,
+        max_drawdown_duration_days=um.max_drawdown_duration_days,
+        win_rate=um.win_rate,
+        profit_factor=um.profit_factor,
+        avg_win=um.avg_win,
+        avg_loss=um.avg_loss,
+        best_trade=um.best_trade,
+        worst_trade=um.worst_trade,
+        avg_trade_duration_minutes=avg_trade_duration,
+        trades_per_day=um.trades_per_day,
+    )
+
+
 def calculate_metrics(
     trades: list[SandboxTrade],
     snapshots: list[SandboxSnapshot],
@@ -94,82 +112,29 @@ def calculate_metrics(
     Returns:
         :class:`BacktestMetrics` with all computed values.
     """
-    # ── Trade PnL classification ─────────────────────────────────────────
-    pnls: list[Decimal] = []
-    for t in trades:
-        if t.realized_pnl is not None:
-            pnls.append(t.realized_pnl)
+    # Convert to unified inputs and compute
+    metric_trades = from_sandbox_trades(trades)
+    metric_snapshots = from_sandbox_snapshots(snapshots)
 
-    wins = [p for p in pnls if p > _ZERO]
-    losses = [p for p in pnls if p < _ZERO]
+    um = calculate_unified_metrics(
+        trades=metric_trades,
+        snapshots=metric_snapshots,
+        starting_balance=starting_balance,
+        duration_days=duration_days,
+        snapshot_interval_seconds=86400,
+    )
 
-    win_rate = (Decimal(len(wins)) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2) if pnls else _ZERO
-
-    avg_win = (sum(wins, _ZERO) / Decimal(len(wins))).quantize(_QUANT8) if wins else _ZERO
-    avg_loss = (sum(losses, _ZERO) / Decimal(len(losses))).quantize(_QUANT8) if losses else _ZERO
-
-    gross_profit = sum(wins, _ZERO)
-    gross_loss = abs(sum(losses, _ZERO))
-    profit_factor = (gross_profit / gross_loss).quantize(_QUANT4) if gross_loss > _ZERO else None
-
-    best_trade = max(pnls) if pnls else _ZERO
-    worst_trade = min(pnls) if pnls else _ZERO
-
-    # ── Trade duration (avg minutes between consecutive trades) ──────────
+    # Compute avg trade duration (backtest-specific, not in unified metrics)
     avg_trade_duration = _ZERO
     if len(trades) >= 2:
-        durations = []
+        durations: list[Decimal] = []
         for i in range(1, len(trades)):
             dt = (trades[i].simulated_at - trades[i - 1].simulated_at).total_seconds()
             durations.append(Decimal(str(dt)) / Decimal("60"))
         if durations:
             avg_trade_duration = (sum(durations, _ZERO) / Decimal(len(durations))).quantize(_QUANT2)
 
-    trades_per_day = (Decimal(len(trades)) / duration_days).quantize(_QUANT2) if duration_days > _ZERO else _ZERO
-
-    # ── Drawdown from equity curve ───────────────────────────────────────
-    max_dd_pct = _ZERO
-    max_dd_duration_days = _ZERO
-
-    if snapshots:
-        peak = snapshots[0].total_equity
-        dd_start_idx = 0
-        current_dd_start = 0
-
-        for i, snap in enumerate(snapshots):
-            if snap.total_equity > peak:
-                peak = snap.total_equity
-                current_dd_start = i
-
-            if peak > _ZERO:
-                dd = ((peak - snap.total_equity) / peak * Decimal("100")).quantize(_QUANT2)
-                if dd > max_dd_pct:
-                    max_dd_pct = dd
-                    dd_start_idx = current_dd_start
-
-        # Duration of max drawdown in days
-        if dd_start_idx < len(snapshots) - 1:
-            dd_seconds = (snapshots[-1].simulated_at - snapshots[dd_start_idx].simulated_at).total_seconds()
-            max_dd_duration_days = (Decimal(str(dd_seconds)) / Decimal("86400")).quantize(_QUANT2)
-
-    # ── Sharpe & Sortino from daily returns ──────────────────────────────
-    sharpe = _compute_sharpe(snapshots)
-    sortino = _compute_sortino(snapshots)
-
-    return BacktestMetrics(
-        sharpe_ratio=sharpe,
-        sortino_ratio=sortino,
-        max_drawdown_pct=max_dd_pct,
-        max_drawdown_duration_days=max_dd_duration_days,
-        win_rate=win_rate,
-        profit_factor=profit_factor,
-        avg_win=avg_win,
-        avg_loss=avg_loss,
-        best_trade=best_trade,
-        worst_trade=worst_trade,
-        avg_trade_duration_minutes=avg_trade_duration,
-        trades_per_day=trades_per_day,
-    )
+    return _unified_to_backtest_metrics(um, avg_trade_duration)
 
 
 def calculate_per_pair_stats(trades: list[SandboxTrade]) -> list[PairStats]:
@@ -226,68 +191,3 @@ def generate_equity_curve(snapshots: list[SandboxSnapshot], interval: int = 1) -
         for i, snap in enumerate(snapshots)
         if i % interval == 0
     ]
-
-
-# ── Internal helpers ─────────────────────────────────────────────────────────
-
-
-def _compute_daily_returns(snapshots: list[SandboxSnapshot]) -> list[Decimal]:
-    """Extract daily returns from snapshot equity values."""
-    if len(snapshots) < 2:
-        return []
-
-    # Group by date, take last snapshot per day
-    daily: dict[str, Decimal] = {}
-    for snap in snapshots:
-        day_key = snap.simulated_at.strftime("%Y-%m-%d")
-        daily[day_key] = snap.total_equity
-
-    equities = list(daily.values())
-    if len(equities) < 2:
-        return []
-
-    returns: list[Decimal] = []
-    for i in range(1, len(equities)):
-        if equities[i - 1] > _ZERO:
-            ret = (equities[i] - equities[i - 1]) / equities[i - 1]
-            returns.append(ret)
-    return returns
-
-
-def _compute_sharpe(snapshots: list[SandboxSnapshot]) -> Decimal | None:
-    """Annualised Sharpe ratio (risk-free rate = 0)."""
-    returns = _compute_daily_returns(snapshots)
-    if len(returns) < 2:
-        return None
-
-    mean_ret = sum(returns) / Decimal(len(returns))
-    variance = sum((r - mean_ret) ** 2 for r in returns) / Decimal(len(returns) - 1)
-
-    std_dev = Decimal(str(math.sqrt(float(variance))))
-    if std_dev == _ZERO:
-        return None
-
-    sharpe = (mean_ret / std_dev) * _ANNUALIZE
-    return sharpe.quantize(_QUANT4, rounding=ROUND_HALF_UP)
-
-
-def _compute_sortino(snapshots: list[SandboxSnapshot]) -> Decimal | None:
-    """Annualised Sortino ratio (downside deviation only)."""
-    returns = _compute_daily_returns(snapshots)
-    if len(returns) < 2:
-        return None
-
-    mean_ret = sum(returns) / Decimal(len(returns))
-    downside = [r for r in returns if r < _ZERO]
-
-    if not downside:
-        return None
-
-    downside_var = sum(r**2 for r in downside) / Decimal(len(downside))
-    downside_std = Decimal(str(math.sqrt(float(downside_var))))
-
-    if downside_std == _ZERO:
-        return None
-
-    sortino = (mean_ret / downside_std) * _ANNUALIZE
-    return sortino.quantize(_QUANT4, rounding=ROUND_HALF_UP)

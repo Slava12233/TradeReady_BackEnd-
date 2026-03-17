@@ -136,6 +136,9 @@ class BacktestSandbox:
         starting_balance: Initial virtual USDT balance.
         slippage_factor: Base slippage coefficient (default 0.1).
         fee_fraction: Trading fee fraction (default 0.001 = 0.1%).
+        risk_limits: Optional dict of agent risk profile overrides.
+            Supported keys: ``max_position_size_pct``, ``max_order_size_pct``,
+            ``daily_loss_limit_pct``.
     """
 
     def __init__(
@@ -144,11 +147,13 @@ class BacktestSandbox:
         starting_balance: Decimal,
         slippage_factor: Decimal = Decimal("0.1"),
         fee_fraction: Decimal = _FEE_FRACTION,
+        risk_limits: dict[str, Any] | None = None,
     ) -> None:
         self._session_id = session_id
         self._starting_balance = starting_balance
         self._slippage_factor = slippage_factor
         self._fee_fraction = fee_fraction
+        self._risk_limits = risk_limits
 
         # State
         self._balances: dict[str, SandboxBalance] = {
@@ -161,6 +166,7 @@ class BacktestSandbox:
         self._snapshots: list[SandboxSnapshot] = []
         self._cumulative_realized_pnl = Decimal("0")
         self._cumulative_fees = Decimal("0")
+        self._daily_realized_pnl: dict[str, Decimal] = {}  # date-string → daily PnL
 
     # ── Order placement ──────────────────────────────────────────────────
 
@@ -195,6 +201,22 @@ class BacktestSandbox:
         ref_price = current_prices.get(symbol)
 
         if ref_price is None:
+            order = SandboxOrder(
+                id=order_id,
+                symbol=symbol,
+                side=side,
+                type=order_type,
+                quantity=quantity,
+                price=price,
+                status="rejected",
+                created_at=virtual_time,
+            )
+            self._orders.append(order)
+            return OrderResult(order_id=order_id, status="rejected")
+
+        # Risk limit checks (when risk_limits configured)
+        rejection = self._check_risk_limits(symbol, side, quantity, ref_price, current_prices, virtual_time)
+        if rejection is not None:
             order = SandboxOrder(
                 id=order_id,
                 symbol=symbol,
@@ -482,6 +504,64 @@ class BacktestSandbox:
     def trades(self) -> list[SandboxTrade]:
         return list(self._trades)
 
+    # ── Risk limit checks ────────────────────────────────────────────────
+
+    def _check_risk_limits(
+        self,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        ref_price: Decimal,
+        current_prices: dict[str, Decimal],
+        virtual_time: datetime,
+    ) -> str | None:
+        """Check agent risk limits. Returns rejection reason or None if OK."""
+        if not self._risk_limits:
+            return None
+
+        portfolio = self.get_portfolio(current_prices)
+        equity = portfolio.total_equity
+
+        if equity <= 0:
+            return None
+
+        order_value = quantity * ref_price
+
+        # Max order size check
+        max_order_pct = self._risk_limits.get("max_order_size_pct")
+        if max_order_pct is not None:
+            max_order_value = equity * Decimal(str(max_order_pct)) / Decimal("100")
+            if order_value > max_order_value:
+                return f"Order value {order_value} exceeds max_order_size_pct ({max_order_pct}%)"
+
+        # Max position size check (only for buys — sells reduce position)
+        max_pos_pct = self._risk_limits.get("max_position_size_pct")
+        if max_pos_pct is not None and side == "buy":
+            existing_pos = self._positions.get(symbol)
+            existing_value = Decimal("0")
+            if existing_pos and existing_pos.quantity > 0:
+                existing_value = existing_pos.quantity * ref_price
+            resulting_value = existing_value + order_value
+            max_pos_value = equity * Decimal(str(max_pos_pct)) / Decimal("100")
+            if resulting_value > max_pos_value:
+                return f"Position value {resulting_value} would exceed max_position_size_pct ({max_pos_pct}%)"
+
+        # Daily loss limit check
+        daily_loss_pct = self._risk_limits.get("daily_loss_limit_pct")
+        if daily_loss_pct is not None:
+            date_key = virtual_time.strftime("%Y-%m-%d")
+            daily_pnl = self._daily_realized_pnl.get(date_key, Decimal("0"))
+            max_loss = self._starting_balance * Decimal(str(daily_loss_pct)) / Decimal("100")
+            if daily_pnl < Decimal("0") and abs(daily_pnl) >= max_loss:
+                return f"Daily loss {abs(daily_pnl)} exceeds daily_loss_limit_pct ({daily_loss_pct}%)"
+
+        return None
+
+    def _track_daily_pnl(self, realized_pnl: Decimal, virtual_time: datetime) -> None:
+        """Track realized PnL per day for daily loss limit enforcement."""
+        date_key = virtual_time.strftime("%Y-%m-%d")
+        self._daily_realized_pnl[date_key] = self._daily_realized_pnl.get(date_key, Decimal("0")) + realized_pnl
+
     # ── Internal helpers ─────────────────────────────────────────────────
 
     def _execute_market_order(
@@ -535,6 +615,7 @@ class BacktestSandbox:
             self._credit_balance("USDT", quote_amount - fee)
             if realized_pnl is not None:
                 self._cumulative_realized_pnl += realized_pnl
+                self._track_daily_pnl(realized_pnl, virtual_time)
 
         self._cumulative_fees += fee
 

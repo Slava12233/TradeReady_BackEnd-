@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
+from src.cache.price_cache import PriceCache
 from src.database.models import (
     Balance,
     BattleSnapshot,
@@ -31,10 +32,12 @@ class SnapshotEngine:
 
     Args:
         session: An open AsyncSession.
+        price_cache: Redis-backed price cache for current market prices.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, price_cache: PriceCache) -> None:
         self._session = session
+        self._price_cache = price_cache
         self._battle_repo = BattleRepository(session)
 
     async def capture_battle_snapshots(self, battle_id: UUID) -> int:
@@ -117,8 +120,42 @@ class SnapshotEngine:
         return result.scalar_one()
 
     async def _get_unrealized_pnl(self, agent_id: UUID) -> Decimal:
-        """Placeholder — returns 0. Real implementation would need current prices."""
-        return Decimal("0")
+        """Calculate unrealized PnL from open positions using current Redis prices."""
+        positions = await self._get_open_positions(agent_id)
+        if not positions:
+            return Decimal("0")
+
+        total_unrealized = Decimal("0")
+        for pos in positions:
+            try:
+                current_price = await self._price_cache.get_price(pos.symbol)
+                if current_price is None:
+                    logger.warning(
+                        "snapshot.price_unavailable",
+                        agent_id=str(agent_id),
+                        symbol=pos.symbol,
+                    )
+                    continue
+                if pos.avg_entry_price and pos.quantity:
+                    unrealized = (current_price - pos.avg_entry_price) * pos.quantity
+                    total_unrealized += unrealized
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "snapshot.unrealized_pnl_error",
+                    agent_id=str(agent_id),
+                    symbol=pos.symbol,
+                )
+
+        return total_unrealized
+
+    async def _get_open_positions(self, agent_id: UUID) -> list[Position]:
+        """Return all open positions for an agent."""
+        stmt = select(Position).where(
+            Position.agent_id == agent_id,
+            Position.quantity > 0,
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     async def _get_realized_pnl(self, agent_id: UUID) -> Decimal:
         """Sum of realized PnL from all trades for this agent."""

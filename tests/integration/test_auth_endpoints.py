@@ -28,6 +28,8 @@ import pytest
 from src.accounts.service import AccountCredentials
 from src.config import Settings
 from src.database.models import Account
+
+pytestmark = pytest.mark.slow
 from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,

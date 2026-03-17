@@ -26,6 +26,15 @@ class _BaseSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class HistoricalBattleConfig(_BaseSchema):
+    """Configuration for a historical battle."""
+
+    start_time: datetime = Field(..., description="Start of historical period (UTC).")
+    end_time: datetime = Field(..., description="End of historical period (UTC).")
+    candle_interval: int = Field(default=60, ge=1, description="Candle interval in seconds.")
+    pairs: list[str] | None = Field(default=None, description="Trading pairs to include.")
+
+
 class BattleCreate(_BaseSchema):
     """Request body for ``POST /api/v1/battles``."""
 
@@ -38,6 +47,11 @@ class BattleCreate(_BaseSchema):
     ranking_metric: str = Field(
         default="roi_pct",
         description="Metric to rank participants: roi_pct, total_pnl, sharpe_ratio, win_rate, profit_factor.",
+    )
+    battle_mode: str = Field(default="live", description="Battle mode: 'live' or 'historical'.")
+    backtest_config: HistoricalBattleConfig | None = Field(
+        default=None,
+        description="Configuration for historical battles.",
     )
 
 
@@ -92,6 +106,8 @@ class BattleResponse(_BaseSchema):
     created_at: datetime
     participant_count: int = 0
     participants: list[BattleParticipantResponse] | None = None
+    battle_mode: str = "live"
+    backtest_config: dict[str, object] | None = None
 
 
 class BattleListResponse(_BaseSchema):
@@ -140,3 +156,54 @@ class BattlePresetResponse(_BaseSchema):
     starting_balance: str
     allowed_pairs: list[str] | None = None
     best_for: str
+
+
+class HistoricalStepRequest(_BaseSchema):
+    """Request body for POST /battles/{id}/step/batch."""
+
+    steps: int = Field(default=1, ge=1, le=10000, description="Number of steps to advance.")
+
+
+class HistoricalStepResponse(_BaseSchema):
+    """Response for historical battle step endpoints."""
+
+    battle_id: UUID
+    virtual_time: datetime
+    step: int
+    total_steps: int
+    progress_pct: str
+    is_complete: bool
+    prices: dict[str, str]
+    participants: list[dict[str, object]]
+
+
+class HistoricalOrderRequest(_BaseSchema):
+    """Request body for POST /battles/{id}/trade/order."""
+
+    agent_id: UUID = Field(..., description="Agent placing the order.")
+    symbol: str = Field(..., description="Trading pair.")
+    side: str = Field(..., description="'buy' or 'sell'.")
+    order_type: str = Field(default="market", description="Order type.")
+    quantity: str = Field(..., description="Quantity as decimal string.")
+    price: str | None = Field(default=None, description="Target price for limit/stop orders.")
+
+
+class HistoricalPricesResponse(_BaseSchema):
+    """Response for GET /battles/{id}/market/prices."""
+
+    battle_id: UUID
+    virtual_time: datetime
+    prices: dict[str, str]
+
+
+class BattleReplayRequest(_BaseSchema):
+    """Request body for ``POST /api/v1/battles/{battle_id}/replay``."""
+
+    override_config: dict[str, object] | None = Field(
+        default=None,
+        description="Override backtest_config fields for the replay.",
+    )
+    agent_ids: list[UUID] | None = Field(
+        default=None,
+        description="Override participant agent IDs. Uses original participants if omitted.",
+    )

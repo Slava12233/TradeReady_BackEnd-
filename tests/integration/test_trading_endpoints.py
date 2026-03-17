@@ -44,6 +44,8 @@ from src.utils.exceptions import (
     PriceNotAvailableError,
 )
 
+pytestmark = pytest.mark.slow
+
 # ---------------------------------------------------------------------------
 # Test settings — no real infra
 # ---------------------------------------------------------------------------

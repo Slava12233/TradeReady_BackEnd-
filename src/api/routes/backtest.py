@@ -47,6 +47,21 @@ def _get_account_id(request: Request) -> UUID:
     return cast(UUID, request.state.account.id)
 
 
+def _get_agent_id(request: Request) -> UUID | None:
+    """Extract agent_id from auth middleware state or X-Agent-Id header.
+
+    Returns the agent UUID if available from API key auth (request.state.agent)
+    or from the X-Agent-Id header (JWT auth). Returns None otherwise.
+    """
+    agent = getattr(request.state, "agent", None)
+    if agent is not None:
+        return cast(UUID, agent.id)
+    header_val = request.headers.get("x-agent-id")
+    if header_val:
+        return UUID(header_val)
+    return None
+
+
 def _step_to_response(result: Any) -> StepResponse:  # noqa: ANN401
     """Convert engine StepResult to API response."""
     return StepResponse(
@@ -117,6 +132,8 @@ async def create_backtest(
 ) -> BacktestCreateResponse:
     """Create a new backtest session."""
     account_id = _get_account_id(request)
+    # Prefer explicit agent_id from body, fall back to auth context
+    agent_id = UUID(body.agent_id) if body.agent_id else _get_agent_id(request)
 
     config = BacktestConfig(
         start_time=body.start_time,
@@ -125,6 +142,7 @@ async def create_backtest(
         candle_interval=body.candle_interval,
         pairs=body.pairs,
         strategy_label=body.strategy_label,
+        agent_id=agent_id,
     )
 
     session = await engine.create_session(account_id, config, db)
@@ -138,6 +156,7 @@ async def create_backtest(
         status=session.status,
         total_steps=session.total_steps,
         estimated_pairs=len(pairs),
+        agent_id=str(session.agent_id) if session.agent_id else None,
     )
 
 
@@ -509,6 +528,7 @@ async def get_backtest_status(
 
     return BacktestListItem(
         session_id=str(s.id),
+        agent_id=str(s.agent_id) if s.agent_id else None,
         strategy_label=s.strategy_label,
         start_time=s.start_time,
         end_time=s.end_time,
@@ -659,6 +679,7 @@ async def list_backtests(
     db: DbSessionDep,
     strategy_label: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    agent_id: str | None = Query(default=None, description="Filter by agent UUID"),
     sort_by: str = Query(default="created_at"),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> BacktestListResponse:
@@ -666,8 +687,10 @@ async def list_backtests(
     from datetime import datetime as _dt
 
     account_id = _get_account_id(request)
+    agent_uuid = UUID(agent_id) if agent_id else None
     sessions = await repo.list_sessions(
         account_id,
+        agent_id=agent_uuid,
         strategy_label=strategy_label,
         status=status,
         sort_by=sort_by,
@@ -688,6 +711,7 @@ async def list_backtests(
         # Re-fetch so the response reflects the updated status
         sessions = await repo.list_sessions(
             account_id,
+            agent_id=agent_uuid,
             strategy_label=strategy_label,
             status=status,
             sort_by=sort_by,
@@ -697,6 +721,7 @@ async def list_backtests(
     items = [
         BacktestListItem(
             session_id=str(s.id),
+            agent_id=str(s.agent_id) if s.agent_id else None,
             strategy_label=s.strategy_label,
             start_time=s.start_time,
             end_time=s.end_time,

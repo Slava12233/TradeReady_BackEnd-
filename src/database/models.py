@@ -1200,6 +1200,11 @@ class BacktestSession(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    agent_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     strategy_label: Mapped[str] = mapped_column(
         VARCHAR(100),
         nullable=False,
@@ -1300,6 +1305,7 @@ class BacktestSession(Base):
     )
 
     account: Mapped[Account] = relationship("Account", back_populates="backtest_sessions")
+    agent: Mapped[Agent | None] = relationship("Agent")
     backtest_trades: Mapped[list[BacktestTrade]] = relationship(
         "BacktestTrade", back_populates="session", cascade="all, delete-orphan"
     )
@@ -1321,6 +1327,8 @@ class BacktestSession(Base):
             "roi_pct",
             postgresql_ops={"roi_pct": "DESC NULLS LAST"},
         ),
+        Index("idx_bt_sessions_agent", "agent_id"),
+        Index("idx_bt_sessions_agent_status", "agent_id", "status"),
     )
 
     def __repr__(self) -> str:
@@ -1546,6 +1554,15 @@ class Battle(Base):
         nullable=False,
         server_default="'{}'",
     )
+    battle_mode: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'live'",
+    )
+    backtest_config: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
     preset: Mapped[str | None] = mapped_column(
         VARCHAR(50),
         nullable=True,
@@ -1585,6 +1602,10 @@ class Battle(Base):
         CheckConstraint(
             "ranking_metric IN ('roi_pct', 'total_pnl', 'sharpe_ratio', 'win_rate', 'profit_factor')",
             name="ck_battles_ranking_metric",
+        ),
+        CheckConstraint(
+            "battle_mode IN ('live', 'historical')",
+            name="ck_battles_mode",
         ),
         Index("idx_battles_account", "account_id"),
         Index("idx_battles_status", "account_id", "status"),
@@ -1630,6 +1651,11 @@ class BattleParticipant(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("agents.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    backtest_session_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("backtest_sessions.id", ondelete="SET NULL"),
+        nullable=True,
     )
     snapshot_balance: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 8),

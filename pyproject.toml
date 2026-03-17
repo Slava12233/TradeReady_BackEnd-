@@ -64,3 +64,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "--cov=src --cov-report=term-missing --cov-report=html"
+markers = [
+    "slow: marks tests that need full app startup or take >5s (deselect with '-m \"not slow\"')",
+    "celery: marks Celery task tests (select with '-m celery')",
+]

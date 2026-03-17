@@ -24,7 +24,9 @@ def mock_session():
 
 @pytest.fixture
 def engine(mock_session):
-    eng = SnapshotEngine(mock_session)
+    mock_price_cache = AsyncMock()
+    mock_price_cache.get_price = AsyncMock(return_value=None)
+    eng = SnapshotEngine(mock_session, mock_price_cache)
     eng._battle_repo = AsyncMock()
     return eng
 

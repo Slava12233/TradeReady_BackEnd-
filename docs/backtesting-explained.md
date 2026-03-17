@@ -15,6 +15,7 @@ Think of it like a flight simulator for trading.
 ### The Setup
 
 You pick:
+- **Which agent** — "Use my momentum bot agent"
 - **A date range** — "I want to test from January 1 to December 31, 2025"
 - **A starting balance** — "Give me $10,000 in fake money"
 - **Which coins to trade** — "Just Bitcoin and Ethereum" (or all 600+ available)
@@ -166,6 +167,7 @@ The simulation isn't just playing pretend. It accounts for real-world factors:
 - **Trading fees** — 0.1% per trade, same as Binance
 - **Slippage** — when you buy, you don't get the exact price you saw. The bigger your order, the worse the slippage. This is how real markets work.
 - **No cheating** — the system enforces that your agent can only see prices up to the current simulated time. It cannot peek into the future.
+- **Risk rules** — if your agent has risk limits configured (max position size, daily loss limit), the backtest sandbox enforces them just like the live exchange would. Your backtest results reflect real risk constraints.
 
 ---
 

@@ -16,4 +16,7 @@ You'll see all 11 tables — right-click any table and choose View/Edit Data to 
 
 
 - Email: e2etest_1773664730@test.com       
-  - Password: E2eTestPass123!                                                                                                                                                                 - Password: E2eTestPass123!
+  - Password: E2eTestPass123!             
+  
+  
+run tests :   pytest --cov=src --cov-report=html                                                                                                                                                    - Password: E2eTestPass123!

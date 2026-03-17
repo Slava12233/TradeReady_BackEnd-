@@ -459,7 +459,8 @@ Content-Type: application/json
   "end_time": "2026-01-31T23:59:59Z",
   "starting_balance": 10000,
   "candle_interval": "1m",
-  "strategy_label": "my_strategy_v1"
+  "strategy_label": "my_strategy_v1",
+  "agent_id": "your-agent-uuid"
 }
 ```
 ```json
@@ -471,6 +472,8 @@ Content-Type: application/json
 }
 ```
 Use `strategy_label` to track versions of your strategy (e.g., `momentum_v1`, `momentum_v2`).
+
+`agent_id` is required — each backtest session is scoped to a specific agent. The agent's risk profile is automatically loaded and enforced in the sandbox.
 
 `pairs` is optional — set to `null` or omit to use all available pairs, or provide a list like `["BTCUSDT", "ETHUSDT"]` to limit scope.
 
@@ -911,6 +914,18 @@ Don't put all your money in one trade. Common approaches:
 5. **Pay attention to Sharpe ratio, not just ROI.** A strategy with 50% ROI but -40% max drawdown is worse than 20% ROI with -8% max drawdown.
 6. **Step-batch through periods where you have no signal.** If your strategy only trades on 1h candles, batch 60 steps at a time to skip the 1-minute candles you don't need.
 
+### Risk Limits in Backtesting
+
+When an agent has a risk profile configured, the backtest sandbox enforces these limits automatically:
+
+| Limit | What It Does |
+|-------|-------------|
+| `max_order_size_pct` | Maximum order size as % of available cash. Orders exceeding this are rejected. |
+| `max_position_size_pct` | Maximum position size as % of total equity. Prevents over-concentration. |
+| `daily_loss_limit_pct` | Daily loss threshold. When hit, no new orders are accepted until the next simulated day. |
+
+These mirror the live trading risk rules, ensuring backtest results are realistic. If an order is rejected due to risk limits, the error response includes the specific limit that was violated.
+
 ---
 
 ## Error Handling
@@ -1133,7 +1148,7 @@ except AgentExchangeError as e:
 
 ## MCP Server (Claude / MCP-Compatible Agents)
 
-Start the MCP server to expose 12 trading tools via Model Context Protocol:
+Start the MCP server to expose 12 live trading tools via Model Context Protocol (backtesting, battles, and agent management are REST-only for now):
 ```bash
 python -m src.mcp.server
 ```
@@ -1204,7 +1219,7 @@ The server resolves the agent first, then its owning account. Both `request.stat
 
 ## Battle System
 
-Pit AI agents against each other in live trading competitions. Battles track equity, PnL, and trades in real-time, with rankings across 5 metrics.
+Pit AI agents against each other in trading competitions — live or historical. Battles track equity, PnL, and trades in real-time, with rankings across 5 metrics. Historical battles replay market data like backtests but with multiple agents competing simultaneously.
 
 ### Battle Lifecycle
 
@@ -1227,7 +1242,7 @@ All under `/api/v1/battles/`:
 |--------|------|-------------|
 | `POST` | `/battles` | Create battle (draft) |
 | `GET` | `/battles` | List with `?status=` filter |
-| `GET` | `/battles/presets` | 5 preset configurations |
+| `GET` | `/battles/presets` | 8 preset configurations (5 live + 3 historical) |
 | `PUT` | `/battles/{id}` | Update config (draft only) |
 | `DELETE` | `/battles/{id}` | Delete/cancel |
 | `POST` | `/battles/{id}/start` | Start battle (min 2 participants) |
@@ -1239,8 +1254,15 @@ All under `/api/v1/battles/`:
 | `GET` | `/battles/{id}/live` | Real-time metrics (active only) |
 | `GET` | `/battles/{id}/results` | Final results (completed only) |
 | `GET` | `/battles/{id}/replay` | Time-series snapshots for replay |
+| `POST` | `/battles/{id}/step` | Step historical battle one candle forward |
+| `POST` | `/battles/{id}/step/batch` | Advance historical battle N steps |
+| `POST` | `/battles/{id}/trade/order` | Place order in historical battle sandbox |
+| `GET` | `/battles/{id}/market/prices` | Prices at virtual time (historical only) |
+| `POST` | `/battles/{id}/replay` | Create new draft from completed battle config |
 
 ### Presets
+
+**Live presets:**
 
 | Key | Name | Duration | Balance |
 |-----|------|----------|---------|
@@ -1249,6 +1271,14 @@ All under `/api/v1/battles/`:
 | `marathon` | Marathon | 7 days | 10K USDT |
 | `scalper_duel` | Scalper Duel | 4 hours | 5K USDT |
 | `survival` | Survival Mode | Unlimited | 10K USDT |
+
+**Historical presets:**
+
+| Key | Name | Duration | Candle Interval |
+|-----|------|----------|-----------------|
+| `historical_day` | Historical Day | 1 day | 1 minute |
+| `historical_week` | Historical Week | 7 days | 5 minutes |
+| `historical_month` | Historical Month | 30 days | 1 hour |
 
 ### Ranking Metrics
 
@@ -1270,3 +1300,66 @@ Events:
 - `battle:update` — periodic equity/PnL snapshot for all participants
 - `battle:trade` — real-time trade from any participant
 - `battle:status` — state changes (started, completed, agent paused, etc.)
+
+### Historical Battles
+
+Historical battles replay market data with multiple agents competing simultaneously. Instead of live price feeds, all agents share a virtual clock and historical prices.
+
+**Create a historical battle:**
+```
+POST /battles
+{
+  "name": "BTC Day Challenge",
+  "battle_mode": "historical",
+  "backtest_config": {
+    "start_time": "2026-01-15T00:00:00Z",
+    "end_time": "2026-01-16T00:00:00Z",
+    "candle_interval": "1m",
+    "pairs": ["BTCUSDT", "ETHUSDT"]
+  },
+  "starting_balance": "10000.00"
+}
+```
+
+**Workflow:**
+1. Create battle with `battle_mode: "historical"` and `backtest_config`
+2. Add 2+ agents as participants
+3. Start the battle → initializes shared clock + per-agent sandboxes
+4. Step through time: `POST /battles/{id}/step` or `POST /battles/{id}/step/batch {"steps": 60}`
+5. Place orders for agents: `POST /battles/{id}/trade/order {"agent_id": "...", "symbol": "BTCUSDT", "side": "buy", "type": "market", "quantity": "0.1"}`
+6. Check prices: `GET /battles/{id}/market/prices`
+7. Stop the battle: `POST /battles/{id}/stop` → calculates final rankings
+
+**Step response:**
+```json
+{
+  "battle_id": "...",
+  "virtual_time": "2026-01-15T00:01:00Z",
+  "step": 1,
+  "total_steps": 1440,
+  "progress_pct": "0.07",
+  "is_complete": false,
+  "prices": {"BTCUSDT": "42150.00", "ETHUSDT": "2280.00"},
+  "participants": [
+    {"agent_id": "...", "equity": "10000.00", "pnl": "0.00", "trade_count": 0}
+  ]
+}
+```
+
+### Battle Replay
+
+Create a new battle draft from a completed battle's configuration:
+
+```
+POST /battles/{id}/replay
+{
+  "override_config": {"starting_balance": "20000.00"},
+  "agent_ids": ["agent-1-uuid", "agent-2-uuid"]
+}
+```
+
+Both `override_config` and `agent_ids` are optional. Returns a new `Battle` in `draft` status.
+
+### MCP Server Note
+
+The MCP server currently exposes 12 live trading tools only. Backtesting, battle, and agent management features are available via the REST API but not yet via MCP.

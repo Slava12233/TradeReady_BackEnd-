@@ -86,6 +86,36 @@ BATTLE_PRESETS: dict[str, BattlePreset] = {
         allowed_pairs=None,
         best_for="Last agent standing",
     ),
+    "historical_day": BattlePreset(
+        key="historical_day",
+        name="Historical Day",
+        description="1-day historical battle with 1-minute candles.",
+        duration_type="historical",
+        duration_seconds=86400,
+        starting_balance=Decimal("10000"),
+        allowed_pairs=None,
+        best_for="Quick historical comparison",
+    ),
+    "historical_week": BattlePreset(
+        key="historical_week",
+        name="Historical Week",
+        description="7-day historical battle with 5-minute candles.",
+        duration_type="historical",
+        duration_seconds=604800,
+        starting_balance=Decimal("10000"),
+        allowed_pairs=None,
+        best_for="Week-long historical analysis",
+    ),
+    "historical_month": BattlePreset(
+        key="historical_month",
+        name="Historical Month",
+        description="30-day historical battle with 1-hour candles.",
+        duration_type="historical",
+        duration_seconds=2592000,
+        starting_balance=Decimal("10000"),
+        allowed_pairs=None,
+        best_for="Long-term historical strategy testing",
+    ),
 }
 
 
@@ -99,13 +129,23 @@ def get_preset_config(key: str) -> dict[str, object]:
     preset = BATTLE_PRESETS.get(key)
     if preset is None:
         return {}
-    return {
+    config = {
         "duration_type": preset.duration_type,
         "duration_seconds": preset.duration_seconds,
         "starting_balance": str(preset.starting_balance),
         "allowed_pairs": preset.allowed_pairs,
         "wallet_mode": "fresh",
     }
+    if preset.duration_type == "historical":
+        config["battle_mode"] = "historical"
+        # Default candle intervals for historical presets
+        candle_intervals = {
+            "historical_day": 60,
+            "historical_week": 300,
+            "historical_month": 3600,
+        }
+        config["candle_interval"] = candle_intervals.get(key, 60)
+    return config
 
 
 def list_presets() -> list[dict[str, object]]:

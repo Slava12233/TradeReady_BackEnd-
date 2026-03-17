@@ -13,7 +13,7 @@ import pytest
 
 from src.main import create_app
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 @pytest.fixture

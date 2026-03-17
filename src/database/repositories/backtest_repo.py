@@ -44,12 +44,19 @@ class BacktestRepository:
             logger.exception("backtest_repo.create_session.error", error=str(exc))
             raise DatabaseError("Failed to create backtest session.") from exc
 
-    async def get_session(self, session_id: UUID, account_id: UUID | None = None) -> BacktestSession | None:
-        """Fetch a backtest session by ID, optionally scoped to account."""
+    async def get_session(
+        self,
+        session_id: UUID,
+        account_id: UUID | None = None,
+        agent_id: UUID | None = None,
+    ) -> BacktestSession | None:
+        """Fetch a backtest session by ID, optionally scoped to account or agent."""
         try:
             stmt = select(BacktestSession).where(BacktestSession.id == session_id)
             if account_id is not None:
                 stmt = stmt.where(BacktestSession.account_id == account_id)
+            if agent_id is not None:
+                stmt = stmt.where(BacktestSession.agent_id == agent_id)
             result = await self._session.execute(stmt)
             return result.scalars().first()
         except SQLAlchemyError as exc:
@@ -74,6 +81,7 @@ class BacktestRepository:
         self,
         account_id: UUID,
         *,
+        agent_id: UUID | None = None,
         strategy_label: str | None = None,
         status: str | None = None,
         sort_by: str = "created_at",
@@ -82,6 +90,8 @@ class BacktestRepository:
         """List backtest sessions for an account with optional filters."""
         try:
             stmt = select(BacktestSession).where(BacktestSession.account_id == account_id)
+            if agent_id is not None:
+                stmt = stmt.where(BacktestSession.agent_id == agent_id)
             if strategy_label is not None:
                 stmt = stmt.where(BacktestSession.strategy_label == strategy_label)
             if status is not None:
@@ -164,6 +174,7 @@ class BacktestRepository:
         account_id: UUID,
         metric: str = "roi_pct",
         strategy_label: str | None = None,
+        agent_id: UUID | None = None,
     ) -> BacktestSession | None:
         """Find the best completed session by a given metric."""
         try:
@@ -171,6 +182,8 @@ class BacktestRepository:
                 BacktestSession.account_id == account_id,
                 BacktestSession.status == "completed",
             )
+            if agent_id is not None:
+                stmt = stmt.where(BacktestSession.agent_id == agent_id)
             if strategy_label is not None:
                 stmt = stmt.where(BacktestSession.strategy_label == strategy_label)
 
@@ -183,10 +196,16 @@ class BacktestRepository:
             logger.exception("backtest_repo.get_best_session.error", error=str(exc))
             raise DatabaseError("Failed to fetch best backtest session.") from exc
 
-    async def get_sessions_for_compare(self, session_ids: list[UUID]) -> Sequence[BacktestSession]:
+    async def get_sessions_for_compare(
+        self,
+        session_ids: list[UUID],
+        agent_id: UUID | None = None,
+    ) -> Sequence[BacktestSession]:
         """Fetch multiple sessions for side-by-side comparison."""
         try:
             stmt = select(BacktestSession).where(BacktestSession.id.in_(session_ids))
+            if agent_id is not None:
+                stmt = stmt.where(BacktestSession.agent_id == agent_id)
             result = await self._session.execute(stmt)
             return result.scalars().all()
         except SQLAlchemyError as exc:

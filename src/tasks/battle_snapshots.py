@@ -29,12 +29,16 @@ def capture_battle_snapshots() -> int:
 async def _capture_snapshots_async() -> int:
     """Async implementation of snapshot capture."""
     from src.battles.snapshot_engine import SnapshotEngine  # noqa: PLC0415
+    from src.cache.price_cache import PriceCache  # noqa: PLC0415
+    from src.cache.redis_client import get_redis_client  # noqa: PLC0415
     from src.database.session import get_session_factory  # noqa: PLC0415
 
+    redis = await get_redis_client()
+    price_cache = PriceCache(redis)
     session_factory = get_session_factory()
     async with session_factory() as session:
         try:
-            engine = SnapshotEngine(session)
+            engine = SnapshotEngine(session, price_cache)
             total = await engine.capture_all_active_battles()
             await session.commit()
             return total

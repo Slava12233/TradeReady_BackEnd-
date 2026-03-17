@@ -48,6 +48,8 @@ from src.api.websocket.manager import ConnectionManager
 from src.config import Settings
 from src.database.models import Account
 
+pytestmark = pytest.mark.slow
+
 # ---------------------------------------------------------------------------
 # Test settings
 # ---------------------------------------------------------------------------

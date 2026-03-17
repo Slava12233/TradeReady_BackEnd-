@@ -102,7 +102,7 @@ class BattleService:
         logger.info(
             "battle.notification",
             battle_id=str(battle_id),
-            event=event,
+            event_type=event,
             payload=payload,
         )
 
@@ -128,17 +128,34 @@ class BattleService:
         preset: str | None = None,
         config: dict[str, object] | None = None,
         ranking_metric: str = "roi_pct",
+        battle_mode: str = "live",
+        backtest_config: dict[str, object] | None = None,
     ) -> Battle:
         """Create a new battle in draft status.
 
         If a preset is specified, its config is used as the base. Custom
         config values override preset defaults.
+
+        Args:
+            account_id:     Owner account UUID.
+            name:           Battle name.
+            preset:         Optional preset key.
+            config:         Custom config overrides.
+            ranking_metric: Metric for ranking.
+            battle_mode:    ``"live"`` or ``"historical"``.
+            backtest_config: Required if ``battle_mode == "historical"``.
         """
         battle_config: dict[str, object] = {}
         if preset:
             battle_config = get_preset_config(preset)
         if config:
             battle_config.update(config)
+
+        # Validate historical mode
+        if battle_mode == "historical" and not backtest_config:
+            raise BattleInvalidStateError(
+                "backtest_config is required for historical battles.",
+            )
 
         battle = Battle(
             account_id=account_id,
@@ -147,6 +164,8 @@ class BattleService:
             config=battle_config,
             preset=preset,
             ranking_metric=ranking_metric,
+            battle_mode=battle_mode,
+            backtest_config=backtest_config,
         )
         return await self._battle_repo.create_battle(battle)
 
@@ -256,6 +275,8 @@ class BattleService:
     async def start_battle(self, battle_id: UUID, account_id: UUID) -> Battle:
         """Start a battle — lock config, snapshot wallets, transition to active.
 
+        For live battles: snapshots/provisions wallets per existing flow.
+        For historical battles: creates HistoricalBattleEngine, no wallet changes.
         Requires at least 2 participants.
         """
         battle = await self._battle_repo.get_battle(battle_id)
@@ -271,26 +292,17 @@ class BattleService:
         if len(participants) < 2:
             raise BattleInvalidStateError("Need at least 2 participants to start a battle.")
 
-        wallet_mode = battle.config.get("wallet_mode", "existing") if isinstance(battle.config, dict) else "existing"
         starting_balance_str = (
             battle.config.get("starting_balance", "10000") if isinstance(battle.config, dict) else "10000"
         )
         starting_balance = Decimal(str(starting_balance_str))
 
-        # Snapshot and optionally provision fresh wallets
-        for participant in participants:
-            agent = await self._agent_repo.get_by_id(participant.agent_id)
-            snapshot = await self._wallet_manager.snapshot_wallet(
-                participant.agent_id, agent.account_id
-            )
-            await self._battle_repo.update_participant(
-                battle_id, participant.agent_id, snapshot_balance=snapshot
-            )
-
-            if wallet_mode == "fresh":
-                await self._wallet_manager.provision_fresh_wallet(
-                    participant.agent_id, agent.account_id, starting_balance
-                )
+        if getattr(battle, "battle_mode", "live") == "historical":
+            # Historical mode — use HistoricalBattleEngine
+            await self._start_historical_battle(battle, participants, starting_balance)
+        else:
+            # Live mode — existing wallet snapshot/provision flow
+            await self._start_live_battle(battle, participants, starting_balance)
 
         now = datetime.now(UTC)
         result = await self._battle_repo.update_status(
@@ -302,6 +314,62 @@ class BattleService:
             {"battle_name": battle.name, "participant_count": len(participants)},
         )
         return result
+
+    async def _start_live_battle(
+        self,
+        battle: Battle,
+        participants: Sequence[BattleParticipant],
+        starting_balance: Decimal,
+    ) -> None:
+        """Start a live battle: snapshot and provision wallets."""
+        wallet_mode = battle.config.get("wallet_mode", "existing") if isinstance(battle.config, dict) else "existing"
+
+        for participant in participants:
+            agent = await self._agent_repo.get_by_id(participant.agent_id)
+            snapshot = await self._wallet_manager.snapshot_wallet(
+                participant.agent_id, agent.account_id
+            )
+            await self._battle_repo.update_participant(
+                battle.id, participant.agent_id, snapshot_balance=snapshot
+            )
+
+            if wallet_mode == "fresh":
+                await self._wallet_manager.provision_fresh_wallet(
+                    participant.agent_id, agent.account_id, starting_balance
+                )
+
+    async def _start_historical_battle(
+        self,
+        battle: Battle,
+        participants: Sequence[BattleParticipant],
+        starting_balance: Decimal,
+    ) -> None:
+        """Start a historical battle: create and initialize HistoricalBattleEngine."""
+        from src.battles.historical_engine import (  # noqa: PLC0415
+            HistoricalBattleEngine,
+            register_engine,
+        )
+
+        backtest_cfg = battle.backtest_config
+        if not backtest_cfg:
+            raise BattleInvalidStateError("Historical battle requires backtest_config.")
+
+        agent_ids = [p.agent_id for p in participants]
+        engine = HistoricalBattleEngine(
+            battle_id=str(battle.id),
+            config=backtest_cfg,
+            participant_agent_ids=agent_ids,
+            starting_balance=starting_balance,
+            ranking_metric=battle.ranking_metric,
+        )
+        await engine.initialize(self._session)
+        register_engine(str(battle.id), engine)
+
+        # Set snapshot balance for all participants (virtual starting balance)
+        for participant in participants:
+            await self._battle_repo.update_participant(
+                battle.id, participant.agent_id, snapshot_balance=starting_balance
+            )
 
     async def pause_agent(
         self,
@@ -372,8 +440,8 @@ class BattleService:
     async def stop_battle(self, battle_id: UUID, account_id: UUID) -> Battle:
         """Stop a battle — calculate final rankings and complete.
 
-        Force-closes all positions (conceptually) and calculates final
-        rankings based on the battle's ranking metric.
+        For live battles: force-closes positions, calculates rankings, restores wallets.
+        For historical battles: calls engine.complete() for rankings and persistence.
         """
         battle = await self._battle_repo.get_battle(battle_id)
         if battle.account_id != account_id:
@@ -381,9 +449,44 @@ class BattleService:
         self._validate_transition(battle.status, "completed")
 
         participants = await self._battle_repo.get_participants(battle_id)
+
+        if getattr(battle, "battle_mode", "live") == "historical":
+            await self._stop_historical_battle(battle, participants)
+        else:
+            await self._stop_live_battle(battle, participants)
+
+        now = datetime.now(UTC)
+        result = await self._battle_repo.update_status(
+            battle_id, "completed", ended_at=now
+        )
+
+        # Determine winner from updated participants
+        updated_participants = await self._battle_repo.get_participants(battle_id)
+        ranked = sorted(
+            [p for p in updated_participants if p.final_rank is not None],
+            key=lambda p: p.final_rank or 999,
+        )
+        winner_agent_id = str(ranked[0].agent_id) if ranked else None
+
+        self._emit_notification(
+            battle_id,
+            NOTIFY_BATTLE_COMPLETED,
+            {
+                "battle_name": battle.name,
+                "winner_agent_id": winner_agent_id,
+                "participant_count": len(participants),
+            },
+        )
+        return result
+
+    async def _stop_live_battle(
+        self,
+        battle: Battle,
+        participants: Sequence[BattleParticipant],
+    ) -> None:
+        """Stop a live battle: compute rankings, restore wallets."""
         wallet_mode = battle.config.get("wallet_mode", "existing") if isinstance(battle.config, dict) else "existing"
 
-        # Calculate final metrics for each participant
         all_metrics: list[ParticipantMetrics] = []
         for participant in participants:
             agent = await self._agent_repo.get_by_id(participant.agent_id)
@@ -391,7 +494,7 @@ class BattleService:
             start_balance = participant.snapshot_balance or Decimal(str(agent.starting_balance))
 
             snapshots = await self._battle_repo.get_snapshots(
-                battle_id, agent_id=participant.agent_id
+                battle.id, agent_id=participant.agent_id
             )
             trades = await self._trade_repo.list_by_agent(participant.agent_id)
 
@@ -404,20 +507,17 @@ class BattleService:
             )
             all_metrics.append(metrics)
 
-        # Rank participants
         ranked = self._ranking.rank_participants(all_metrics, battle.ranking_metric)
 
-        # Update participant final stats
         for rank, metrics in enumerate(ranked, 1):
             await self._battle_repo.update_participant(
-                battle_id,
+                battle.id,
                 metrics.agent_id,
                 final_equity=metrics.final_equity,
                 final_rank=rank,
                 status="stopped",
             )
 
-        # Restore wallets if fresh mode was used
         if wallet_mode == "fresh":
             for participant in participants:
                 if participant.snapshot_balance is not None:
@@ -428,21 +528,36 @@ class BattleService:
                         participant.snapshot_balance,
                     )
 
-        now = datetime.now(UTC)
-        result = await self._battle_repo.update_status(
-            battle_id, "completed", ended_at=now
-        )
-        winner_agent_id = str(ranked[0].agent_id) if ranked else None
-        self._emit_notification(
-            battle_id,
-            NOTIFY_BATTLE_COMPLETED,
-            {
-                "battle_name": battle.name,
-                "winner_agent_id": winner_agent_id,
-                "participant_count": len(participants),
-            },
-        )
-        return result
+    async def _stop_historical_battle(
+        self,
+        battle: Battle,
+        participants: Sequence[BattleParticipant],
+    ) -> None:
+        """Stop a historical battle: run engine.complete(), update participants."""
+        from src.battles.historical_engine import get_engine, remove_engine  # noqa: PLC0415
+
+        engine = get_engine(str(battle.id))
+        if engine is None:
+            raise BattleInvalidStateError("Historical battle engine not found.")
+
+        results = await engine.complete(self._session)
+
+        # Rank and update participants
+        metric_key = battle.ranking_metric if results and battle.ranking_metric in results[0] else "roi_pct"
+        ranked = sorted(results, key=lambda r: r.get(metric_key, Decimal("0")), reverse=True)
+
+        for rank, r in enumerate(ranked, 1):
+            agent_id = r["agent_id"]
+            await self._battle_repo.update_participant(
+                battle.id,
+                agent_id,
+                final_equity=r["final_equity"],
+                final_rank=rank,
+                status="stopped",
+                backtest_session_id=r.get("session_id"),
+            )
+
+        remove_engine(str(battle.id))
 
     async def cancel_battle(self, battle_id: UUID, account_id: UUID) -> Battle:
         """Cancel a battle — no rankings, data preserved."""
@@ -476,6 +591,150 @@ class BattleService:
             {"battle_name": battle.name},
         )
         return result
+
+    # ------------------------------------------------------------------
+    # Historical battle operations
+    # ------------------------------------------------------------------
+
+    async def step_historical(self, battle_id: UUID) -> object:
+        """Advance a historical battle by one step."""
+        from src.battles.historical_engine import get_engine  # noqa: PLC0415
+
+        engine = get_engine(str(battle_id))
+        if engine is None:
+            raise BattleInvalidStateError("Historical battle engine not found.")
+        return await engine.step()
+
+    async def step_historical_batch(self, battle_id: UUID, steps: int) -> object:
+        """Advance a historical battle by N steps."""
+        from src.battles.historical_engine import get_engine  # noqa: PLC0415
+
+        engine = get_engine(str(battle_id))
+        if engine is None:
+            raise BattleInvalidStateError("Historical battle engine not found.")
+        return await engine.step_batch(steps)
+
+    async def place_historical_order(
+        self,
+        battle_id: UUID,
+        agent_id: UUID,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: Decimal,
+        price: Decimal | None = None,
+    ) -> object:
+        """Place an order in a historical battle for a specific agent."""
+        from src.battles.historical_engine import get_engine  # noqa: PLC0415
+
+        engine = get_engine(str(battle_id))
+        if engine is None:
+            raise BattleInvalidStateError("Historical battle engine not found.")
+        return engine.place_order(
+            agent_id=agent_id,
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            price=price,
+        )
+
+    async def get_historical_prices(
+        self, battle_id: UUID
+    ) -> tuple[dict[str, Decimal], datetime]:
+        """Get current prices at virtual time for a historical battle."""
+        from src.battles.historical_engine import get_engine  # noqa: PLC0415
+
+        engine = get_engine(str(battle_id))
+        if engine is None:
+            raise BattleInvalidStateError("Historical battle engine not found.")
+        virtual_time = engine.virtual_time
+        if virtual_time is None:
+            raise BattleInvalidStateError("Historical battle has not been initialized.")
+        return engine.current_prices, virtual_time
+
+    # ------------------------------------------------------------------
+    # Battle replay
+    # ------------------------------------------------------------------
+
+    async def replay_battle(
+        self,
+        battle_id: UUID,
+        account_id: UUID,
+        *,
+        override_config: dict[str, object] | None = None,
+        override_agents: list[UUID] | None = None,
+    ) -> Battle:
+        """Create a new historical battle from a completed battle's config.
+
+        For live battles: uses ``started_at`` / ``ended_at`` as the time range.
+        For historical battles: reuses ``backtest_config``.
+        Custom ``override_config`` fields are merged on top of the derived config.
+        ``override_agents`` replaces the participant list if provided.
+
+        Args:
+            battle_id:       Source battle UUID.
+            account_id:      Owner account UUID.
+            override_config: Optional dict merged into the derived backtest config.
+            override_agents: Optional list of agent UUIDs to use instead of original participants.
+
+        Returns:
+            A new :class:`Battle` in draft status with ``battle_mode="historical"``.
+
+        Raises:
+            BattleInvalidStateError: If the source battle is not completed.
+            PermissionDeniedError:   If the caller does not own the source battle.
+        """
+        source = await self._battle_repo.get_battle(battle_id)
+        if source.account_id != account_id:
+            raise PermissionDeniedError("You do not own this battle.")
+        if source.status != "completed":
+            raise BattleInvalidStateError(
+                "Can only replay completed battles.",
+                current_status=source.status,
+                required_status="completed",
+            )
+
+        # Derive backtest_config from source
+        if getattr(source, "battle_mode", "live") == "historical" and source.backtest_config:
+            replay_backtest_config: dict[str, object] = dict(source.backtest_config)
+        else:
+            # Live battle — derive time range from started_at / ended_at
+            if not source.started_at or not source.ended_at:
+                raise BattleInvalidStateError(
+                    "Source battle has no start/end timestamps for replay."
+                )
+            replay_backtest_config = {
+                "start_time": source.started_at.isoformat(),
+                "end_time": source.ended_at.isoformat(),
+                "candle_interval": 60,
+            }
+
+        # Merge overrides
+        if override_config:
+            replay_backtest_config.update(override_config)
+
+        # Create new battle in draft
+        new_battle = await self.create_battle(
+            account_id=account_id,
+            name=f"Replay: {source.name}",
+            config=dict(source.config) if isinstance(source.config, dict) else {},
+            ranking_metric=source.ranking_metric,
+            battle_mode="historical",
+            backtest_config=replay_backtest_config,
+        )
+
+        # Add participants from source or override
+        if override_agents:
+            agent_ids = override_agents
+        else:
+            participants = await self._battle_repo.get_participants(battle_id)
+            agent_ids = [p.agent_id for p in participants]
+
+        for aid in agent_ids:
+            await self.add_participant(new_battle.id, aid, account_id)
+
+        return await self._battle_repo.get_battle(new_battle.id)
 
     # ------------------------------------------------------------------
     # Live data

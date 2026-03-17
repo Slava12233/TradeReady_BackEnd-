@@ -49,14 +49,17 @@ POST /backtest/create
   "starting_balance": 10000,
   "candle_interval": "1m",
   "strategy_label": "my_strategy_v1",
+  "agent_id": "your-agent-uuid",
   "pairs": ["BTCUSDT", "ETHUSDT"]   ← optional, null = all pairs
 }
 ```
 
 This creates a database record for the session but doesn't start anything yet. The response tells you the `session_id` and `total_steps` (how many candles to simulate).
 
+`agent_id` is required — each session is scoped to a specific agent. The agent's risk profile is loaded and enforced in the sandbox.
+
 **What happens internally:**
-- A `BacktestSession` row is inserted in TimescaleDB with status `"created"`
+- A `BacktestSession` row is inserted in TimescaleDB with status `"created"` and the given `agent_id`
 - `total_steps` is calculated: `(end - start) / candle_interval`
   - 30 days at 1-minute candles = 43,200 steps
 
@@ -198,7 +201,7 @@ POST /backtest/{session_id}/cancel
 
 ## Performance Metrics Computed
 
-After completion, the engine calculates:
+After completion, the engine delegates to the unified metrics calculator (`src/metrics/calculator.py`) which computes:
 
 | Metric | What It Means |
 |--------|--------------|
@@ -223,7 +226,7 @@ After completion, the results endpoints serve data for the UI:
 GET /backtest/{session_id}/results              ← full summary + metrics
 GET /backtest/{session_id}/results/equity-curve  ← equity snapshots for charts
 GET /backtest/{session_id}/results/trades        ← full trade log
-GET /backtest/list                               ← all your backtests
+GET /backtest/list                               ← all your backtests (filtered by agent_id)
 GET /backtest/compare?sessions=id1,id2           ← side-by-side comparison
 GET /backtest/best?metric=roi_pct                ← best session by metric
 ```
@@ -268,6 +271,18 @@ Key behaviors that match the real exchange:
 - **Slippage** between 0.01% and 10% based on order size
 - **Position averaging** — buying more of the same symbol adjusts your average entry price
 - **Realized PnL** — calculated when you sell: `(sell_price - avg_entry) × quantity - fees`
+
+### Risk Profile Enforcement
+
+When an agent has a `risk_profile` configured, the sandbox enforces three limits on every order:
+
+| Limit | Check |
+|-------|-------|
+| `max_order_size_pct` | Order cost cannot exceed this % of available cash |
+| `max_position_size_pct` | Resulting position cannot exceed this % of total equity |
+| `daily_loss_limit_pct` | If daily realized loss exceeds this % of starting balance, all new orders are rejected |
+
+Orders that violate any limit are rejected with a descriptive error. This ensures backtest results reflect realistic risk constraints.
 
 ---
 

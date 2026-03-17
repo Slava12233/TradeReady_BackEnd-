@@ -81,7 +81,6 @@ class TestRegister:
             return account
 
         svc._account_repo.create = AsyncMock(side_effect=_fake_create)
-        svc._balance_repo.create = AsyncMock()
 
         result = await svc.register("TestBot", email="dev@example.com")
 
@@ -89,7 +88,10 @@ class TestRegister:
         assert result.api_secret.startswith("sk_live_")
         assert result.display_name == "TestBot"
         assert result.starting_balance == Decimal("10000")
-        svc._balance_repo.create.assert_called_once()
+        svc._account_repo.create.assert_called_once()
+        # Balance creation is now handled by AgentService.create_agent(),
+        # so we only verify that a TradingSession was added via session.add.
+        session.add.assert_called_once()
 
     @patch("src.accounts.service.generate_api_credentials")
     async def test_duplicate_email_raises(self, mock_gen_creds):

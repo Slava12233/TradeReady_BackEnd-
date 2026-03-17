@@ -51,6 +51,7 @@ def mock_session_model():
     session.start_time = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
     session.end_time = datetime(2026, 1, 1, 1, 0, tzinfo=UTC)
     session.starting_balance = Decimal("10000")
+    session.agent_id = None
     session.pairs = None
     session.total_steps = 60
     return session
@@ -194,6 +195,7 @@ async def test_concurrent_sessions_isolated(engine: BacktestEngine, mock_db: Asy
         m.start_time = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
         m.end_time = datetime(2026, 1, 1, 1, 0, tzinfo=UTC)
         m.starting_balance = Decimal("10000")
+        m.agent_id = None
         m.pairs = None
         m.total_steps = 60
         models.append(m)

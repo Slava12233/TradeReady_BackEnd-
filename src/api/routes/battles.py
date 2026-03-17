@@ -1,6 +1,6 @@
 """Battle management routes for the AI Agent Crypto Trading Platform.
 
-Implements all 16 battle endpoints per spec:
+Implements all 20 battle endpoints:
 
 - ``POST   /api/v1/battles``                                  — create battle
 - ``GET    /api/v1/battles``                                   — list battles
@@ -16,7 +16,12 @@ Implements all 16 battle endpoints per spec:
 - ``POST   /api/v1/battles/{battle_id}/stop``                  — stop battle
 - ``GET    /api/v1/battles/{battle_id}/live``                  — live snapshot
 - ``GET    /api/v1/battles/{battle_id}/results``               — final results
-- ``GET    /api/v1/battles/{battle_id}/replay``                — replay data
+- ``GET    /api/v1/battles/{battle_id}/replay``                — replay data (GET)
+- ``POST   /api/v1/battles/{battle_id}/step``                  — step historical battle
+- ``POST   /api/v1/battles/{battle_id}/step/batch``            — batch step historical battle
+- ``POST   /api/v1/battles/{battle_id}/trade/order``           — place order (historical)
+- ``GET    /api/v1/battles/{battle_id}/market/prices``         — prices at virtual time
+- ``POST   /api/v1/battles/{battle_id}/replay``                — create replay from battle
 
 All endpoints require JWT authentication (web UI).
 """
@@ -24,6 +29,7 @@ All endpoints require JWT authentication (web UI).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 import logging
 from uuid import UUID
 
@@ -37,10 +43,15 @@ from src.api.schemas.battles import (
     BattleLiveResponse,
     BattleParticipantResponse,
     BattlePresetResponse,
+    BattleReplayRequest,
     BattleReplayResponse,
     BattleResponse,
     BattleResultsResponse,
     BattleUpdate,
+    HistoricalOrderRequest,
+    HistoricalPricesResponse,
+    HistoricalStepRequest,
+    HistoricalStepResponse,
 )
 from src.battles.presets import list_presets
 from src.database.models import Battle, BattleParticipant
@@ -79,6 +90,9 @@ def _battle_to_response(battle: Battle, *, include_participants: bool = False) -
         if include_participants:
             participants = [_participant_to_response(p) for p in battle.participants]
 
+    battle_mode = getattr(battle, "battle_mode", "live")
+    backtest_cfg = getattr(battle, "backtest_config", None)
+
     return BattleResponse(
         id=battle.id,
         account_id=battle.account_id,
@@ -92,6 +106,8 @@ def _battle_to_response(battle: Battle, *, include_participants: bool = False) -
         created_at=battle.created_at,
         participant_count=participant_count,
         participants=participants,
+        battle_mode=battle_mode,
+        backtest_config=dict(backtest_cfg) if backtest_cfg else None,
     )
 
 
@@ -118,6 +134,8 @@ async def create_battle(
         preset=body.preset,
         config=body.config,
         ranking_metric=body.ranking_metric,
+        battle_mode=body.battle_mode,
+        backtest_config=body.backtest_config.model_dump() if body.backtest_config else None,
     )
     return _battle_to_response(battle)
 
@@ -471,3 +489,207 @@ async def get_replay(
         ],
         total=len(snapshots),
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/battles/{battle_id}/step — advance historical battle
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{battle_id}/step",
+    response_model=HistoricalStepResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Step historical battle",
+)
+async def step_historical_battle(
+    battle_id: UUID,
+    account: CurrentAccountDep,
+    battle_service: BattleServiceDep,
+) -> HistoricalStepResponse:
+    """Advance a historical battle by one step."""
+    battle = await battle_service.get_battle(battle_id)
+    if battle.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this battle.")
+    if getattr(battle, "battle_mode", "live") != "historical":
+        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+
+        raise BattleInvalidStateError("Step is only available for historical battles.")
+
+    result = await battle_service.step_historical(battle_id)
+    return HistoricalStepResponse(
+        battle_id=battle_id,
+        virtual_time=result.virtual_time,
+        step=result.step,
+        total_steps=result.total_steps,
+        progress_pct=str(result.progress_pct),
+        is_complete=result.is_complete,
+        prices={k: str(v) for k, v in result.prices.items()},
+        participants=[
+            {
+                "agent_id": s.agent_id,
+                "equity": str(s.equity),
+                "pnl": str(s.pnl),
+                "trade_count": s.trade_count,
+            }
+            for s in result.agent_states.values()
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/battles/{battle_id}/step/batch — advance N steps
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{battle_id}/step/batch",
+    response_model=HistoricalStepResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Batch step historical battle",
+)
+async def step_batch_historical_battle(
+    battle_id: UUID,
+    body: HistoricalStepRequest,
+    account: CurrentAccountDep,
+    battle_service: BattleServiceDep,
+) -> HistoricalStepResponse:
+    """Advance a historical battle by N steps."""
+    battle = await battle_service.get_battle(battle_id)
+    if battle.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this battle.")
+    if getattr(battle, "battle_mode", "live") != "historical":
+        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+
+        raise BattleInvalidStateError("Step is only available for historical battles.")
+
+    result = await battle_service.step_historical_batch(battle_id, body.steps)
+    return HistoricalStepResponse(
+        battle_id=battle_id,
+        virtual_time=result.virtual_time,
+        step=result.step,
+        total_steps=result.total_steps,
+        progress_pct=str(result.progress_pct),
+        is_complete=result.is_complete,
+        prices={k: str(v) for k, v in result.prices.items()},
+        participants=[
+            {
+                "agent_id": s.agent_id,
+                "equity": str(s.equity),
+                "pnl": str(s.pnl),
+                "trade_count": s.trade_count,
+            }
+            for s in result.agent_states.values()
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/battles/{battle_id}/trade/order — place order (historical)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{battle_id}/trade/order",
+    status_code=status.HTTP_200_OK,
+    summary="Place order in historical battle",
+)
+async def place_historical_order(
+    battle_id: UUID,
+    body: HistoricalOrderRequest,
+    account: CurrentAccountDep,
+    battle_service: BattleServiceDep,
+) -> dict[str, object]:
+    """Place an order for an agent in a historical battle."""
+    battle = await battle_service.get_battle(battle_id)
+    if battle.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this battle.")
+    if getattr(battle, "battle_mode", "live") != "historical":
+        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+
+        raise BattleInvalidStateError("Order placement is only available for historical battles.")
+
+    result = await battle_service.place_historical_order(
+        battle_id=battle_id,
+        agent_id=body.agent_id,
+        symbol=body.symbol,
+        side=body.side,
+        order_type=body.order_type,
+        quantity=Decimal(body.quantity),
+        price=Decimal(body.price) if body.price else None,
+    )
+    return {
+        "order_id": result.order_id,
+        "status": result.status,
+        "executed_price": str(result.executed_price) if result.executed_price else None,
+        "executed_qty": str(result.executed_qty) if result.executed_qty else None,
+        "fee": str(result.fee) if result.fee else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/battles/{battle_id}/market/prices — prices at virtual_time
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{battle_id}/market/prices",
+    response_model=HistoricalPricesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Historical battle prices",
+)
+async def get_historical_prices(
+    battle_id: UUID,
+    account: CurrentAccountDep,
+    battle_service: BattleServiceDep,
+) -> HistoricalPricesResponse:
+    """Get current prices at the virtual time of a historical battle."""
+    battle = await battle_service.get_battle(battle_id)
+    if battle.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this battle.")
+    if getattr(battle, "battle_mode", "live") != "historical":
+        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+
+        raise BattleInvalidStateError("Market prices are only available for historical battles.")
+
+    prices, virtual_time = await battle_service.get_historical_prices(battle_id)
+    return HistoricalPricesResponse(
+        battle_id=battle_id,
+        virtual_time=virtual_time,
+        prices={k: str(v) for k, v in prices.items()},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/battles/{battle_id}/replay — create replay from battle
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{battle_id}/replay",
+    response_model=BattleResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Replay battle",
+)
+async def replay_battle(
+    battle_id: UUID,
+    body: BattleReplayRequest,
+    account: CurrentAccountDep,
+    battle_service: BattleServiceDep,
+) -> BattleResponse:
+    """Create a new historical battle draft from a completed battle's config."""
+    battle = await battle_service.replay_battle(
+        battle_id,
+        account.id,
+        override_config=body.override_config,
+        override_agents=body.agent_ids,
+    )
+    return _battle_to_response(battle, include_participants=True)

@@ -24,7 +24,7 @@
 
 ### 1.1 Database Model
 
-- [ ] **T-1.1.1** — Add `agent_id` column to `BacktestSession` model
+- [x] **T-1.1.1** — Add `agent_id` column to `BacktestSession` model
   - **File:** `src/database/models.py`
   - Add `agent_id: Mapped[UUID | None]` as nullable FK to `agents.id` (ondelete CASCADE)
   - Add `agent: Mapped[Agent | None] = relationship("Agent")`
@@ -34,7 +34,7 @@
 
 ### 1.2 Migration
 
-- [ ] **T-1.2.1** — Create Alembic migration: add nullable `agent_id` to `backtest_sessions`
+- [x] **T-1.2.1** — Create Alembic migration: add nullable `agent_id` to `backtest_sessions`
   - **File:** `alembic/versions/013_add_agent_id_to_backtest_sessions.py`
   - Add nullable `agent_id UUID` column with FK constraint
   - Add indexes: `idx_bt_sessions_agent`, `idx_bt_sessions_agent_status`
@@ -42,7 +42,7 @@
   - Follow pattern from migration 008 (add nullable) → later 009 (enforce NOT NULL)
   - **Deps:** T-1.1.1
 
-- [ ] **T-1.2.2** — Create backfill script for existing backtest sessions
+- [x] **T-1.2.2** — Create backfill script for existing backtest sessions
   - **File:** `scripts/backfill_backtest_agent_ids.py`
   - For each `backtest_session` row where `agent_id IS NULL`:
     - Look up first agent for `account_id` (ORDER BY created_at ASC LIMIT 1)
@@ -50,7 +50,7 @@
   - Log warnings for sessions with no matching agent
   - **Deps:** T-1.2.1
 
-- [ ] **T-1.2.3** — Create follow-up migration: enforce `agent_id NOT NULL`
+- [x] **T-1.2.3** — Create follow-up migration: enforce `agent_id NOT NULL`
   - **File:** `alembic/versions/014_enforce_backtest_agent_id_not_null.py`
   - ALTER COLUMN `agent_id` SET NOT NULL
   - Only run after backfill script has been verified
@@ -58,7 +58,7 @@
 
 ### 1.3 Repository
 
-- [ ] **T-1.3.1** — Add `agent_id` filtering to `BacktestRepository`
+- [x] **T-1.3.1** — Add `agent_id` filtering to `BacktestRepository`
   - **File:** `src/database/repositories/backtest_repo.py`
   - `list_sessions()` — add optional `agent_id: UUID | None = None` param, filter when provided
   - `get_session()` — add optional `agent_id` for ownership validation
@@ -69,33 +69,33 @@
 
 ### 1.4 Engine
 
-- [ ] **T-1.4.1** — Add `agent_id` to `BacktestConfig` and `_ActiveSession`
+- [x] **T-1.4.1** — Add `agent_id` to `BacktestConfig` and `_ActiveSession`
   - **File:** `src/backtesting/engine.py`
   - `BacktestConfig` dataclass: add `agent_id: UUID | None = None`
   - `_ActiveSession` dataclass: add `agent_id: UUID | None = None`
   - **Deps:** T-1.1.1
 
-- [ ] **T-1.4.2** — Update `create_session()` to accept and persist `agent_id`
+- [x] **T-1.4.2** — Update `create_session()` to accept and persist `agent_id`
   - **File:** `src/backtesting/engine.py`
   - Accept `agent_id` from config
   - Set `agent_id` on the `BacktestSession` ORM object before commit
   - **Deps:** T-1.4.1
 
-- [ ] **T-1.4.3** — Update `start()` to store `agent_id` in `_ActiveSession`
+- [x] **T-1.4.3** — Update `start()` to store `agent_id` in `_ActiveSession`
   - **File:** `src/backtesting/engine.py`
   - Copy `agent_id` from DB session row into the in-memory `_ActiveSession`
   - **Deps:** T-1.4.1
 
 ### 1.5 API Routes & Schemas
 
-- [ ] **T-1.5.1** — Update backtest schemas with `agent_id` field
+- [x] **T-1.5.1** — Update backtest schemas with `agent_id` field
   - **File:** `src/api/schemas/backtest.py`
   - `BacktestCreateRequest`: add `agent_id: UUID | None = None`
   - `BacktestListItem`: add `agent_id: str | None = None`
   - `BacktestCreateResponse`: add `agent_id: str | None = None`
   - `BacktestStatusResponse`: add `agent_id: str | None = None`
 
-- [ ] **T-1.5.2** — Update backtest API routes to extract and pass agent context
+- [x] **T-1.5.2** — Update backtest API routes to extract and pass agent context
   - **File:** `src/api/routes/backtest.py`
   - Add helper: `_get_agent_id(request: Request) -> UUID | None`
     - Check `request.state.agent` (from API key auth)
@@ -107,14 +107,14 @@
 
 ### 1.6 Tests
 
-- [ ] **T-1.6.1** — Unit tests for agent-scoped backtest repository
+- [x] **T-1.6.1** — Unit tests for agent-scoped backtest repository
   - **File:** `tests/unit/test_backtest_repo_agent_scope.py`
   - Test: `list_sessions` with `agent_id` returns only that agent's sessions
   - Test: `list_sessions` without `agent_id` returns all account sessions
   - Test: `get_best_session` scoped to agent
   - **Deps:** T-1.3.1
 
-- [ ] **T-1.6.2** — Integration test: agent-scoped backtest lifecycle
+- [x] **T-1.6.2** — Integration test: agent-scoped backtest lifecycle
   - **File:** `tests/integration/test_agent_scoped_backtest.py`
   - Create 2 agents under same account
   - Run backtest for agent A, run backtest for agent B
@@ -132,11 +132,11 @@
 
 ### 2.1 Unified Calculator
 
-- [ ] **T-2.1.1** — Create `src/metrics/__init__.py`
+- [x] **T-2.1.1** — Create `src/metrics/__init__.py`
   - **File:** `src/metrics/__init__.py`
   - Empty init file for the new metrics package
 
-- [ ] **T-2.1.2** — Create unified metrics calculator
+- [x] **T-2.1.2** — Create unified metrics calculator
   - **File:** `src/metrics/calculator.py`
   - Define dataclasses:
     - `MetricTradeInput(realized_pnl, quote_amount, symbol, timestamp)`
@@ -151,7 +151,7 @@
 
 ### 2.2 Adapters
 
-- [ ] **T-2.2.1** — Create adapter functions for data type conversion
+- [x] **T-2.2.1** — Create adapter functions for data type conversion
   - **File:** `src/metrics/adapters.py`
   - `from_sandbox_trades(list[SandboxTrade]) -> list[MetricTradeInput]`
   - `from_sandbox_snapshots(list[SandboxSnapshot]) -> list[MetricSnapshotInput]`
@@ -162,7 +162,7 @@
 
 ### 2.3 Refactor Consumers
 
-- [ ] **T-2.3.1** — Refactor `results.py` to use unified calculator
+- [x] **T-2.3.1** — Refactor `results.py` to use unified calculator
   - **File:** `src/backtesting/results.py`
   - Keep `calculate_metrics()` as public API (backward compat)
   - Internally: convert inputs via adapters → call `calculate_unified_metrics()` → map to `BacktestMetrics`
@@ -171,7 +171,7 @@
   - Remove private helpers: `_compute_sharpe`, `_compute_sortino`, `_compute_daily_returns`
   - **Deps:** T-2.2.1
 
-- [ ] **T-2.3.2** — Refactor `ranking.py` to use unified calculator
+- [x] **T-2.3.2** — Refactor `ranking.py` to use unified calculator
   - **File:** `src/battles/ranking.py`
   - `compute_participant_metrics()`: use adapters → `calculate_unified_metrics()` → map to `ParticipantMetrics`
   - Remove static methods: `calculate_sharpe_ratio`, `calculate_win_rate`, `calculate_profit_factor`, `calculate_max_drawdown`, `calculate_roi`, `calculate_total_pnl`
@@ -181,7 +181,7 @@
 
 ### 2.4 Tests
 
-- [ ] **T-2.4.1** — Unit tests for unified metrics calculator
+- [x] **T-2.4.1** — Unit tests for unified metrics calculator
   - **File:** `tests/unit/test_unified_metrics.py`
   - Test: known trades → expected Sharpe, Sortino, win rate, profit factor, drawdown
   - Test: empty trades → safe defaults (no division by zero)
@@ -189,7 +189,7 @@
   - Test: different `snapshot_interval_seconds` → different annualization
   - **Deps:** T-2.1.2
 
-- [ ] **T-2.4.2** — Consistency test: same data through both pipelines
+- [x] **T-2.4.2** — Consistency test: same data through both pipelines
   - **File:** `tests/unit/test_metrics_consistency.py`
   - Generate mock trades and snapshots
   - Run through old `results.py` and old `ranking.py` (before refactor, capture expected)
@@ -207,13 +207,13 @@
 
 ### 3.1 Sandbox Risk Enforcement
 
-- [ ] **T-3.1.1** — Add `risk_limits` parameter to `BacktestSandbox`
+- [x] **T-3.1.1** — Add `risk_limits` parameter to `BacktestSandbox`
   - **File:** `src/backtesting/sandbox.py`
   - Constructor: accept `risk_limits: dict | None = None`
   - Store as `self._risk_limits`
   - Expected keys: `max_position_size_pct`, `max_order_size_pct`, `daily_loss_limit_pct`
 
-- [ ] **T-3.1.2** — Implement lightweight risk checks in `place_order()`
+- [x] **T-3.1.2** — Implement lightweight risk checks in `place_order()`
   - **File:** `src/backtesting/sandbox.py`
   - Before executing an order, if `self._risk_limits` is set:
     - **Max order size:** reject if `order_value > equity * max_order_size_pct / 100`
@@ -224,7 +224,7 @@
 
 ### 3.2 Engine Loading
 
-- [ ] **T-3.2.1** — Load agent risk profile in `engine.start()`
+- [x] **T-3.2.1** — Load agent risk profile in `engine.start()`
   - **File:** `src/backtesting/engine.py`
   - In `start()`, if `_ActiveSession.agent_id` is set:
     - Query Agent row from DB
@@ -235,7 +235,7 @@
 
 ### 3.3 Tests
 
-- [ ] **T-3.3.1** — Unit tests for sandbox risk enforcement
+- [x] **T-3.3.1** — Unit tests for sandbox risk enforcement
   - **File:** `tests/unit/test_sandbox_risk_limits.py`
   - Test: order rejected when exceeding `max_order_size_pct`
   - Test: order rejected when position would exceed `max_position_size_pct`
@@ -254,27 +254,27 @@
 
 ### 4.1 Inject PriceCache
 
-- [ ] **T-4.1.1** — Add `PriceCache` dependency to `SnapshotEngine`
+- [x] **T-4.1.1** — Add `PriceCache` dependency to `SnapshotEngine`
   - **File:** `src/battles/snapshot_engine.py`
   - Change constructor: `def __init__(self, session: AsyncSession, price_cache: PriceCache) -> None`
   - Store `self._price_cache = price_cache`
   - Add import: `from src.cache.price_cache import PriceCache`
 
-- [ ] **T-4.1.2** — Update Celery task to pass PriceCache
+- [x] **T-4.1.2** — Update Celery task to pass PriceCache
   - **File:** `src/tasks/battle_snapshots.py`
   - Get Redis connection in task
   - Instantiate `PriceCache(redis)`
   - Pass to `SnapshotEngine(session, price_cache)`
   - **Deps:** T-4.1.1
 
-- [ ] **T-4.1.3** — Update dependency injection if `SnapshotEngine` is used via DI
+- [x] **T-4.1.3** — Update dependency injection if `SnapshotEngine` is used via DI
   - **File:** `src/dependencies.py`
   - If there's a `get_snapshot_engine()` dependency, update it to inject PriceCache
   - **Deps:** T-4.1.1
 
 ### 4.2 Implement Real Calculation
 
-- [ ] **T-4.2.1** — Implement `_get_unrealized_pnl()` with real price lookups
+- [x] **T-4.2.1** — Implement `_get_unrealized_pnl()` with real price lookups
   - **File:** `src/battles/snapshot_engine.py`
   - Query open positions for agent (Position WHERE agent_id = X AND quantity > 0)
   - For each position:
@@ -284,7 +284,7 @@
   - Handle missing prices gracefully (skip position, log warning)
   - **Deps:** T-4.1.1
 
-- [ ] **T-4.2.2** — Add `_get_open_positions()` helper method
+- [x] **T-4.2.2** — Add `_get_open_positions()` helper method
   - **File:** `src/battles/snapshot_engine.py`
   - Query: `SELECT * FROM positions WHERE agent_id = X AND quantity > 0`
   - Return list of Position ORM objects
@@ -292,7 +292,7 @@
 
 ### 4.3 Tests
 
-- [ ] **T-4.3.1** — Unit tests for unrealized PnL calculation
+- [x] **T-4.3.1** — Unit tests for unrealized PnL calculation
   - **File:** `tests/unit/test_snapshot_engine_pnl.py`
   - Test: agent with 2 open positions → correct unrealized PnL sum
   - Test: agent with no positions → returns 0
@@ -311,13 +311,13 @@
 
 ### 5.1 Database Model
 
-- [ ] **T-5.1.1** — Add `battle_mode` and `backtest_config` to Battle model
+- [x] **T-5.1.1** — Add `battle_mode` and `backtest_config` to Battle model
   - **File:** `src/database/models.py`
   - `battle_mode: Mapped[str]` — default `"live"`, CHECK constraint `IN ("live", "historical")`
   - `backtest_config: Mapped[dict | None]` — JSONB, nullable
     - Schema: `{ start_time, end_time, candle_interval, pairs: list[str] }`
 
-- [ ] **T-5.1.2** — Add `backtest_session_id` to BattleParticipant model
+- [x] **T-5.1.2** — Add `backtest_session_id` to BattleParticipant model
   - **File:** `src/database/models.py`
   - `backtest_session_id: Mapped[UUID | None]` — nullable FK to `backtest_sessions.id`
   - Links participant to their per-agent backtest session (for result persistence)
@@ -325,7 +325,7 @@
 
 ### 5.2 Migration
 
-- [ ] **T-5.2.1** — Create Alembic migration for historical battle support
+- [x] **T-5.2.1** — Create Alembic migration for historical battle support
   - **File:** `alembic/versions/015_add_historical_battle_support.py`
   - Add `battle_mode VARCHAR(20) DEFAULT 'live' NOT NULL` to `battles`
   - Add CHECK constraint: `battle_mode IN ('live', 'historical')`
@@ -336,7 +336,7 @@
 
 ### 5.3 Historical Battle Engine
 
-- [ ] **T-5.3.1** — Create `HistoricalBattleEngine` class
+- [x] **T-5.3.1** — Create `HistoricalBattleEngine` class
   - **New file:** `src/battles/historical_engine.py`
   - Constructor: `battle_id`, `config` (backtest_config dict), `participant_agent_ids: list[UUID]`
   - Internal state:
@@ -345,7 +345,7 @@
     - `_sandboxes: dict[UUID, BacktestSandbox]` (per-agent isolated exchange)
     - `_current_prices: dict[str, Decimal]`
 
-- [ ] **T-5.3.2** — Implement `initialize()` method
+- [x] **T-5.3.2** — Implement `initialize()` method
   - **File:** `src/battles/historical_engine.py`
   - Create shared `TimeSimulator(start_time, end_time, candle_interval)`
   - Create shared `DataReplayer(db)` and call `preload_range()` for all pairs
@@ -354,7 +354,7 @@
     - Create `BacktestSandbox(agent_id, starting_balance, risk_limits=agent.risk_profile)`
   - **Deps:** T-5.3.1
 
-- [ ] **T-5.3.3** — Implement `step()` method
+- [x] **T-5.3.3** — Implement `step()` method
   - **File:** `src/battles/historical_engine.py`
   - Advance `TimeSimulator` by one interval
   - Load prices at new `virtual_time` via `DataReplayer`
@@ -363,20 +363,20 @@
   - Return step result with per-agent status
   - **Deps:** T-5.3.2
 
-- [ ] **T-5.3.4** — Implement `step_batch()` method
+- [x] **T-5.3.4** — Implement `step_batch()` method
   - **File:** `src/battles/historical_engine.py`
   - Call `step()` N times in a loop
   - Return aggregated results
   - **Deps:** T-5.3.3
 
-- [ ] **T-5.3.5** — Implement `place_order()` method
+- [x] **T-5.3.5** — Implement `place_order()` method
   - **File:** `src/battles/historical_engine.py`
   - Accept `agent_id` + order params
   - Delegate to the correct agent's `BacktestSandbox.place_order()`
   - Validate agent is a participant
   - **Deps:** T-5.3.1
 
-- [ ] **T-5.3.6** — Implement `complete()` method
+- [x] **T-5.3.6** — Implement `complete()` method
   - **File:** `src/battles/historical_engine.py`
   - For each agent sandbox:
     - Collect trades and snapshots
@@ -392,7 +392,7 @@
 
 ### 5.4 Module-Level Engine Tracking
 
-- [ ] **T-5.4.1** — Add in-memory tracking for active historical battles
+- [x] **T-5.4.1** — Add in-memory tracking for active historical battles
   - **File:** `src/battles/historical_engine.py`
   - Module-level dict: `_active_engines: dict[str, HistoricalBattleEngine] = {}`
   - Functions: `get_engine(battle_id)`, `register_engine(battle_id, engine)`, `remove_engine(battle_id)`
@@ -401,7 +401,7 @@
 
 ### 5.5 Service Integration
 
-- [ ] **T-5.5.1** — Update `BattleService.create_battle()` for historical mode
+- [x] **T-5.5.1** — Update `BattleService.create_battle()` for historical mode
   - **File:** `src/battles/service.py`
   - Accept `battle_mode: str = "live"` and `backtest_config: dict | None = None`
   - Validate: if `battle_mode == "historical"` then `backtest_config` is required
@@ -409,7 +409,7 @@
   - Store both on the Battle model
   - **Deps:** T-5.1.1
 
-- [ ] **T-5.5.2** — Update `BattleService.start_battle()` to branch on mode
+- [x] **T-5.5.2** — Update `BattleService.start_battle()` to branch on mode
   - **File:** `src/battles/service.py`
   - If `battle.battle_mode == "live"`: existing wallet snapshot/provision flow
   - If `battle.battle_mode == "historical"`:
@@ -419,7 +419,7 @@
     - Register in `_active_engines`
   - **Deps:** T-5.3.2, T-5.4.1
 
-- [ ] **T-5.5.3** — Update `BattleService.stop_battle()` to branch on mode
+- [x] **T-5.5.3** — Update `BattleService.stop_battle()` to branch on mode
   - **File:** `src/battles/service.py`
   - If historical: call `engine.complete()` for rankings and persistence
   - If live: existing ranking + wallet restore flow
@@ -428,14 +428,14 @@
 
 ### 5.6 API Routes & Schemas
 
-- [ ] **T-5.6.1** — Update battle schemas for historical mode
+- [x] **T-5.6.1** — Update battle schemas for historical mode
   - **File:** `src/api/schemas/battles.py`
   - `BattleCreateRequest`: add `battle_mode: str = "live"`, `backtest_config: HistoricalBattleConfig | None`
   - New schema: `HistoricalBattleConfig(start_time, end_time, candle_interval, pairs)`
   - `BattleResponse`: add `battle_mode`, `backtest_config`
   - New schema: `HistoricalStepResponse` (per-participant virtual_time, equity, trades)
 
-- [ ] **T-5.6.2** — Add historical battle API endpoints
+- [x] **T-5.6.2** — Add historical battle API endpoints
   - **File:** `src/api/routes/battles.py`
   - `POST /battles/{id}/step` — advance one step (historical only, reject if live)
   - `POST /battles/{id}/step/batch` — advance N steps (body: `{"steps": N}`)
@@ -445,7 +445,7 @@
 
 ### 5.7 Historical Presets
 
-- [ ] **T-5.7.1** — Add historical battle presets
+- [x] **T-5.7.1** — Add historical battle presets
   - **File:** `src/battles/presets.py`
   - `historical_day`: 1-day range, 1m candles, 10,000 USDT, all pairs
   - `historical_week`: 7-day range, 5m candles, 10,000 USDT, all pairs
@@ -456,7 +456,7 @@
 
 ### 5.8 Tests
 
-- [ ] **T-5.8.1** — Unit tests for HistoricalBattleEngine
+- [x] **T-5.8.1** — Unit tests for HistoricalBattleEngine
   - **File:** `tests/unit/test_historical_battle_engine.py`
   - Test: initialize creates sandbox per agent
   - Test: step advances all sandboxes simultaneously
@@ -466,7 +466,7 @@
   - Mock DataReplayer and DB
   - **Deps:** T-5.3.6
 
-- [ ] **T-5.8.2** — Integration test: historical battle end-to-end
+- [x] **T-5.8.2** — Integration test: historical battle end-to-end
   - **File:** `tests/integration/test_historical_battle_e2e.py`
   - Create 2 agents
   - Create historical battle with 1-hour range
@@ -487,7 +487,7 @@
 
 ### 6.1 Service
 
-- [ ] **T-6.1.1** — Implement `BattleService.replay_battle()` method
+- [x] **T-6.1.1** — Implement `BattleService.replay_battle()` method
   - **File:** `src/battles/service.py`
   - Accept: `battle_id`, `account_id`, optional `override_config`, optional `override_agents`
   - Load source battle
@@ -500,14 +500,14 @@
 
 ### 6.2 API
 
-- [ ] **T-6.2.1** — Add replay endpoint
+- [x] **T-6.2.1** — Add replay endpoint
   - **File:** `src/api/routes/battles.py`
   - `POST /battles/{id}/replay`
   - Body: `{ "override_config": {}, "agent_ids": [] }` (both optional)
   - Returns new battle in draft state
   - **Deps:** T-6.1.1
 
-- [ ] **T-6.2.2** — Add replay schema
+- [x] **T-6.2.2** — Add replay schema
   - **File:** `src/api/schemas/battles.py`
   - `BattleReplayRequest(override_config: dict | None, agent_ids: list[UUID] | None)`
   - Response: existing `BattleResponse`
@@ -515,7 +515,7 @@
 
 ### 6.3 Tests
 
-- [ ] **T-6.3.1** — Unit test for replay_battle service method
+- [x] **T-6.3.1** — Unit test for replay_battle service method
   - **File:** `tests/unit/test_battle_replay.py`
   - Test: replay a completed live battle → creates historical draft with correct time range
   - Test: replay a historical battle → reuses backtest_config

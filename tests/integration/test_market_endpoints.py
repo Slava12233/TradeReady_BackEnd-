@@ -32,10 +32,14 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+import pytest
+
 from src.accounts.auth import create_jwt
 from src.cache.price_cache import TickerData
 from src.config import Settings
 from src.database.models import Account
+
+pytestmark = pytest.mark.slow
 
 # ---------------------------------------------------------------------------
 # Test settings — no real infra

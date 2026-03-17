@@ -1,202 +1,136 @@
-# Project Context — AI Agent Crypto Trading Platform
+# Development Context Log
 
-> **Last Updated:** 2026-02-24
-> **Plan Version:** 1.0
-> **Status:** Phase 3 — API Layer (Phase 2 complete)
+<!-- This file is maintained by the context-manager agent. It summarizes all development activity so future conversations have full context. -->
 
----
+## Current State
 
-## What This Project Is
-
-A simulated crypto exchange platform powered by **real-time Binance market data**. AI agents connect via API, trade with virtual funds against live prices, and developers can train/test/benchmark their trading strategies risk-free.
-
-**One-liner:** Universal training playground where any AI agent trades crypto against real-time Binance data with virtual funds.
+**Active work:** Agentic layer buildout complete — all 36 CLAUDE.md files + 8 sub-agents deployed
+**Last session:** 2026-03-17 — Completed full agentic knowledge layer and sub-agent fleet
+**Next steps:** Battle frontend UI (components/battles/ is empty), or begin next feature work
+**Blocked:** Nothing currently blocked
 
 ---
 
-## Core Principles
+## Project Overview
 
-| Principle | Detail |
-|---|---|
-| **1:1 Market Mirror** | All 600+ Binance USDT trading pairs, tick-by-tick, 24/7 |
-| **Universal Agent Access** | Any framework (OpenClaw, Agent Zero, LangChain, CrewAI, raw Python) connects in <5 min |
-| **Realistic Simulation** | Slippage modeling, risk controls, proper order lifecycle |
-| **Five Integration Layers** | REST API, WebSocket, MCP Server, Python SDK, skill.md file |
+A **production-deployed** simulated crypto exchange where AI agents trade **virtual USDT** against **real Binance market data**. Supports 600+ USDT pairs with real-time price feeds, order execution, risk controls, portfolio tracking, backtesting, and agent-vs-agent battles.
 
----
+### What's Built (as of 2026-03-17)
 
-## Technology Stack
+| System | Status | Key Details |
+|--------|--------|-------------|
+| **Price Ingestion** | Production | Binance WS → Redis + TimescaleDB, 600+ pairs, tick buffering |
+| **Order Engine** | Production | Market/Limit/Stop-Loss/Take-Profit, slippage simulation |
+| **Account System** | Production | Registration, JWT + API key auth, bcrypt passwords |
+| **Multi-Agent** | Production | Per-agent wallets, API keys, risk profiles, trading isolation |
+| **Portfolio Tracker** | Production | Real-time PnL, Sharpe, drawdown, equity snapshots |
+| **Risk Management** | Production | 8-step validation, circuit breaker, position limits |
+| **API Gateway** | Production | 86+ REST endpoints, WebSocket (5 channels), middleware stack |
+| **Backtesting** | Production | Historical replay, in-memory sandbox, look-ahead prevention |
+| **Battle System (Backend)** | Production | Live + historical modes, 20 endpoints, ranking, replay |
+| **Battle System (Frontend)** | Not started | `Frontend/src/components/battles/` is empty |
+| **Unified Metrics** | Production | Shared calculator for backtests & battles |
+| **MCP Server** | Production | 12 tools over stdio transport |
+| **Python SDK** | Production | Sync + async + WebSocket clients |
+| **Frontend** | Production | Next.js 16, React 19, Tailwind v4, agent switcher, backtest UI |
+| **Monitoring** | Production | Prometheus metrics, health checks, structured logging |
+| **Agentic Layer** | Complete | 36 CLAUDE.md files, 8 sub-agents |
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| Language | Python 3.12+ | Async support, agent framework compatibility |
-| Web Framework | FastAPI | Async, auto OpenAPI docs, Pydantic v2 validation |
-| Real-Time Cache | Redis 7+ | Sub-ms price lookups, rate limiting, pub/sub |
-| Historical DB | TimescaleDB (PostgreSQL) | Time-series optimized, compression, continuous aggregates |
-| ORM | SQLAlchemy 2.0 + asyncpg | Async database access |
-| Migrations | Alembic | Schema versioning |
-| Task Queue | Celery + Redis broker | Background jobs (candle aggregation, snapshots, cleanup) |
-| Auth | JWT (PyJWT) + API Keys (bcrypt) | Stateless authentication |
-| Containers | Docker + Docker Compose | Reproducible environments |
-| Monitoring | Prometheus + Grafana | Metrics collection + dashboards |
-| Logging | structlog + Loki | Structured JSON logging |
-| Testing | pytest + pytest-asyncio + locust | Unit/integration + load testing |
-| Linting | ruff + mypy | Fast linting + type checking |
+### Tech Stack
 
----
+- **Backend:** Python 3.12+, FastAPI, SQLAlchemy 2.0 + asyncpg, Pydantic v2
+- **Database:** TimescaleDB (PostgreSQL), Redis 7+
+- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm
+- **Tasks:** Celery + Redis broker (11 beat tasks)
+- **Auth:** JWT (PyJWT) + API keys (bcrypt), dual auth flow
+- **Testing:** pytest (62 unit files / 974 tests, 20 integration files / 433 tests)
+- **Linting:** ruff + mypy (strict)
+- **Containers:** Docker + Docker Compose
+- **Monitoring:** Prometheus + Grafana + structlog
 
-## System Architecture (9 Components)
+### Architecture (13 Components)
 
 ```
-1. Price Ingestion Service   — Binance WS → Redis + TimescaleDB
-2. Redis Real-Time Cache     — Sub-ms price lookups, agent state, rate limits
-3. TimescaleDB Storage       — Full tick history, OHLCV candles, trade ledger
-4. Order Execution Engine    — Market / Limit / Stop-Loss / Take-Profit orders
-5. Account Management        — Registration, auth, balances, sessions
-6. Portfolio Tracker         — Real-time PnL, Sharpe ratio, drawdown
-7. Risk Management Engine    — Position limits, daily loss circuit breaker
-8. API Gateway (FastAPI)     — REST + WebSocket + middleware
-9. Monitoring & Logging      — Prometheus, Grafana, structured logs
+ 1. Price Ingestion    — Binance WS → Redis + TimescaleDB (src/price_ingestion/)
+ 2. Redis Cache        — Sub-ms price lookups, rate limiting, pub/sub (src/cache/)
+ 3. TimescaleDB        — Tick history, OHLCV candles, trades (src/database/)
+ 4. Order Engine       — Market/Limit/Stop-Loss/Take-Profit (src/order_engine/)
+ 5. Account Mgmt       — Registration, auth, API keys, balances (src/accounts/)
+ 6. Portfolio Tracker   — Real-time PnL, Sharpe, drawdown (src/portfolio/)
+ 7. Risk Management    — Position limits, circuit breaker (src/risk/)
+ 8. API Gateway        — REST + WebSocket, middleware (src/api/)
+ 9. Monitoring         — Prometheus, health checks (src/monitoring/)
+10. Backtesting        — Historical replay, sandbox trading (src/backtesting/)
+11. Agent Management   — Multi-agent CRUD, per-agent wallets (src/agents/)
+12. Battle System      — Agent vs agent competitions (src/battles/)
+13. Unified Metrics    — Shared calculator for backtests & battles (src/metrics/)
 ```
 
-### Data Flow: Price Ingestion
+### Multi-Agent Model
 
-```
-Binance WS → Price Ingestion Service → Redis (current price overwrite)
-                                     → Write Buffer (in-memory)
-                                     → Flush every 1s → TimescaleDB
-                                     → Broadcast → WebSocket clients
-```
+Each account owns multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. All trading tables keyed by `agent_id`. Auth flow: API key tries agents table first, falls back to accounts. JWT uses `X-Agent-Id` header.
 
-### Data Flow: Order Execution
+### Database (15 migrations, current head: 015)
 
-```
-Agent POST /trade/order
-  → API Gateway (auth + validate)
-  → Order Engine (check balance + risk limits)
-  → Fetch current price from Redis
-  → Calculate slippage
-  → Execute trade (update balances in DB)
-  → Record in trades table
-  → Update order status → filled
-  → Notify agent via WebSocket
-  → Portfolio Tracker recalculates equity
-```
+Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`
 
----
+Note: Migration 011 missing from directory — chain skips 010 → 012.
 
-## Agent Connectivity Layer
+### Sub-Agent Fleet (8 agents in `.claude/agents/`)
 
-| Layer | Description | Use Case |
-|---|---|---|
-| **REST API** | Standard HTTP endpoints | Any language, any framework |
-| **WebSocket** | Real-time streaming | Live price feeds, order notifications |
-| **MCP Server** | Model Context Protocol tools | Claude-based agents, MCP frameworks |
-| **Python SDK** | `pip install agentexchange` | Python agents with typed client |
-| **skill.md** | LLM-readable instruction file | Drop-in for any LLM agent |
+| Agent | Purpose |
+|-------|---------|
+| `code-reviewer` | Reviews code against project standards after every change |
+| `test-runner` | Runs tests + writes missing tests after every change |
+| `context-manager` | Maintains this file — tracks changes, decisions, learnings |
+| `migration-helper` | Validates/generates safe Alembic migrations |
+| `api-sync-checker` | Verifies frontend/backend API sync |
+| `doc-updater` | Updates docs when code changes |
+| `security-auditor` | Audits for security vulnerabilities |
+| `perf-checker` | Detects performance regressions |
 
----
+### Key Design Decisions (permanent)
 
-## Project Structure (Key Directories)
-
-```
-agent-exchange/
-├── src/
-│   ├── main.py                  # FastAPI entry point
-│   ├── config.py                # pydantic-settings
-│   ├── price_ingestion/         # Component 1: Binance WS → Redis/DB
-│   ├── cache/                   # Component 2: Redis operations
-│   ├── database/                # Component 3: SQLAlchemy models + repos
-│   ├── order_engine/            # Component 4: Order execution + slippage
-│   ├── accounts/                # Component 5: Auth, balances, sessions
-│   ├── portfolio/               # Component 6: Tracker, metrics, snapshots
-│   ├── risk/                    # Component 7: Risk limits, circuit breaker
-│   ├── api/                     # Component 8: Routes, middleware, WebSocket
-│   ├── monitoring/              # Component 9: Prometheus, health checks
-│   ├── mcp/                     # MCP Server for AI agents
-│   ├── tasks/                   # Celery background jobs
-│   └── utils/                   # Shared exceptions, helpers
-├── sdk/                         # Python SDK (separate package)
-├── docs/                        # skill.md, quickstart, framework guides
-├── tests/                       # Unit, integration, load tests
-├── scripts/                     # Seed data, backfill, test agent creation
-├── alembic/                     # Database migrations
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
-```
+1. **TimescaleDB over plain PostgreSQL** — native time-series compression, continuous aggregates, retention policies
+2. **Redis for current prices** — sub-ms reads, 600+ pairs fit in ~50-100 MB, also handles rate limiting + circuit breaker
+3. **Celery for background tasks** — limit order matching (1s), snapshots (1m/1h/1d), circuit breaker reset, cleanup
+4. **Slippage simulation** — proportional to order size vs daily volume, realistic without a full order book
+5. **Five connectivity layers** — REST API, WebSocket, MCP Server, Python SDK, skill.md
+6. **Decimal everywhere** — never float for money; NUMERIC(20,8) in DB
+7. **Repository pattern** — all DB access through repo classes, never raw queries in routes/services
+8. **Strict dependency direction** — Routes → Services → Repositories → Models (never upward)
+9. **Agent-scoped everything** — all trading operations scoped by agent_id, no cross-agent data leakage
+10. **In-memory backtesting** — sandbox has zero live deps (no Redis, no Binance), look-ahead bias prevented at data layer
+11. **Unified metrics pipeline** — same calculator for backtests and battles, adapter pattern for different input sources
+12. **Self-maintaining knowledge layer** — CLAUDE.md files in every folder, mandatory update rule when code changes
 
 ---
 
-## Database Schema (Core Tables)
+## Recent Activity
 
-| Table | Purpose |
-|---|---|
-| `accounts` | Agent accounts with API keys, status, risk profile |
-| `balances` | Per-asset balances (available + locked) per account |
-| `trading_sessions` | Session tracking for account resets |
-| `orders` | All orders (pending, filled, cancelled, rejected) |
-| `trades` | Executed trade fills with PnL |
-| `positions` | Aggregated current holdings per account/symbol |
-| `ticks` | TimescaleDB hypertable — every trade tick from Binance |
-| `candles_1m/5m/1h/1d` | Continuous aggregates for OHLCV data |
-| `portfolio_snapshots` | Periodic equity snapshots for charting |
-| `trading_pairs` | Reference data for all 600+ pairs |
-| `audit_log` | Every authenticated request for security |
+### 2026-03-17 — Agentic Layer Complete Build
 
----
+**Changes:**
+- Root `CLAUDE.md` — Refactored: added index (35 sub-files), self-maintenance rule, sub-agents section, trimmed ~300 lines of redundancy
+- 21 `src/*/CLAUDE.md` files — Created for every backend module
+- 3 `tests/*/CLAUDE.md` files — Tests root, unit (62 files/974 tests), integration (20 files/433 tests)
+- 1 `alembic/CLAUDE.md` — 14-migration inventory
+- 7 `Frontend/*/CLAUDE.md` files — Components, hooks, stores, app, lib, backtest, battles
+- 3 other CLAUDE.md files — SDK, scripts, docs
+- 8 `.claude/agents/*.md` files — Full sub-agent fleet
+- `development/agentic-layer-plan-tasks.md` — All Phase 1-6 marked DONE
 
-## Docker Services
+**Decisions:**
+- CLAUDE.md template standardized: purpose → key files → architecture → public API → dependencies → tasks → gotchas → recent changes
+- Root CLAUDE.md is cross-cutting only; module details in sub-files (no duplication)
+- Mandatory agent flow: code-reviewer → test-runner after every change; context-manager proactively
 
-| Service | Port | Resources |
-|---|---|---|
-| `api` (FastAPI) | 8000 | 2 CPU, 2 GB RAM |
-| `ingestion` (Price feed) | internal | 1 CPU, 1 GB RAM |
-| `celery` (Worker) | — | 1 CPU, 1 GB RAM |
-| `celery-beat` (Scheduler) | — | — |
-| `redis` | 6379 | 1 CPU, 512 MB RAM |
-| `timescaledb` | 5432 | 2 CPU, 4 GB RAM |
-| `prometheus` | 9090 | 0.5 CPU, 512 MB RAM |
-| `grafana` | 3000 | 0.5 CPU, 512 MB RAM |
-
-**Total minimum:** 8 CPU, 10 GB RAM
+**Learnings:**
+- `Frontend/src/components/battles/` completely empty — backend done, frontend not started
+- `battle-store.ts` doesn't exist despite being referenced — battles use TanStack Query only
+- Migration 011 missing from versions directory
+- Test coverage: 974 unit + 433 integration = 1,407 total tests
 
 ---
 
-## Development Phases Overview
-
-| Phase | Weeks | Focus |
-|---|---|---|
-| **Phase 1: Foundation** | 1–3 | Price ingestion pipeline (Binance → Redis → TimescaleDB) |
-| **Phase 2: Trading Engine** | 4–6 | Orders, accounts, balances, risk, portfolio |
-| **Phase 3: API Layer** | 7–9 | REST endpoints, WebSocket, middleware, Celery tasks |
-| **Phase 4: Agent Connectivity** | 10–11 | MCP server, Python SDK, skill.md, framework guides |
-| **Phase 5: Polish & Launch** | 12–14 | Monitoring, security audit, docs, beta launch |
-
----
-
-## Key Design Decisions
-
-1. **TimescaleDB over plain PostgreSQL** — native time-series compression, continuous aggregates, retention policies; avoids maintaining a separate TSDB.
-2. **Redis for current prices** — sub-ms reads; all 600+ pairs fit in ~50–100 MB; also handles rate limiting and circuit breaker state.
-3. **Celery for background tasks** — limit order matching (1s), snapshots (1m/1h/1d), circuit breaker reset (daily), cleanup.
-4. **Slippage simulation** — proportional to order size vs. daily volume; makes the playground realistic without a full order book.
-5. **Five connectivity layers** — ensures any agent framework can integrate, not just Python or MCP-aware ones.
-
----
-
-## Environment Variables (Key)
-
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | TimescaleDB async connection string |
-| `REDIS_URL` | Redis connection string |
-| `BINANCE_WS_URL` | Binance WebSocket base URL |
-| `JWT_SECRET` | JWT signing secret (64+ chars) |
-| `TRADING_FEE_PCT` | Simulated fee (default 0.1%) |
-| `DEFAULT_STARTING_BALANCE` | New account balance (default 10000 USDT) |
-| `DEFAULT_SLIPPAGE_FACTOR` | Base slippage factor (default 0.1) |
-
----
-
-*This file is the single source of truth for project context. Update it whenever architecture, stack, or design decisions change.*
+*Older entries will appear below as development continues. Entries older than 30 days are summarized; older than 90 days are pruned (decisions and learnings are permanent).*

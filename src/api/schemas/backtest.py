@@ -33,6 +33,7 @@ class BacktestCreateRequest(_BaseSchema):
     candle_interval: int = Field(default=60, ge=60)
     pairs: list[str] | None = None
     strategy_label: str = Field(default="default", max_length=100)
+    agent_id: str | None = None
 
     @field_serializer("starting_balance")
     def _ser_balance(self, v: Decimal) -> str:
@@ -76,6 +77,7 @@ class BacktestCreateResponse(_BaseSchema):
     status: str
     total_steps: int
     estimated_pairs: int
+    agent_id: str | None = None
 
 
 class StepResponse(_BaseSchema):
@@ -121,6 +123,7 @@ class BacktestListItem(_BaseSchema):
     """Summary of a single backtest session."""
 
     session_id: str
+    agent_id: str | None = None
     strategy_label: str
     start_time: datetime
     end_time: datetime
