@@ -22,12 +22,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 import logging
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 from fastapi.responses import PlainTextResponse
 
 from src.api.middleware.auth import CurrentAccountDep
+from src.api.schemas.account import RiskProfileInfo
 from src.api.schemas.agents import (
     AgentCreate,
     AgentCredentialsResponse,
@@ -39,7 +41,7 @@ from src.api.schemas.agents import (
 )
 from src.config import get_settings
 from src.database.models import Agent
-from src.dependencies import AgentServiceDep
+from src.dependencies import AgentRepoDep, AgentServiceDep
 
 logger = logging.getLogger(__name__)
 
@@ -302,14 +304,46 @@ async def archive_agent(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete agent",
     description="Permanently delete an agent and all associated data.",
+    response_class=Response,
 )
 async def delete_agent(
     agent_id: UUID,
     account: CurrentAccountDep,
     agent_service: AgentServiceDep,
-) -> None:
+) -> Response:
     """Permanently delete an agent."""
     await agent_service.delete_agent(agent_id, account.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/agents/{agent_id}/api-key — reveal full API key
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{agent_id}/api-key",
+    response_model=AgentKeyResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get agent API key",
+    description="Return the full plaintext API key for an agent. JWT auth + ownership required.",
+)
+async def get_agent_api_key(
+    agent_id: UUID,
+    account: CurrentAccountDep,
+    agent_service: AgentServiceDep,
+) -> AgentKeyResponse:
+    """Return the full API key for an agent owned by the authenticated account."""
+    agent = await agent_service.get_agent(agent_id)
+    if agent.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this agent.")
+    return AgentKeyResponse(
+        agent_id=agent_id,
+        api_key=agent.api_key or "",
+        message="Current API key for this agent.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +369,85 @@ async def regenerate_key(
         agent_id=agent_id,
         api_key=new_key,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/agents/{agent_id}/risk-profile — get agent risk profile
+# ---------------------------------------------------------------------------
+
+# Default risk profile values (used when risk_profile JSONB is empty/missing)
+_DEFAULT_MAX_POSITION_PCT = 25
+_DEFAULT_DAILY_LOSS_PCT = 20
+_DEFAULT_MAX_OPEN_ORDERS = 50
+
+
+@router.get(
+    "/{agent_id}/risk-profile",
+    response_model=RiskProfileInfo,
+    status_code=status.HTTP_200_OK,
+    summary="Get agent risk profile",
+    description="Return the effective risk limits for a specific agent.",
+)
+async def get_agent_risk_profile(
+    agent_id: UUID,
+    account: CurrentAccountDep,
+    agent_service: AgentServiceDep,
+) -> RiskProfileInfo:
+    """Return the effective risk profile for an agent."""
+    agent = await agent_service.get_agent(agent_id)
+    if agent.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this agent.")
+
+    profile: dict[str, Any] = dict(agent.risk_profile) if agent.risk_profile else {}
+    return RiskProfileInfo(
+        max_position_size_pct=int(profile.get("max_position_size_pct", _DEFAULT_MAX_POSITION_PCT)),
+        daily_loss_limit_pct=int(profile.get("daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_PCT)),
+        max_open_orders=int(profile.get("max_open_orders", _DEFAULT_MAX_OPEN_ORDERS)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/v1/agents/{agent_id}/risk-profile — update agent risk profile
+# ---------------------------------------------------------------------------
+
+
+@router.put(
+    "/{agent_id}/risk-profile",
+    response_model=RiskProfileInfo,
+    status_code=status.HTTP_200_OK,
+    summary="Update agent risk profile",
+    description="Update the risk limits for a specific agent.",
+)
+async def update_agent_risk_profile(
+    agent_id: UUID,
+    body: RiskProfileInfo,
+    account: CurrentAccountDep,
+    agent_service: AgentServiceDep,
+    agent_repo: AgentRepoDep,
+) -> RiskProfileInfo:
+    """Update the risk profile for an agent."""
+    agent = await agent_service.get_agent(agent_id)
+    if agent.account_id != account.id:
+        from src.utils.exceptions import PermissionDeniedError  # noqa: PLC0415
+
+        raise PermissionDeniedError("You do not own this agent.")
+
+    # Merge new risk settings into existing profile
+    profile: dict[str, Any] = dict(agent.risk_profile) if agent.risk_profile else {}
+    profile["max_position_size_pct"] = body.max_position_size_pct
+    profile["daily_loss_limit_pct"] = body.daily_loss_limit_pct
+    profile["max_open_orders"] = body.max_open_orders
+
+    await agent_repo.update(agent_id, risk_profile=profile)
+
+    logger.info(
+        "agents.risk_profile_updated",
+        extra={"account_id": str(account.id), "agent_id": str(agent_id)},
+    )
+
+    return body
 
 
 # ---------------------------------------------------------------------------

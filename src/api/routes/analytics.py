@@ -52,7 +52,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
 
-from src.api.middleware.auth import CurrentAccountDep
+from src.api.middleware.auth import CurrentAccountDep, CurrentAgentDep
 from src.api.schemas.analytics import (
     AnalyticsPeriod,
     LeaderboardEntry,
@@ -177,6 +177,7 @@ def _interval_to_snapshot_type(interval: SnapshotInterval) -> str:
 )
 async def get_performance(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     metrics_svc: PerformanceMetricsDep,
     period: Annotated[
         AnalyticsPeriod,
@@ -221,7 +222,8 @@ async def get_performance(
           "total_trades": 35
         }
     """
-    m = await metrics_svc.calculate(account.id, period=period)
+    agent_id = agent.id if agent is not None else None
+    m = await metrics_svc.calculate(account.id, period=period, agent_id=agent_id)
 
     logger.info(
         "analytics.performance",
@@ -255,6 +257,7 @@ async def get_performance(
 )
 async def get_portfolio_history(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     snapshot_svc: SnapshotServiceDep,
     db: DbSessionDep,
     interval: Annotated[
@@ -314,12 +317,14 @@ async def get_portfolio_history(
         }
     """
     snapshot_type = _interval_to_snapshot_type(interval)
+    agent_id = agent.id if agent is not None else None
 
     # get_snapshot_history returns newest-first; reverse for charting (oldest first).
     raw_snapshots = await snapshot_svc.get_snapshot_history(
         account.id,
         snapshot_type=snapshot_type,
         limit=limit,
+        agent_id=agent_id,
     )
 
     # If no snapshots exist yet (Celery beat hasn't run), seed one on-demand
@@ -327,16 +332,17 @@ async def get_portfolio_history(
     if not raw_snapshots:
         try:
             if snapshot_type == "minute":
-                await snapshot_svc.capture_minute_snapshot(account.id)
+                await snapshot_svc.capture_minute_snapshot(account.id, agent_id=agent_id)
             elif snapshot_type == "daily":
-                await snapshot_svc.capture_daily_snapshot(account.id)
+                await snapshot_svc.capture_daily_snapshot(account.id, agent_id=agent_id)
             else:
-                await snapshot_svc.capture_hourly_snapshot(account.id)
+                await snapshot_svc.capture_hourly_snapshot(account.id, agent_id=agent_id)
             await db.flush()
             raw_snapshots = await snapshot_svc.get_snapshot_history(
                 account.id,
                 snapshot_type=snapshot_type,
                 limit=limit,
+                agent_id=agent_id,
             )
         except Exception:
             logger.warning(

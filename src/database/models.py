@@ -477,10 +477,10 @@ class Balance(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    agent_id: Mapped[UUID | None] = mapped_column(
+    agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("agents.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
     )
     asset: Mapped[str] = mapped_column(
         VARCHAR(20),
@@ -510,8 +510,8 @@ class Balance(Base):
         CheckConstraint("locked >= 0", name="ck_balances_locked_non_negative"),
         Index("idx_balances_account", "account_id"),
         Index("idx_balances_agent", "agent_id"),
-        # Enforces one row per (account, asset) pair.
-        Index("uq_balances_account_asset", "account_id", "asset", unique=True),
+        # Enforces one row per (agent, asset) pair.
+        Index("uq_balances_agent_asset", "agent_id", "asset", unique=True),
     )
 
     def __repr__(self) -> str:
@@ -551,10 +551,10 @@ class TradingSession(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    agent_id: Mapped[UUID | None] = mapped_column(
+    agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
     )
     starting_balance: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
@@ -640,10 +640,10 @@ class Order(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    agent_id: Mapped[UUID | None] = mapped_column(
+    agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
     )
     session_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -784,10 +784,10 @@ class Trade(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    agent_id: Mapped[UUID | None] = mapped_column(
+    agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
     )
     order_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -885,10 +885,10 @@ class Position(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    agent_id: Mapped[UUID | None] = mapped_column(
+    agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
     )
     symbol: Mapped[str] = mapped_column(
         VARCHAR(20),
@@ -934,7 +934,7 @@ class Position(Base):
     __table_args__ = (
         Index("idx_positions_account", "account_id"),
         Index("idx_positions_agent", "agent_id"),
-        Index("uq_positions_account_symbol", "account_id", "symbol", unique=True),
+        Index("uq_positions_agent_symbol", "agent_id", "symbol", unique=True),
     )
 
     def __repr__(self) -> str:
@@ -991,10 +991,10 @@ class PortfolioSnapshot(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    agent_id: Mapped[UUID | None] = mapped_column(
+    agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
     )
     snapshot_type: Mapped[str] = mapped_column(
         VARCHAR(10),

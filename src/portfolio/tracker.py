@@ -232,7 +232,7 @@ class PortfolioTracker:
 
         total_position_value = sum((p.market_value for p in positions), _ZERO)
         unrealized_pnl = sum((p.unrealized_pnl for p in positions), _ZERO)
-        realized_pnl = await self._sum_realized_pnl(account_id)
+        realized_pnl = await self._sum_realized_pnl(account_id, agent_id=agent_id)
 
         total_equity = available_cash + locked_cash + total_position_value
         total_pnl = unrealized_pnl + realized_pnl
@@ -347,8 +347,8 @@ class PortfolioTracker:
         """
         positions = await self.get_positions(account_id, agent_id=agent_id)
         unrealized_pnl = sum((p.unrealized_pnl for p in positions), _ZERO)
-        realized_pnl = await self._sum_realized_pnl(account_id)
-        daily_realized = await self._sum_daily_realized_pnl(account_id)
+        realized_pnl = await self._sum_realized_pnl(account_id, agent_id=agent_id)
+        daily_realized = await self._sum_daily_realized_pnl(account_id, agent_id=agent_id)
         total_pnl = unrealized_pnl + realized_pnl
 
         logger.debug(
@@ -444,19 +444,19 @@ class PortfolioTracker:
             )
             raise DatabaseError(f"Failed to fetch positions for account '{account_id}'.") from exc
 
-    async def _sum_realized_pnl(self, account_id: UUID) -> Decimal:
+    async def _sum_realized_pnl(self, account_id: UUID, *, agent_id: UUID | None = None) -> Decimal:
         """Return cumulative realized PnL from all trade fills.
 
         Delegates to :meth:`_sum_all_realized_pnl` which issues a direct
-        aggregate query across the entire ``trades`` table for *account_id*.
+        aggregate query across the ``trades`` table scoped by agent when provided.
 
         Raises:
             DatabaseError: On SQLAlchemy failure.
         """
-        return await self._sum_all_realized_pnl(account_id)
+        return await self._sum_all_realized_pnl(account_id, agent_id=agent_id)
 
-    async def _sum_all_realized_pnl(self, account_id: UUID) -> Decimal:
-        """Sum realized_pnl across all Trade rows for *account_id*.
+    async def _sum_all_realized_pnl(self, account_id: UUID, *, agent_id: UUID | None = None) -> Decimal:
+        """Sum realized_pnl across Trade rows, scoped by agent when provided.
 
         Uses a direct aggregate query since TradeRepository.sum_daily_realized_pnl
         is scoped to a single calendar day.
@@ -469,7 +469,10 @@ class PortfolioTracker:
         from src.database.models import Trade
 
         try:
-            stmt = select(sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)).where(Trade.account_id == account_id)
+            filters = [Trade.account_id == account_id]
+            if agent_id is not None:
+                filters.append(Trade.agent_id == agent_id)
+            stmt = select(sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)).where(*filters)
             result = await self._session.execute(stmt)
             raw = result.scalar_one()
             return Decimal(str(raw))
@@ -480,13 +483,13 @@ class PortfolioTracker:
             )
             raise DatabaseError(f"Failed to sum realized PnL for account '{account_id}'.") from exc
 
-    async def _sum_daily_realized_pnl(self, account_id: UUID) -> Decimal:
+    async def _sum_daily_realized_pnl(self, account_id: UUID, *, agent_id: UUID | None = None) -> Decimal:
         """Return today's realized PnL via TradeRepository.
 
         Raises:
             DatabaseError: On SQLAlchemy failure.
         """
-        raw_float = await self._trade_repo.sum_daily_realized_pnl(account_id)
+        raw_float = await self._trade_repo.sum_daily_realized_pnl(account_id, agent_id=agent_id)
         return Decimal(str(raw_float))
 
     async def _get_price_safe(self, symbol: str) -> tuple[Decimal, bool]:

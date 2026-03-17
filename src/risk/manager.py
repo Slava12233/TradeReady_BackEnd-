@@ -59,7 +59,7 @@ import structlog
 from src.accounts.balance_manager import BalanceManager
 from src.cache.price_cache import PriceCache
 from src.config import Settings
-from src.database.models import Account
+from src.database.models import Account, Agent
 from src.database.repositories.account_repo import AccountRepository
 from src.database.repositories.order_repo import OrderRepository
 from src.database.repositories.trade_repo import TradeRepository
@@ -232,8 +232,7 @@ class RiskManager:
         account_id: UUID,
         order: OrderRequest,
         *,
-        agent_id: UUID | None = None,
-        risk_profile_override: dict[str, Any] | None = None,
+        agent: Agent | None = None,
     ) -> RiskCheckResult:
         """Run the 8-step risk validation chain against *order*.
 
@@ -261,6 +260,9 @@ class RiskManager:
         Args:
             account_id: The account placing the order.
             order:      The validated :class:`~src.order_engine.validators.OrderRequest`.
+            agent:      Optional :class:`~src.database.models.Agent` whose
+                        ``risk_profile`` and ``starting_balance`` override
+                        account-level defaults.
 
         Returns:
             :class:`RiskCheckResult` with ``approved=True`` or details of
@@ -273,18 +275,18 @@ class RiskManager:
 
         Example::
 
-            result = await manager.validate_order(account_id, order_req)
+            result = await manager.validate_order(account_id, order_req, agent=my_agent)
             if not result.approved:
                 logger.warning("order.rejected", extra={"reason": result.rejection_reason})
         """
         account = await self._account_repo.get_by_id(account_id)
-        if risk_profile_override is not None:
-            # Use agent's risk_profile instead of account's
-            original_profile = account.risk_profile
-            account.risk_profile = risk_profile_override
-        limits = self._build_risk_limits(account)
-        if risk_profile_override is not None:
-            account.risk_profile = original_profile  # type: ignore[assignment,unused-ignore]
+        limits = self._build_risk_limits(account, agent=agent)
+        agent_id = agent.id if agent is not None else None
+
+        # Determine starting balance for daily loss check
+        starting_balance_override: Decimal | None = None
+        if agent is not None and agent.starting_balance is not None:
+            starting_balance_override = Decimal(str(agent.starting_balance))
 
         # ── Step 1: Account active ────────────────────────────────────────
         result = self._check_account_active(account)
@@ -292,14 +294,16 @@ class RiskManager:
             return result
 
         # ── Step 2: Daily loss limit ──────────────────────────────────────
-        result = await self._check_daily_loss(account, limits)
+        result = await self._check_daily_loss(
+            account, limits, agent_id=agent_id, starting_balance_override=starting_balance_override
+        )
         if not result.approved:
             return result
 
         # ── Step 3: Order rate limit (read-only) ─────────────────────────
         # The counter is incremented AFTER all checks pass (see end of chain)
         # so that rejected orders do not consume a rate-limit token.
-        result, rate_limit_key = await self._check_rate_limit(account_id, limits)
+        result, rate_limit_key = await self._check_rate_limit(account_id, limits, agent_id=agent_id)
         if not result.approved:
             return result
 
@@ -322,7 +326,7 @@ class RiskManager:
 
         # Compute real total portfolio equity once — reused by steps 5 and 6
         # to avoid extra DB/cache round-trips and to use correct denominator.
-        total_equity = await self._compute_total_equity(account_id, order.symbol, current_price)
+        total_equity = await self._compute_total_equity(account_id, order.symbol, current_price, agent_id=agent_id)
 
         # ── Step 4: Minimum order size ────────────────────────────────────
         result = self._check_min_order_size(estimated_value, limits)
@@ -336,18 +340,18 @@ class RiskManager:
 
         # ── Step 6: Maximum position % ───────────────────────────────────
         result = await self._check_position_limit(
-            account_id, order, estimated_value, limits, total_equity, current_price
+            account_id, order, estimated_value, limits, total_equity, current_price, agent_id=agent_id
         )
         if not result.approved:
             return result
 
         # ── Step 7: Maximum open orders ───────────────────────────────────
-        result = await self._check_open_orders(account_id, limits)
+        result = await self._check_open_orders(account_id, limits, agent_id=agent_id)
         if not result.approved:
             return result
 
         # ── Step 8: Sufficient balance ────────────────────────────────────
-        result = await self._check_sufficient_balance(account_id, order, estimated_value)
+        result = await self._check_sufficient_balance(account_id, order, estimated_value, agent_id=agent_id)
         if not result.approved:
             return result
 
@@ -364,11 +368,18 @@ class RiskManager:
         )
         return RiskCheckResult.ok()
 
-    async def check_daily_loss(self, account_id: UUID) -> bool:
-        """Return ``True`` if the account is within its daily loss limit.
+    async def check_daily_loss(
+        self,
+        account_id: UUID,
+        *,
+        agent: Agent | None = None,
+    ) -> bool:
+        """Return ``True`` if the account/agent is within its daily loss limit.
 
         Args:
             account_id: The account to check.
+            agent:      Optional agent whose ``starting_balance`` and
+                        ``risk_profile`` override account-level defaults.
 
         Returns:
             ``True`` when the account has not yet hit its loss threshold;
@@ -380,23 +391,36 @@ class RiskManager:
 
         Example::
 
-            if not await manager.check_daily_loss(account_id):
+            if not await manager.check_daily_loss(account_id, agent=my_agent):
                 raise DailyLossLimitError(account_id=account_id)
         """
         account = await self._account_repo.get_by_id(account_id)
-        limits = self._build_risk_limits(account)
-        result = await self._check_daily_loss(account, limits)
+        limits = self._build_risk_limits(account, agent=agent)
+        agent_id = agent.id if agent is not None else None
+        starting_balance_override: Decimal | None = None
+        if agent is not None and agent.starting_balance is not None:
+            starting_balance_override = Decimal(str(agent.starting_balance))
+        result = await self._check_daily_loss(
+            account, limits, agent_id=agent_id, starting_balance_override=starting_balance_override
+        )
         return result.approved
 
-    async def get_risk_limits(self, account_id: UUID) -> RiskLimits:
+    async def get_risk_limits(
+        self,
+        account_id: UUID,
+        *,
+        agent: Agent | None = None,
+    ) -> RiskLimits:
         """Return the effective :class:`RiskLimits` for *account_id*.
 
         Merges platform defaults with per-account overrides stored in the
-        ``risk_profile`` JSONB column.  Unknown keys in ``risk_profile`` are
-        silently ignored so forward-compatibility is maintained.
+        ``risk_profile`` JSONB column.  When an *agent* is provided, its
+        ``risk_profile`` takes precedence over the account's.
 
         Args:
             account_id: The account whose limits to retrieve.
+            agent:      Optional agent whose ``risk_profile`` overrides
+                        account-level settings.
 
         Returns:
             A :class:`RiskLimits` instance with all fields populated.
@@ -407,11 +431,11 @@ class RiskManager:
 
         Example::
 
-            limits = await manager.get_risk_limits(account_id)
-            print(limits.max_open_orders)  # 50 (default) or per-account value
+            limits = await manager.get_risk_limits(account_id, agent=my_agent)
+            print(limits.max_open_orders)  # 50 (default) or per-agent value
         """
         account = await self._account_repo.get_by_id(account_id)
-        return self._build_risk_limits(account)
+        return self._build_risk_limits(account, agent=agent)
 
     async def update_risk_limits(
         self,
@@ -459,16 +483,26 @@ class RiskManager:
     # Private helpers — one method per validation step
     # ------------------------------------------------------------------
 
-    def _build_risk_limits(self, account: Account) -> RiskLimits:
-        """Merge platform defaults with the account's ``risk_profile`` overrides.
+    def _build_risk_limits(self, account: Account, *, agent: Agent | None = None) -> RiskLimits:
+        """Merge platform defaults with risk profile overrides.
+
+        When *agent* is provided and has a non-empty ``risk_profile``, the
+        agent's profile takes precedence over the account's.  This ensures
+        each agent can have independent risk configuration.
 
         Args:
             account: Loaded :class:`~src.database.models.Account` instance.
+            agent:   Optional :class:`~src.database.models.Agent` whose
+                     ``risk_profile`` overrides account-level settings.
 
         Returns:
-            :class:`RiskLimits` with per-account overrides applied.
+            :class:`RiskLimits` with per-agent/account overrides applied.
         """
-        profile: dict[str, Any] = account.risk_profile or {}
+        # Agent risk_profile takes precedence when present
+        if agent is not None and agent.risk_profile:
+            profile: dict[str, Any] = dict(agent.risk_profile)
+        else:
+            profile = account.risk_profile or {}
 
         def _dec(key: str, default: Decimal) -> Decimal:
             raw = profile.get(key)
@@ -531,10 +565,13 @@ class RiskManager:
         self,
         account: Account,
         limits: RiskLimits,
+        *,
+        agent_id: UUID | None = None,
+        starting_balance_override: Decimal | None = None,
     ) -> RiskCheckResult:
-        """Step 2: Verify the account's daily realized PnL is within limits."""
+        """Step 2: Verify the account/agent's daily realized PnL is within limits."""
         try:
-            daily_pnl = Decimal(str(await self._trade_repo.sum_daily_realized_pnl(account.id)))
+            daily_pnl = Decimal(str(await self._trade_repo.sum_daily_realized_pnl(account.id, agent_id=agent_id)))
         except DatabaseError:
             raise
         except Exception as exc:
@@ -545,7 +582,7 @@ class RiskManager:
             )
             raise DatabaseError("Failed to check daily loss limit.") from exc
 
-        starting_balance = Decimal(str(account.starting_balance))
+        starting_balance = starting_balance_override or Decimal(str(account.starting_balance))
         loss_limit = (starting_balance * limits.daily_loss_limit_pct / _HUNDRED).quantize(Decimal("0.00000001"))
 
         # daily_pnl is negative when in loss; breach when loss > limit
@@ -571,12 +608,17 @@ class RiskManager:
         self,
         account_id: UUID,
         limits: RiskLimits,
+        *,
+        agent_id: UUID | None = None,
     ) -> tuple[RiskCheckResult, str]:
         """Step 3: Read-only check of the per-minute order rate limit.
 
         Returns the current count and the Redis key so the caller can
         increment the counter *after* all other checks pass — rejected
         orders therefore do not consume a rate-limit token.
+
+        When *agent_id* is provided, the rate limit is scoped to the agent
+        rather than the account, so each agent gets its own rate limit bucket.
 
         Uses a minute-bucket key so the window resets naturally at each new
         UTC minute.  TTL is set to 120 s to cover both the current and the
@@ -587,8 +629,10 @@ class RiskManager:
         """
         now_utc = datetime.now(tz=UTC)
         minute_bucket = now_utc.strftime("%Y%m%d%H%M")
+        # Scope rate limit to agent when available, otherwise to account
+        scope_id = str(agent_id) if agent_id is not None else str(account_id)
         key = _RATE_LIMIT_KEY_TEMPLATE.format(
-            account_id=str(account_id),
+            account_id=scope_id,
             minute=minute_bucket,
         )
 
@@ -714,6 +758,8 @@ class RiskManager:
         limits: RiskLimits,
         total_equity: Decimal,
         current_price: Decimal,
+        *,
+        agent_id: UUID | None = None,
     ) -> RiskCheckResult:
         """Step 6: Ensure the resulting position won't exceed max % of total equity.
 
@@ -732,7 +778,7 @@ class RiskManager:
 
         symbol = order.symbol
         base_asset = symbol.removesuffix("USDT")
-        base_balance = await self._balance_manager.get_balance(account_id, base_asset)
+        base_balance = await self._balance_manager.get_balance(account_id, base_asset, agent_id=agent_id)
         existing_base = Decimal(str(base_balance.available)) if base_balance else _ZERO
         existing_position_value = (existing_base * current_price).quantize(Decimal("0.00000001"))
 
@@ -764,6 +810,8 @@ class RiskManager:
         account_id: UUID,
         current_symbol: str,
         current_price: Decimal,
+        *,
+        agent_id: UUID | None = None,
     ) -> Decimal:
         """Return total portfolio value in USDT by pricing all held assets.
 
@@ -783,7 +831,7 @@ class RiskManager:
             Total portfolio value in USDT, or ``Decimal("0")`` when no
             balance rows exist.
         """
-        all_balances = await self._balance_manager.get_all_balances(account_id)
+        all_balances = await self._balance_manager.get_all_balances(account_id, agent_id=agent_id)
         total = _ZERO
         for balance in all_balances:
             total_qty = Decimal(str(balance.available)) + Decimal(str(balance.locked))
@@ -805,9 +853,14 @@ class RiskManager:
         self,
         account_id: UUID,
         limits: RiskLimits,
+        *,
+        agent_id: UUID | None = None,
     ) -> RiskCheckResult:
-        """Step 7: Ensure the account has not hit the open-order cap."""
-        open_count = await self._order_repo.count_open_by_account(account_id)
+        """Step 7: Ensure the account/agent has not hit the open-order cap."""
+        if agent_id is not None:
+            open_count = await self._order_repo.count_open_by_agent(agent_id)
+        else:
+            open_count = await self._order_repo.count_open_by_account(account_id)
 
         if open_count >= limits.max_open_orders:
             logger.info(
@@ -830,8 +883,10 @@ class RiskManager:
         account_id: UUID,
         order: OrderRequest,
         estimated_value: Decimal,
+        *,
+        agent_id: UUID | None = None,
     ) -> RiskCheckResult:
-        """Step 8: Verify the account can fund the trade.
+        """Step 8: Verify the account/agent can fund the trade.
 
         For **buy** orders: checks available USDT ≥ estimated cost (including
         fee buffer of ``trading_fee_pct``).
@@ -845,9 +900,10 @@ class RiskManager:
                 account_id,
                 asset="USDT",
                 amount=required_usdt,
+                agent_id=agent_id,
             )
             if not has_funds:
-                usdt_balance = await self._balance_manager.get_balance(account_id, "USDT")
+                usdt_balance = await self._balance_manager.get_balance(account_id, "USDT", agent_id=agent_id)
                 available = Decimal(str(usdt_balance.available)) if usdt_balance else _ZERO
                 logger.info(
                     "risk.check.insufficient_balance",
@@ -869,9 +925,10 @@ class RiskManager:
                 account_id,
                 asset=base_asset,
                 amount=order.quantity,
+                agent_id=agent_id,
             )
             if not has_funds:
-                base_balance = await self._balance_manager.get_balance(account_id, base_asset)
+                base_balance = await self._balance_manager.get_balance(account_id, base_asset, agent_id=agent_id)
                 available = Decimal(str(base_balance.available)) if base_balance else _ZERO
                 logger.info(
                     "risk.check.insufficient_balance",

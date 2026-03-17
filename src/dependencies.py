@@ -130,7 +130,7 @@ async def get_redis() -> AsyncGenerator[Redis[Any], None]:
         pass  # pool manages connection lifecycle; do not close here
 
 
-RedisDep: TypeAlias = Annotated[Redis[Any], Depends(get_redis)]
+RedisDep: TypeAlias = Annotated[Redis, Depends(get_redis)]  # type: ignore[type-arg]
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +522,7 @@ async def get_circuit_breaker_redis(
     return redis
 
 
-CircuitBreakerRedisDep: TypeAlias = Annotated[Redis[Any], Depends(get_circuit_breaker_redis)]
+CircuitBreakerRedisDep: TypeAlias = Annotated[Redis, Depends(get_circuit_breaker_redis)]  # type: ignore[type-arg]
 
 
 # ---------------------------------------------------------------------------

@@ -211,6 +211,8 @@ class PerformanceMetrics:
         self,
         account_id: UUID,
         period: str = "all",
+        *,
+        agent_id: UUID | None = None,
     ) -> Metrics:
         """Compute all performance metrics for *account_id* over *period*.
 
@@ -246,8 +248,8 @@ class PerformanceMetrics:
 
         since = _period_to_since(period)
 
-        trades = await self._load_closed_trades(account_id, since=since)
-        snapshots = await self._load_snapshots(account_id, since=since)
+        trades = await self._load_closed_trades(account_id, since=since, agent_id=agent_id)
+        snapshots = await self._load_snapshots(account_id, since=since, agent_id=agent_id)
 
         if not trades and not snapshots:
             logger.debug(
@@ -308,6 +310,7 @@ class PerformanceMetrics:
         account_id: UUID,
         *,
         since: datetime | None,
+        agent_id: UUID | None = None,
     ) -> Sequence[Trade]:
         """Load all closed-trade rows (realized_pnl IS NOT NULL) for the period.
 
@@ -328,12 +331,15 @@ class PerformanceMetrics:
         from src.database.models import Trade as TradeModel
 
         try:
+            filters = [
+                TradeModel.account_id == account_id,
+                TradeModel.realized_pnl.is_not(None),
+            ]
+            if agent_id is not None:
+                filters.append(TradeModel.agent_id == agent_id)
             stmt = (
                 select(TradeModel)
-                .where(
-                    TradeModel.account_id == account_id,
-                    TradeModel.realized_pnl.is_not(None),
-                )
+                .where(*filters)
                 .order_by(TradeModel.created_at.asc())
             )
             if since is not None:
@@ -352,6 +358,7 @@ class PerformanceMetrics:
         account_id: UUID,
         *,
         since: datetime | None,
+        agent_id: UUID | None = None,
     ) -> Sequence[PortfolioSnapshot]:
         """Load hourly equity snapshots for the equity-curve computation.
 
@@ -373,12 +380,15 @@ class PerformanceMetrics:
         from sqlalchemy import select
 
         try:
+            filters = [
+                PortfolioSnapshot.account_id == account_id,
+                PortfolioSnapshot.snapshot_type == _EQUITY_SNAPSHOT_TYPE,
+            ]
+            if agent_id is not None:
+                filters.append(PortfolioSnapshot.agent_id == agent_id)
             stmt = (
                 select(PortfolioSnapshot)
-                .where(
-                    PortfolioSnapshot.account_id == account_id,
-                    PortfolioSnapshot.snapshot_type == _EQUITY_SNAPSHOT_TYPE,
-                )
+                .where(*filters)
                 .order_by(PortfolioSnapshot.created_at.asc())
                 .limit(_MAX_SNAPSHOTS)
             )

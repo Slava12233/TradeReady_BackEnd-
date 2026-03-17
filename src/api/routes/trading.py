@@ -191,14 +191,12 @@ async def place_order(
 
     # Resolve agent context for agent-scoped operations
     agent_id = agent.id if agent is not None else None
-    risk_profile = dict(agent.risk_profile) if agent is not None and agent.risk_profile else None
 
-    # Step 1: risk validation
+    # Step 1: risk validation (agent object carries risk_profile + starting_balance)
     risk_result = await risk.validate_order(
         account.id,
         engine_request,
-        agent_id=agent_id,
-        risk_profile_override=risk_profile,
+        agent=agent,
     )
     if not risk_result.approved:
         logger.warning(
@@ -290,6 +288,7 @@ async def place_order(
 async def get_order(
     order_id: UUID,
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     order_repo: OrderRepoDep,
 ) -> OrderDetailResponse:
     """Fetch a single order by its UUID with an ownership check.
@@ -314,6 +313,12 @@ async def get_order(
         {"order_id": "...", "status": "filled", "symbol": "BTCUSDT", ...}
     """
     order = await order_repo.get_by_id(order_id, account_id=account.id)
+    # Verify agent ownership when agent context is present
+    agent_id = agent.id if agent is not None else None
+    if agent_id is not None and order.agent_id != agent_id:
+        from src.utils.exceptions import OrderNotFoundError
+
+        raise OrderNotFoundError(order_id=order_id)
     return _order_to_detail(order)
 
 
@@ -333,6 +338,7 @@ async def get_order(
 )
 async def list_orders(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     order_repo: OrderRepoDep,
     status_filter: Annotated[
         str | None,
@@ -380,8 +386,10 @@ async def list_orders(
         →  HTTP 200
         {"orders": [...], "total": 42, "limit": 50, "offset": 0}
     """
+    agent_id = agent.id if agent is not None else None
     orders = await order_repo.list_by_account(
         account.id,
+        agent_id=agent_id,
         status=status_filter,
         symbol=symbol.upper() if symbol else None,
         limit=limit,
@@ -409,6 +417,7 @@ async def list_orders(
 )
 async def list_open_orders(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     order_repo: OrderRepoDep,
     limit: Annotated[
         int,
@@ -440,8 +449,10 @@ async def list_open_orders(
         →  HTTP 200
         {"orders": [...], "total": 3, "limit": 100, "offset": 0}
     """
+    agent_id = agent.id if agent is not None else None
     orders = await order_repo.list_open_by_account(
         account.id,
+        agent_id=agent_id,
         limit=limit,
         offset=offset,
     )
@@ -471,6 +482,7 @@ async def list_open_orders(
 async def cancel_order(
     order_id: UUID,
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     order_repo: OrderRepoDep,
     engine: OrderEngineDep,
 ) -> CancelResponse:
@@ -507,6 +519,13 @@ async def cancel_order(
     # Fetch the order first to compute the unlocked amount for the response.
     order = await order_repo.get_by_id(order_id, account_id=account.id)
 
+    # Verify agent ownership when agent context is present
+    agent_id = agent.id if agent is not None else None
+    if agent_id is not None and order.agent_id != agent_id:
+        from src.utils.exceptions import OrderNotFoundError
+
+        raise OrderNotFoundError(order_id=order_id)
+
     # Calculate the amount that will be unlocked (mirrors engine._release_locked_funds).
     unlocked_amount = Decimal("0")
     if order.price is not None:
@@ -517,7 +536,7 @@ async def cancel_order(
         else:
             unlocked_amount = Decimal(str(order.quantity))
 
-    await engine.cancel_order(account.id, order_id)
+    await engine.cancel_order(account.id, order_id, agent_id=agent_id)
 
     cancelled_at = datetime.now(tz=UTC)
     logger.info(
@@ -550,6 +569,7 @@ async def cancel_order(
 )
 async def cancel_all_orders(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     order_repo: OrderRepoDep,
     engine: OrderEngineDep,
 ) -> CancelAllResponse:
@@ -578,7 +598,11 @@ async def cancel_all_orders(
         {"cancelled_count": 5, "total_unlocked": "45230.00"}
     """
     # Snapshot open orders before cancellation to compute total_unlocked.
-    open_orders = await order_repo.list_open_by_account(account.id, limit=500)
+    agent_id = agent.id if agent is not None else None
+    if agent_id is not None:
+        open_orders = await order_repo.list_open_by_agent(agent_id)
+    else:
+        open_orders = await order_repo.list_open_by_account(account.id, limit=500)
 
     total_unlocked = Decimal("0")
     for order in open_orders:
@@ -590,7 +614,7 @@ async def cancel_all_orders(
             else:
                 total_unlocked += Decimal(str(order.quantity))
 
-    cancelled_count = await engine.cancel_all_orders(account.id)
+    cancelled_count = await engine.cancel_all_orders(account.id, agent_id=agent_id)
 
     logger.info(
         "trading.cancel_all_orders.success",
@@ -624,6 +648,7 @@ async def cancel_all_orders(
 )
 async def trade_history(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     trade_repo: TradeRepoDep,
     symbol: Annotated[
         str | None,
@@ -670,9 +695,11 @@ async def trade_history(
         →  HTTP 200
         {"trades": [...], "total": 120, "limit": 20, "offset": 0}
     """
+    agent_id = agent.id if agent is not None else None
     sym = symbol.upper() if symbol else None
     trades = await trade_repo.list_by_account(
         account.id,
+        agent_id=agent_id,
         symbol=sym,
         side=side,
         limit=limit,
@@ -680,6 +707,7 @@ async def trade_history(
     )
     total = await trade_repo.count_by_account(
         account.id,
+        agent_id=agent_id,
         symbol=sym,
         side=side,
     )

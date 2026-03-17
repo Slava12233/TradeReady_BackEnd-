@@ -195,13 +195,8 @@ class AccountService:
 
             account = await self._account_repo.create(account)
 
-            usdt_balance = Balance(
-                account_id=account.id,
-                asset=_STARTING_ASSET,
-                available=balance_amount,
-                locked=Decimal("0"),
-            )
-            await self._balance_repo.create(usdt_balance)
+            # NOTE: Balance creation is handled by AgentService.create_agent(),
+            # which creates an agent-scoped balance (Balance.agent_id is NOT NULL).
 
             session_row = TradingSession(
                 account_id=account.id,

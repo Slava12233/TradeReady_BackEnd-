@@ -160,7 +160,7 @@ class SnapshotService:
     # Public API — capture
     # ------------------------------------------------------------------
 
-    async def capture_minute_snapshot(self, account_id: UUID) -> None:
+    async def capture_minute_snapshot(self, account_id: UUID, *, agent_id: UUID | None = None) -> None:
         """Capture a lightweight equity-only snapshot for *account_id*.
 
         Fetches the current portfolio summary from :class:`PortfolioTracker`
@@ -181,10 +181,11 @@ class SnapshotService:
             await svc.capture_minute_snapshot(account_id)
             await session.commit()
         """
-        summary = await self._tracker.get_portfolio(account_id)
+        summary = await self._tracker.get_portfolio(account_id, agent_id=agent_id)
 
         snap = PortfolioSnapshot(
             account_id=account_id,
+            agent_id=agent_id,
             snapshot_type="minute",
             total_equity=float(summary.total_equity),
             available_cash=float(summary.available_cash),
@@ -203,7 +204,7 @@ class SnapshotService:
             },
         )
 
-    async def capture_hourly_snapshot(self, account_id: UUID) -> None:
+    async def capture_hourly_snapshot(self, account_id: UUID, *, agent_id: UUID | None = None) -> None:
         """Capture a full position-breakdown snapshot for *account_id*.
 
         Fetches the current portfolio summary and all open positions, serialises
@@ -224,11 +225,12 @@ class SnapshotService:
             await svc.capture_hourly_snapshot(account_id)
             await session.commit()
         """
-        summary = await self._tracker.get_portfolio(account_id)
+        summary = await self._tracker.get_portfolio(account_id, agent_id=agent_id)
         positions_data = _serialise_positions(summary.positions)
 
         snap = PortfolioSnapshot(
             account_id=account_id,
+            agent_id=agent_id,
             snapshot_type="hourly",
             total_equity=float(summary.total_equity),
             available_cash=float(summary.available_cash),
@@ -248,7 +250,7 @@ class SnapshotService:
             },
         )
 
-    async def capture_daily_snapshot(self, account_id: UUID) -> None:
+    async def capture_daily_snapshot(self, account_id: UUID, *, agent_id: UUID | None = None) -> None:
         """Capture a comprehensive daily performance snapshot for *account_id*.
 
         Fetches the current portfolio summary, open positions, and all-time
@@ -270,13 +272,14 @@ class SnapshotService:
             await svc.capture_daily_snapshot(account_id)
             await session.commit()
         """
-        summary = await self._tracker.get_portfolio(account_id)
+        summary = await self._tracker.get_portfolio(account_id, agent_id=agent_id)
         positions_data = _serialise_positions(summary.positions)
-        m = await self._perf.calculate(account_id, period="all")
+        m = await self._perf.calculate(account_id, period="all", agent_id=agent_id)
         metrics_data = _serialise_metrics(m)
 
         snap = PortfolioSnapshot(
             account_id=account_id,
+            agent_id=agent_id,
             snapshot_type="daily",
             total_equity=float(summary.total_equity),
             available_cash=float(summary.available_cash),
@@ -306,6 +309,8 @@ class SnapshotService:
         account_id: UUID,
         snapshot_type: str,
         limit: int = 100,
+        *,
+        agent_id: UUID | None = None,
     ) -> list[Snapshot]:
         """Return a time-ordered list of snapshots for *account_id*.
 
@@ -338,6 +343,7 @@ class SnapshotService:
             account_id,
             snapshot_type,
             limit=limit,
+            agent_id=agent_id,
         )
         return [_orm_to_snapshot(row) for row in rows]
 

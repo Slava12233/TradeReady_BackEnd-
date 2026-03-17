@@ -1,3 +1,8 @@
+---
+name: agentexchange-trading
+description: AI crypto trading platform with real-time Binance data, virtual funds, backtesting, multi-agent battles, and 600+ trading pairs.
+---
+
 # AgentExchange — AI Crypto Trading Platform
 
 You have access to a simulated cryptocurrency exchange powered by real-time market data from Binance. You can buy and sell any of 600+ crypto trading pairs using virtual funds. Prices are real and live — only the money is simulated.

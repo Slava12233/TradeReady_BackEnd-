@@ -185,6 +185,7 @@ class TradeRepository:
         self,
         account_id: UUID,
         *,
+        agent_id: UUID | None = None,
         symbol: str | None = None,
         side: str | None = None,
         limit: int = 100,
@@ -231,6 +232,8 @@ class TradeRepository:
                 .limit(limit)
                 .offset(offset)
             )
+            if agent_id is not None:
+                stmt = stmt.where(Trade.agent_id == agent_id)
             if symbol is not None:
                 stmt = stmt.where(Trade.symbol == symbol)
             if side is not None:
@@ -248,6 +251,7 @@ class TradeRepository:
         self,
         account_id: UUID,
         *,
+        agent_id: UUID | None = None,
         symbol: str | None = None,
         side: str | None = None,
     ) -> int:
@@ -255,6 +259,7 @@ class TradeRepository:
 
         Args:
             account_id: The owning account's UUID.
+            agent_id:   Optional agent UUID for per-agent scoping.
             symbol:     Optional symbol filter.
             side:       Optional side filter.
 
@@ -272,6 +277,8 @@ class TradeRepository:
                     Trade.account_id == account_id,
                 )
             )
+            if agent_id is not None:
+                stmt = stmt.where(Trade.agent_id == agent_id)
             if symbol is not None:
                 stmt = stmt.where(Trade.symbol == symbol)
             if side is not None:
@@ -408,6 +415,7 @@ class TradeRepository:
         account_id: UUID,
         *,
         day: date | None = None,
+        agent_id: UUID | None = None,
     ) -> Decimal:
         """Return the total realised PnL for an account within a UTC calendar day.
 
@@ -443,11 +451,14 @@ class TradeRepository:
         day_end = day_start + timedelta(days=1)
 
         try:
-            stmt = select(sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)).where(
+            filters = [
                 Trade.account_id == account_id,
                 Trade.created_at >= day_start,
                 Trade.created_at < day_end,
-            )
+            ]
+            if agent_id is not None:
+                filters.append(Trade.agent_id == agent_id)
+            stmt = select(sa_func.coalesce(sa_func.sum(Trade.realized_pnl), 0)).where(*filters)
             result = await self._session.execute(stmt)
             total = result.scalar_one()
             return Decimal(str(total))

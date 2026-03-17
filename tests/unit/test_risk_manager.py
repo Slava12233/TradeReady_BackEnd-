@@ -26,7 +26,7 @@ import pytest
 from src.accounts.balance_manager import BalanceManager
 from src.cache.price_cache import PriceCache
 from src.config import Settings
-from src.database.models import Account, Balance
+from src.database.models import Account, Agent, Balance
 from src.database.repositories.account_repo import AccountRepository
 from src.database.repositories.order_repo import OrderRepository
 from src.database.repositories.trade_repo import TradeRepository
@@ -105,7 +105,7 @@ def _build_manager(
 
     usdt_bal = _make_balance(balance_available)
 
-    async def _get_balance(acct_id: object, asset: str) -> object:
+    async def _get_balance(acct_id: object, asset: str, **kwargs: object) -> object:
         # Only return a balance row for USDT; all other assets return None
         # (no existing position), which is the common test-default scenario.
         return usdt_bal if asset == "USDT" else None
@@ -402,3 +402,130 @@ def test_risk_check_result_reject():
     assert result.rejection_reason == "some_reason"
     assert result.details["limit"] == 50
     assert result.details["current"] == 55
+
+
+# ---------------------------------------------------------------------------
+# Agent helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_agent(
+    account_id=None,
+    starting_balance: str = "5000",
+    risk_profile: dict | None = None,
+) -> Agent:
+    agent = MagicMock(spec=Agent)
+    agent.id = uuid4()
+    agent.account_id = account_id or uuid4()
+    agent.starting_balance = Decimal(starting_balance)
+    agent.risk_profile = risk_profile or {}
+    return agent
+
+
+# ---------------------------------------------------------------------------
+# Agent-scoped risk profile tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_validate_order_uses_agent_risk_profile():
+    """Agent with custom max_open_orders=5 overrides account default of 50."""
+    account = _make_account()
+    agent = _make_agent(
+        account_id=account.id,
+        risk_profile={"max_open_orders": 5},
+    )
+    # 6 open orders — within account default (50) but exceeds agent limit (5)
+    mgr, _ = _build_manager(account=account, open_orders=6)
+    # Agent-scoped: need to mock count_open_by_agent
+    mgr._order_repo.count_open_by_agent = AsyncMock(return_value=6)
+    order = _make_order_request()
+
+    result = await mgr.validate_order(account.id, order, agent=agent)
+
+    assert result.approved is False
+    assert result.rejection_reason == "max_open_orders_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_daily_loss_uses_agent_starting_balance():
+    """Agent starting_balance=5000, 20% limit → $1000 threshold.
+
+    Daily PnL of -$1000 should hit the limit for the agent (20% of 5000)
+    but would NOT hit it for the account (20% of 10000 = $2000).
+    """
+    account = _make_account(starting_balance="10000")
+    agent = _make_agent(
+        account_id=account.id,
+        starting_balance="5000",
+    )
+    mgr, _ = _build_manager(account=account, daily_pnl="-1000")
+    order = _make_order_request()
+
+    result = await mgr.validate_order(account.id, order, agent=agent)
+
+    assert result.approved is False
+    assert result.rejection_reason == "daily_loss_limit"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_scoped_to_agent():
+    """Rate limit Redis key should include agent_id when agent is provided."""
+    account = _make_account()
+    agent = _make_agent(account_id=account.id)
+    mgr, _ = _build_manager(account=account, rate_limit_count=101)
+    # Agent-scoped rate limit: set up mock for agent-specific key
+    mgr._order_repo.count_open_by_agent = AsyncMock(return_value=0)
+    order = _make_order_request()
+
+    result = await mgr.validate_order(account.id, order, agent=agent)
+
+    assert result.approved is False
+    assert result.rejection_reason == "rate_limit_exceeded"
+    # Verify the Redis key used the agent_id, not account_id
+    redis_get_call = mgr._redis.get.call_args[0][0]
+    assert str(agent.id) in redis_get_call
+    assert str(account.id) not in redis_get_call
+
+
+@pytest.mark.asyncio
+async def test_get_risk_limits_with_agent():
+    """get_risk_limits with agent returns agent's limits, not account's."""
+    account = _make_account(risk_profile={"max_open_orders": 100})
+    agent = _make_agent(
+        account_id=account.id,
+        risk_profile={"max_open_orders": 10, "daily_loss_limit_pct": "5"},
+    )
+    mgr, _ = _build_manager(account=account)
+
+    limits = await mgr.get_risk_limits(account.id, agent=agent)
+
+    assert limits.max_open_orders == 10
+    assert limits.daily_loss_limit_pct == Decimal("5")
+    # Untouched defaults remain
+    assert limits.max_position_size_pct == Decimal("25")
+
+
+@pytest.mark.asyncio
+async def test_validate_order_backward_compat_no_agent():
+    """validate_order still works when agent=None (backward compatibility)."""
+    mgr, account = _build_manager(balance_available="10000")
+    order = _make_order_request(quantity="0.01")
+
+    result = await mgr.validate_order(account.id, order)
+
+    assert result.approved is True
+
+
+@pytest.mark.asyncio
+async def test_check_daily_loss_with_agent():
+    """check_daily_loss public method uses agent's starting_balance."""
+    account = _make_account(starting_balance="10000")
+    agent = _make_agent(account_id=account.id, starting_balance="5000")
+    # -1000 is 20% of 5000 → should fail for agent
+    mgr, _ = _build_manager(account=account, daily_pnl="-1000")
+
+    assert await mgr.check_daily_loss(account.id, agent=agent) is False
+
+    # But same PnL should pass for account (20% of 10000 = 2000 > 1000)
+    assert await mgr.check_daily_loss(account.id) is True

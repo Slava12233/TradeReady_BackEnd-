@@ -150,6 +150,7 @@ class SnapshotRepository:
         limit: int = 100,
         since: datetime | None = None,
         until: datetime | None = None,
+        agent_id: UUID | None = None,
     ) -> Sequence[PortfolioSnapshot]:
         """Return a time-ordered history of snapshots for one account and type.
 
@@ -194,12 +195,15 @@ class SnapshotRepository:
             )
         """
         try:
+            filters = [
+                PortfolioSnapshot.account_id == account_id,
+                PortfolioSnapshot.snapshot_type == snapshot_type,
+            ]
+            if agent_id is not None:
+                filters.append(PortfolioSnapshot.agent_id == agent_id)
             stmt = (
                 select(PortfolioSnapshot)
-                .where(
-                    PortfolioSnapshot.account_id == account_id,
-                    PortfolioSnapshot.snapshot_type == snapshot_type,
-                )
+                .where(*filters)
                 .order_by(PortfolioSnapshot.created_at.desc())
                 .limit(limit)
             )

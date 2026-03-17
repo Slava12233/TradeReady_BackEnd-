@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
 from src.api.middleware.auth import CurrentAccountDep
 from src.api.schemas.battles import (
@@ -224,14 +224,16 @@ async def update_battle(
     "/{battle_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete or cancel battle",
+    response_class=Response,
 )
 async def delete_battle(
     battle_id: UUID,
     account: CurrentAccountDep,
     battle_service: BattleServiceDep,
-) -> None:
+) -> Response:
     """Delete a draft/pending battle or cancel an active one."""
     await battle_service.delete_battle(battle_id, account.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -267,15 +269,17 @@ async def add_participant(
     "/{battle_id}/participants/{agent_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove participant",
+    response_class=Response,
 )
 async def remove_participant(
     battle_id: UUID,
     agent_id: UUID,
     account: CurrentAccountDep,
     battle_service: BattleServiceDep,
-) -> None:
+) -> Response:
     """Remove an agent from a battle (draft/pending only)."""
     await battle_service.remove_participant(battle_id, agent_id, account.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

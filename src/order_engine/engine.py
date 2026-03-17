@@ -251,7 +251,7 @@ class OrderEngine:
             agent_id=agent_id,
         )
 
-    async def cancel_order(self, account_id: UUID, order_id: UUID) -> bool:
+    async def cancel_order(self, account_id: UUID, order_id: UUID, *, agent_id: UUID | None = None) -> bool:
         """Cancel a single pending order and release its locked funds.
 
         Args:
@@ -278,7 +278,9 @@ class OrderEngine:
         # cancel() (rather than a pre-fetched copy) ensures we release exactly
         # the amount that was locked, avoiding any TOCTOU inconsistency.
         order = await self._order_repo.cancel(order_id, account_id)
-        await self._release_locked_funds(account_id=account_id, order=order)
+        if agent_id is not None and order.agent_id != agent_id:
+            raise OrderNotFoundError(order_id=order_id)
+        await self._release_locked_funds(account_id=account_id, order=order, agent_id=agent_id)
 
         try:
             await self._session.commit()
@@ -301,7 +303,7 @@ class OrderEngine:
         )
         return True
 
-    async def cancel_all_orders(self, account_id: UUID) -> int:
+    async def cancel_all_orders(self, account_id: UUID, *, agent_id: UUID | None = None) -> int:
         """Cancel all open (pending / partially-filled) orders for an account.
 
         For each open order the locked funds are released before the order
@@ -322,14 +324,17 @@ class OrderEngine:
             count = await engine.cancel_all_orders(account_id)
             print(f"{count} orders cancelled")
         """
-        open_orders: Sequence[Order] = await self._order_repo.list_open_by_account(account_id)
+        if agent_id is not None:
+            open_orders: Sequence[Order] = await self._order_repo.list_open_by_agent(agent_id)
+        else:
+            open_orders = await self._order_repo.list_open_by_account(account_id)
 
         cancelled_count = 0
         failed_order_ids: list[str] = []
         for order in open_orders:
             try:
                 cancelled = await self._order_repo.cancel(order.id, account_id)
-                await self._release_locked_funds(account_id=account_id, order=cancelled)
+                await self._release_locked_funds(account_id=account_id, order=cancelled, agent_id=agent_id)
                 cancelled_count += 1
             except (OrderNotFoundError, OrderNotCancellableError, InsufficientBalanceError):
                 # Order was already filled/cancelled or funds state is inconsistent;
@@ -432,6 +437,7 @@ class OrderEngine:
             quantity=Decimal(str(order.quantity)),
             execution_price=slippage.execution_price,
             from_locked=True,
+            agent_id=order.agent_id,
         )
 
         filled_at = datetime.now(tz=UTC)
@@ -449,6 +455,7 @@ class OrderEngine:
 
         trade = Trade(
             account_id=order.account_id,
+            agent_id=order.agent_id,
             order_id=order.id,
             session_id=order.session_id,
             symbol=order.symbol,
@@ -466,6 +473,7 @@ class OrderEngine:
             side=order.side,
             fill_qty=Decimal(str(order.quantity)),
             fill_price=slippage.execution_price,
+            agent_id=order.agent_id,
         )
         if rpnl is not None:
             trade.realized_pnl = rpnl
@@ -554,8 +562,10 @@ class OrderEngine:
             required = order.quantity
             asset_to_check = base_asset
 
-        if not await self._balance_manager.has_sufficient_balance(account_id, asset=asset_to_check, amount=required):
-            balance = await self._balance_manager.get_balance(account_id, asset_to_check)
+        if not await self._balance_manager.has_sufficient_balance(
+            account_id, asset=asset_to_check, amount=required, agent_id=agent_id
+        ):
+            balance = await self._balance_manager.get_balance(account_id, asset_to_check, agent_id=agent_id)
             available = Decimal(str(balance.available)) if balance is not None else Decimal("0")
             raise InsufficientBalanceError(
                 asset=asset_to_check,
@@ -618,6 +628,7 @@ class OrderEngine:
             side=order.side,
             fill_qty=order.quantity,
             fill_price=slippage.execution_price,
+            agent_id=agent_id,
         )
         if rpnl is not None:
             trade.realized_pnl = rpnl
@@ -705,8 +716,10 @@ class OrderEngine:
             lock_asset = base_asset
             lock_amount = order.quantity
 
-        if not await self._balance_manager.has_sufficient_balance(account_id, asset=lock_asset, amount=lock_amount):
-            balance = await self._balance_manager.get_balance(account_id, lock_asset)
+        if not await self._balance_manager.has_sufficient_balance(
+            account_id, asset=lock_asset, amount=lock_amount, agent_id=agent_id
+        ):
+            balance = await self._balance_manager.get_balance(account_id, lock_asset, agent_id=agent_id)
             available = Decimal(str(balance.available)) if balance is not None else Decimal("0")
             raise InsufficientBalanceError(
                 asset=lock_asset,
@@ -771,6 +784,8 @@ class OrderEngine:
         side: str,
         fill_qty: Decimal,
         fill_price: Decimal,
+        *,
+        agent_id: UUID | None = None,
     ) -> Decimal | None:
         """Create or update the Position row for *account_id* / *symbol* after a fill.
 
@@ -790,15 +805,19 @@ class OrderEngine:
             side:       ``"buy"`` or ``"sell"``.
             fill_qty:   Quantity filled in base asset.
             fill_price: Effective execution price (post-slippage).
+            agent_id:   Owning agent UUID for per-agent position isolation.
 
         Returns:
             The realized PnL for this fill (sell side only), or ``None``
             for buy fills and sells with no existing position.
         """
-        stmt = select(Position).where(
+        filters = [
             Position.account_id == account_id,
             Position.symbol == symbol,
-        )
+        ]
+        if agent_id is not None:
+            filters.append(Position.agent_id == agent_id)
+        stmt = select(Position).where(*filters)
         result = await self._session.execute(stmt)
         pos: Position | None = result.scalar_one_or_none()
 
@@ -806,6 +825,7 @@ class OrderEngine:
             if pos is None:
                 pos = Position(
                     account_id=account_id,
+                    agent_id=agent_id,
                     symbol=symbol,
                     side="long",
                     quantity=fill_qty,
@@ -829,7 +849,7 @@ class OrderEngine:
             if pos is None:
                 logger.warning(
                     "engine.upsert_position.sell_no_position",
-                    extra={"account_id": str(account_id), "symbol": symbol},
+                    extra={"account_id": str(account_id), "agent_id": str(agent_id), "symbol": symbol},
                 )
                 return None
             old_qty = Decimal(str(pos.quantity))
@@ -847,6 +867,8 @@ class OrderEngine:
         self,
         account_id: UUID,
         order: Order,
+        *,
+        agent_id: UUID | None = None,
     ) -> None:
         """Unlock funds reserved for a pending order on cancellation.
 
@@ -886,7 +908,7 @@ class OrderEngine:
                 lock_amount = Decimal(str(order.quantity))
                 lock_asset = _base_asset_from_order(order)
 
-            await self._balance_manager.unlock(account_id, asset=lock_asset, amount=lock_amount)
+            await self._balance_manager.unlock(account_id, asset=lock_asset, amount=lock_amount, agent_id=agent_id)
         except Exception:
             logger.exception(
                 "engine.release_locked_funds.error",

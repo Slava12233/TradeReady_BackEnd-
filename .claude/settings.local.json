@@ -120,7 +120,9 @@
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && pytest tests/unit/ -q --tb=line 2>&1 | tail -5)",
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -m ruff check tests/unit/test_mcp_tools.py tests/unit/test_sdk_client.py 2>&1)",
       "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -m ruff check src/agents/ src/api/routes/agents.py src/api/middleware/auth.py src/accounts/balance_manager.py src/order_engine/engine.py src/risk/manager.py src/portfolio/tracker.py src/api/routes/trading.py src/database/repositories/order_repo.py src/database/repositories/trade_repo.py src/main.py 2>&1)",
-      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -m pytest tests/unit/test_auth_middleware_agents.py::TestGetCurrentAgentFromHeader::test_resolves_agent_from_header -x -v 2>&1 | grep -A 20 \"FAILED\\\\|Error\\\\|assert\")"
+      "Bash(cd \"/c/Users/Shalom Boy/Desktop/AiTradingAgent\" && python -m pytest tests/unit/test_auth_middleware_agents.py::TestGetCurrentAgentFromHeader::test_resolves_agent_from_header -x -v 2>&1 | grep -A 20 \"FAILED\\\\|Error\\\\|assert\")",
+      "Bash(find:*)",
+      "Bash(cd:*)"
     ]
   }
 }

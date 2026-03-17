@@ -155,9 +155,12 @@ class BalanceManager:
         log.debug(
             "balance_manager.credit",
             account_id=str(account_id),
+            agent_id=str(agent_id),
             asset=asset,
             amount=str(amount),
         )
+        if agent_id is not None:
+            return await self._repo.update_available_by_agent(agent_id, asset, amount)
         return await self._repo.update_available(account_id, asset, amount)
 
     async def debit(
@@ -200,9 +203,12 @@ class BalanceManager:
         log.debug(
             "balance_manager.debit",
             account_id=str(account_id),
+            agent_id=str(agent_id),
             asset=asset,
             amount=str(amount),
         )
+        if agent_id is not None:
+            return await self._repo.update_available_by_agent(agent_id, asset, -amount)
         return await self._repo.update_available(account_id, asset, -amount)
 
     # ------------------------------------------------------------------
@@ -251,9 +257,12 @@ class BalanceManager:
         log.info(
             "balance_manager.lock",
             account_id=str(account_id),
+            agent_id=str(agent_id),
             asset=asset,
             amount=str(amount),
         )
+        if agent_id is not None:
+            return await self._repo.atomic_lock_funds_by_agent(agent_id, asset, amount)
         return await self._repo.atomic_lock_funds(account_id, asset, amount)
 
     async def unlock(
@@ -297,9 +306,12 @@ class BalanceManager:
         log.info(
             "balance_manager.unlock",
             account_id=str(account_id),
+            agent_id=str(agent_id),
             asset=asset,
             amount=str(amount),
         )
+        if agent_id is not None:
+            return await self._repo.atomic_unlock_funds_by_agent(agent_id, asset, amount)
         return await self._repo.atomic_unlock_funds(account_id, asset, amount)
 
     # ------------------------------------------------------------------
@@ -548,6 +560,7 @@ class BalanceManager:
                     quote_spent=quote_spent,
                     base_received=base_received,
                     from_locked=from_locked,
+                    agent_id=agent_id,
                 )
             except InsufficientBalanceError:
                 raise
@@ -591,6 +604,7 @@ class BalanceManager:
                 quote_received=net_quote,
                 base_spent=base_spent,
                 from_locked=from_locked,
+                agent_id=agent_id,
             )
         except InsufficientBalanceError:
             raise

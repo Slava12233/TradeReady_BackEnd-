@@ -321,6 +321,7 @@ class OrderRepository:
         self,
         account_id: UUID,
         *,
+        agent_id: UUID | None = None,
         status: str | None = None,
         symbol: str | None = None,
         limit: int = 100,
@@ -361,6 +362,8 @@ class OrderRepository:
                 .limit(limit)
                 .offset(offset)
             )
+            if agent_id is not None:
+                stmt = stmt.where(Order.agent_id == agent_id)
             if status is not None:
                 stmt = stmt.where(Order.status == status)
             if symbol is not None:
@@ -435,6 +438,7 @@ class OrderRepository:
         self,
         account_id: UUID,
         *,
+        agent_id: UUID | None = None,
         limit: int = 200,
         offset: int = 0,
     ) -> Sequence[Order]:
@@ -470,6 +474,8 @@ class OrderRepository:
                 .limit(limit)
                 .offset(offset)
             )
+            if agent_id is not None:
+                stmt = stmt.where(Order.agent_id == agent_id)
             result = await self._session.execute(stmt)
             return result.scalars().all()
         except SQLAlchemyError as exc:

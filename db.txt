@@ -11,3 +11,9 @@ In the left sidebar, expand Servers > AgentExchange TimescaleDB
 It will ask for the database password: agentexchange_dev_pw
 Expand Databases > agentexchange > Schemas > public > Tables
 You'll see all 11 tables — right-click any table and choose View/Edit Data to browse rows
+
+
+
+
+- Email: e2etest_1773664730@test.com       
+  - Password: E2eTestPass123!                                                                                                                                                                 - Password: E2eTestPass123!

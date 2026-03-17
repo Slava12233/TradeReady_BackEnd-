@@ -63,7 +63,10 @@ async def register(
     body: RegisterRequest,
     svc: AccountServiceDep,
 ) -> RegisterResponse:
-    """Register a new agent account and return one-time credentials.
+    """Register a new account and return one-time credentials.
+
+    The caller must create an agent explicitly via ``POST /api/v1/agents``
+    before trading.
 
     Args:
         body: Validated registration payload (display_name, email, starting_balance).
@@ -102,11 +105,15 @@ async def register(
         body.display_name,
         email=str(body.email) if body.email else None,
         starting_balance=body.starting_balance,
+        password=body.password,
     )
 
     logger.info(
         "auth.register.success",
-        extra={"account_id": str(creds.account_id), "display_name": creds.display_name},
+        extra={
+            "account_id": str(creds.account_id),
+            "display_name": creds.display_name,
+        },
     )
 
     return RegisterResponse(

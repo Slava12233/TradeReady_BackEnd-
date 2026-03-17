@@ -241,6 +241,43 @@ class BalanceRepository:
             )
             raise DatabaseError("Failed to create balance.") from exc
 
+    async def update_available_by_agent(
+        self,
+        agent_id: UUID,
+        asset: str,
+        delta: Decimal,
+    ) -> Balance:
+        """Add ``delta`` to ``available`` for an agent / asset row.
+
+        Agent-scoped variant of :meth:`update_available`.
+        """
+        try:
+            stmt = (
+                update(Balance)
+                .where(
+                    Balance.agent_id == agent_id,
+                    Balance.asset == asset,
+                )
+                .values(available=Balance.available + delta)
+                .returning(Balance)
+            )
+            result = await self._session.execute(stmt)
+            row = result.scalars().first()
+            if row is None:
+                raise DatabaseError(f"Balance row not found for agent={agent_id} asset={asset!r}.")
+            return row
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise InsufficientBalanceError(
+                asset=asset,
+                required=abs(delta) if delta < _ZERO else None,
+            ) from exc
+        except (InsufficientBalanceError, DatabaseError):
+            raise
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            raise DatabaseError("Failed to update available balance by agent.") from exc
+
     async def update_available(
         self,
         account_id: UUID,
@@ -401,6 +438,78 @@ class BalanceRepository:
     # ------------------------------------------------------------------
     # Atomic trade operations
     # ------------------------------------------------------------------
+
+    async def atomic_lock_funds_by_agent(
+        self,
+        agent_id: UUID,
+        asset: str,
+        amount: Decimal,
+    ) -> Balance:
+        """Atomically move ``amount`` from ``available`` → ``locked`` for an agent / asset."""
+        if amount <= _ZERO:
+            raise ValueError(f"amount must be positive, got {amount!r}")
+        try:
+            stmt = (
+                update(Balance)
+                .where(
+                    Balance.agent_id == agent_id,
+                    Balance.asset == asset,
+                )
+                .values(
+                    available=Balance.available - amount,
+                    locked=Balance.locked + amount,
+                )
+                .returning(Balance)
+            )
+            result = await self._session.execute(stmt)
+            row = result.scalars().first()
+            if row is None:
+                raise DatabaseError(f"Balance row not found for agent={agent_id} asset={asset!r}.")
+            return row
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise InsufficientBalanceError(asset=asset, required=amount) from exc
+        except (InsufficientBalanceError, DatabaseError):
+            raise
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            raise DatabaseError("Failed to lock funds by agent.") from exc
+
+    async def atomic_unlock_funds_by_agent(
+        self,
+        agent_id: UUID,
+        asset: str,
+        amount: Decimal,
+    ) -> Balance:
+        """Atomically move ``amount`` from ``locked`` → ``available`` for an agent / asset."""
+        if amount <= _ZERO:
+            raise ValueError(f"amount must be positive, got {amount!r}")
+        try:
+            stmt = (
+                update(Balance)
+                .where(
+                    Balance.agent_id == agent_id,
+                    Balance.asset == asset,
+                )
+                .values(
+                    locked=Balance.locked - amount,
+                    available=Balance.available + amount,
+                )
+                .returning(Balance)
+            )
+            result = await self._session.execute(stmt)
+            row = result.scalars().first()
+            if row is None:
+                raise DatabaseError(f"Balance row not found for agent={agent_id} asset={asset!r}.")
+            return row
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise InsufficientBalanceError(asset=asset, required=amount) from exc
+        except (InsufficientBalanceError, DatabaseError):
+            raise
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            raise DatabaseError("Failed to unlock funds by agent.") from exc
 
     async def atomic_lock_funds(
         self,
@@ -575,6 +684,7 @@ class BalanceRepository:
         quote_spent: Decimal,
         base_received: Decimal,
         from_locked: bool = False,
+        agent_id: UUID | None = None,
     ) -> tuple[Balance, Balance]:
         """Atomically settle a filled **buy** order across two balance rows.
 
@@ -624,25 +734,27 @@ class BalanceRepository:
         if base_received <= _ZERO:
             raise ValueError(f"base_received must be positive, got {base_received!r}")
 
+        # Build the WHERE filter — scope by agent when provided, otherwise by account.
+        if agent_id is not None:
+            quote_filter = [Balance.agent_id == agent_id, Balance.asset == quote_asset]
+            base_filter = [Balance.agent_id == agent_id, Balance.asset == base_asset]
+        else:
+            quote_filter = [Balance.account_id == account_id, Balance.asset == quote_asset]
+            base_filter = [Balance.account_id == account_id, Balance.asset == base_asset]
+
         try:
             # 1. Deduct quote (from locked or available depending on order type)
             if from_locked:
                 quote_stmt = (
                     update(Balance)
-                    .where(
-                        Balance.account_id == account_id,
-                        Balance.asset == quote_asset,
-                    )
+                    .where(*quote_filter)
                     .values(locked=Balance.locked - quote_spent)
                     .returning(Balance)
                 )
             else:
                 quote_stmt = (
                     update(Balance)
-                    .where(
-                        Balance.account_id == account_id,
-                        Balance.asset == quote_asset,
-                    )
+                    .where(*quote_filter)
                     .values(available=Balance.available - quote_spent)
                     .returning(Balance)
                 )
@@ -653,13 +765,10 @@ class BalanceRepository:
                 raise DatabaseError(f"Balance row not found for account={account_id} asset={quote_asset!r}.")
 
             # 2. Credit base asset — upsert-style: create if not exists
-            base_bal = await self._get_or_create_zero(account_id, base_asset)
+            base_bal = await self._get_or_create_zero(account_id, base_asset, agent_id=agent_id)
             base_stmt = (
                 update(Balance)
-                .where(
-                    Balance.account_id == account_id,
-                    Balance.asset == base_asset,
-                )
+                .where(*base_filter)
                 .values(available=Balance.available + base_received)
                 .returning(Balance)
             )
@@ -672,6 +781,7 @@ class BalanceRepository:
                 "balance.buy_executed",
                 extra={
                     "account_id": str(account_id),
+                    "agent_id": str(agent_id),
                     "quote_asset": quote_asset,
                     "base_asset": base_asset,
                     "quote_spent": str(quote_spent),
@@ -706,6 +816,7 @@ class BalanceRepository:
         quote_received: Decimal,
         base_spent: Decimal,
         from_locked: bool = False,
+        agent_id: UUID | None = None,
     ) -> tuple[Balance, Balance]:
         """Atomically settle a filled **sell** order across two balance rows.
 
@@ -754,25 +865,27 @@ class BalanceRepository:
         if base_spent <= _ZERO:
             raise ValueError(f"base_spent must be positive, got {base_spent!r}")
 
+        # Build the WHERE filter — scope by agent when provided, otherwise by account.
+        if agent_id is not None:
+            base_filter = [Balance.agent_id == agent_id, Balance.asset == base_asset]
+            quote_filter = [Balance.agent_id == agent_id, Balance.asset == quote_asset]
+        else:
+            base_filter = [Balance.account_id == account_id, Balance.asset == base_asset]
+            quote_filter = [Balance.account_id == account_id, Balance.asset == quote_asset]
+
         try:
             # 1. Deduct base asset
             if from_locked:
                 base_stmt = (
                     update(Balance)
-                    .where(
-                        Balance.account_id == account_id,
-                        Balance.asset == base_asset,
-                    )
+                    .where(*base_filter)
                     .values(locked=Balance.locked - base_spent)
                     .returning(Balance)
                 )
             else:
                 base_stmt = (
                     update(Balance)
-                    .where(
-                        Balance.account_id == account_id,
-                        Balance.asset == base_asset,
-                    )
+                    .where(*base_filter)
                     .values(available=Balance.available - base_spent)
                     .returning(Balance)
                 )
@@ -783,13 +896,10 @@ class BalanceRepository:
                 raise DatabaseError(f"Balance row not found for account={account_id} asset={base_asset!r}.")
 
             # 2. Credit quote asset (always available; USDT almost always exists)
-            await self._get_or_create_zero(account_id, quote_asset)
+            await self._get_or_create_zero(account_id, quote_asset, agent_id=agent_id)
             quote_stmt = (
                 update(Balance)
-                .where(
-                    Balance.account_id == account_id,
-                    Balance.asset == quote_asset,
-                )
+                .where(*quote_filter)
                 .values(available=Balance.available + quote_received)
                 .returning(Balance)
             )
@@ -802,6 +912,7 @@ class BalanceRepository:
                 "balance.sell_executed",
                 extra={
                     "account_id": str(account_id),
+                    "agent_id": str(agent_id),
                     "quote_asset": quote_asset,
                     "base_asset": base_asset,
                     "quote_received": str(quote_received),
@@ -831,7 +942,13 @@ class BalanceRepository:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _get_or_create_zero(self, account_id: UUID, asset: str) -> Balance:
+    async def _get_or_create_zero(
+        self,
+        account_id: UUID,
+        asset: str,
+        *,
+        agent_id: UUID | None = None,
+    ) -> Balance:
         """Return the balance row for ``asset``, creating a zero row if absent.
 
         This is an internal helper used by the atomic trade methods to ensure
@@ -841,6 +958,7 @@ class BalanceRepository:
         Args:
             account_id: The owning account's UUID.
             asset:      The asset ticker.
+            agent_id:   The owning agent's UUID (required for per-agent isolation).
 
         Returns:
             The existing or newly-created :class:`Balance` instance.
@@ -848,12 +966,16 @@ class BalanceRepository:
         Raises:
             DatabaseError: On any SQLAlchemy error.
         """
-        existing = await self.get(account_id, asset)
+        if agent_id is not None:
+            existing = await self.get_by_agent(agent_id, asset)
+        else:
+            existing = await self.get(account_id, asset)
         if existing is not None:
             return existing
 
         new_row = Balance(
             account_id=account_id,
+            agent_id=agent_id,
             asset=asset,
             available=Decimal("0"),
             locked=Decimal("0"),
@@ -865,13 +987,16 @@ class BalanceRepository:
             await self._session.refresh(new_row)
             logger.info(
                 "balance.auto_created",
-                extra={"account_id": str(account_id), "asset": asset},
+                extra={"account_id": str(account_id), "agent_id": str(agent_id), "asset": asset},
             )
             return new_row
         except IntegrityError:
             # Race condition: another concurrent request just created the row.
             # The savepoint above was rolled back; the parent transaction is intact.
-            existing = await self.get(account_id, asset)
+            if agent_id is not None:
+                existing = await self.get_by_agent(agent_id, asset)
+            else:
+                existing = await self.get(account_id, asset)
             if existing is not None:
                 return existing
             raise DatabaseError(f"Failed to auto-create balance for account={account_id} asset={asset!r}.") from None

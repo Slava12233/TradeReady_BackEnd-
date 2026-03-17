@@ -51,7 +51,7 @@ from fastapi import APIRouter, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.middleware.auth import CurrentAccountDep
+from src.api.middleware.auth import CurrentAccountDep, CurrentAgentDep
 from src.api.schemas.account import (
     AccountInfoResponse,
     BalanceItem,
@@ -68,10 +68,11 @@ from src.api.schemas.account import (
     RiskProfileInfo,
     SessionInfo,
 )
-from src.database.models import Account, TradingSession
+from src.database.models import Account, Agent, TradingSession
 from src.dependencies import (
     AccountRepoDep,
     AccountServiceDep,
+    AgentRepoDep,
     BalanceManagerDep,
     DbSessionDep,
     PortfolioTrackerDep,
@@ -121,19 +122,26 @@ def _position_view_to_item(view: PositionView) -> PositionItem:
     )
 
 
-def _build_risk_profile_info(account: Account) -> RiskProfileInfo:
-    """Extract risk profile overrides from the account's JSONB field.
+def _build_risk_profile_info(
+    account: Account,
+    agent: Agent | None = None,
+) -> RiskProfileInfo:
+    """Extract risk profile overrides from the agent or account JSONB field.
 
-    Falls back to default platform limits when the per-account override is not
-    set.
+    When *agent* is provided and has a non-empty ``risk_profile``, it takes
+    precedence over the account's profile.
 
     Args:
         account: The ORM :class:`~src.database.models.Account` instance.
+        agent:   Optional :class:`~src.database.models.Agent` instance.
 
     Returns:
-        A :class:`RiskProfileInfo` with the effective limits for this account.
+        A :class:`RiskProfileInfo` with the effective limits.
     """
-    profile: dict[str, Any] = account.risk_profile or {}
+    if agent is not None and agent.risk_profile:
+        profile: dict[str, Any] = dict(agent.risk_profile)
+    else:
+        profile = account.risk_profile or {}
     return RiskProfileInfo(
         max_position_size_pct=int(profile.get("max_position_size_pct", _DEFAULT_MAX_POSITION_PCT)),
         daily_loss_limit_pct=int(profile.get("daily_loss_limit_pct", _DEFAULT_DAILY_LOSS_PCT)),
@@ -183,6 +191,7 @@ async def _get_active_session(
 )
 async def get_account_info(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     db: DbSessionDep,
 ) -> AccountInfoResponse:
     """Return the authenticated account's details, session, and risk profile.
@@ -229,7 +238,14 @@ async def get_account_info(
             started_at=account.created_at,
         )
 
-    risk_profile_info = _build_risk_profile_info(account)
+    risk_profile_info = _build_risk_profile_info(account, agent=agent)
+
+    # Use agent's starting_balance when agent context is present
+    effective_starting_balance = (
+        Decimal(str(agent.starting_balance))
+        if agent is not None and agent.starting_balance is not None
+        else Decimal(str(account.starting_balance))
+    )
 
     logger.info(
         "account.get_info",
@@ -240,7 +256,7 @@ async def get_account_info(
         account_id=account.id,
         display_name=account.display_name,
         status=account.status,  # type: ignore[arg-type]
-        starting_balance=Decimal(str(account.starting_balance)),
+        starting_balance=effective_starting_balance,
         current_session=session_info,
         risk_profile=risk_profile_info,
         created_at=account.created_at,
@@ -263,6 +279,7 @@ async def get_account_info(
 )
 async def get_balance(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     balance_manager: BalanceManagerDep,
     tracker: PortfolioTrackerDep,
 ) -> BalancesResponse:
@@ -296,7 +313,8 @@ async def get_balance(
           "total_equity_usdt": "12458.30"
         }
     """
-    raw_balances = await balance_manager.get_all_balances(account.id)
+    agent_id = agent.id if agent is not None else None
+    raw_balances = await balance_manager.get_all_balances(account.id, agent_id=agent_id)
 
     balance_items = [
         BalanceItem(
@@ -308,7 +326,7 @@ async def get_balance(
         for b in raw_balances
     ]
 
-    portfolio = await tracker.get_portfolio(account.id)
+    portfolio = await tracker.get_portfolio(account.id, agent_id=agent_id)
 
     # Defensive sync: ensure every asset with an open position appears in
     # the balance list.  The order engine's atomic_execute_buy should always
@@ -369,12 +387,14 @@ async def get_balance(
 )
 async def get_positions(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     tracker: PortfolioTrackerDep,
 ) -> PositionsResponse:
     """Return all open positions valued at current market prices.
 
     Args:
         account: Injected authenticated account.
+        agent:   Injected authenticated agent (may be None).
         tracker: Injected :class:`~src.portfolio.tracker.PortfolioTracker`.
 
     Returns:
@@ -396,7 +416,8 @@ async def get_positions(
           "total_unrealized_pnl": "660.65"
         }
     """
-    positions = await tracker.get_positions(account.id)
+    agent_id = agent.id if agent is not None else None
+    positions = await tracker.get_positions(account.id, agent_id=agent_id)
 
     position_items = [_position_view_to_item(p) for p in positions]
     total_unrealized_pnl = sum(
@@ -436,12 +457,14 @@ async def get_positions(
 )
 async def get_portfolio(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     tracker: PortfolioTrackerDep,
 ) -> PortfolioResponse:
     """Return a full real-time portfolio snapshot for the authenticated account.
 
     Args:
         account: Injected authenticated account.
+        agent:   Injected authenticated agent (may be None).
         tracker: Injected :class:`~src.portfolio.tracker.PortfolioTracker`.
 
     Returns:
@@ -468,7 +491,8 @@ async def get_portfolio(
           "timestamp": "2026-02-23T15:30:45Z"
         }
     """
-    summary = await tracker.get_portfolio(account.id)
+    agent_id = agent.id if agent is not None else None
+    summary = await tracker.get_portfolio(account.id, agent_id=agent_id)
 
     position_items = [_position_view_to_item(p) for p in summary.positions]
 
@@ -513,6 +537,7 @@ async def get_portfolio(
 )
 async def get_pnl(
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     tracker: PortfolioTrackerDep,
     trade_repo: TradeRepoDep,
     period: Annotated[
@@ -530,6 +555,7 @@ async def get_pnl(
 
     Args:
         account:    Injected authenticated account.
+        agent:      Injected authenticated agent (may be None).
         tracker:    Injected :class:`~src.portfolio.tracker.PortfolioTracker`
                     (unrealised PnL + all-time realised PnL).
         trade_repo: Injected :class:`~src.database.repositories.trade_repo.TradeRepository`
@@ -563,12 +589,14 @@ async def get_pnl(
           "win_rate": "65.71"
         }
     """
-    pnl_breakdown = await tracker.get_pnl(account.id)
+    agent_id = agent.id if agent is not None else None
+    pnl_breakdown = await tracker.get_pnl(account.id, agent_id=agent_id)
 
     # Fetch the scoped trade list to compute fees + win-rate for the period.
     limit_by_period = _period_to_trade_limit(period)
     period_trades = await trade_repo.list_by_account(
         account.id,
+        agent_id=agent_id,
         limit=limit_by_period,
         offset=0,
     )
@@ -631,14 +659,22 @@ async def get_pnl(
 async def update_risk_profile(
     body: RiskProfileInfo,
     account: CurrentAccountDep,
+    agent: CurrentAgentDep,
     account_repo: AccountRepoDep,
+    agent_repo: AgentRepoDep,
 ) -> RiskProfileInfo:
-    """Persist updated risk limits for the authenticated account.
+    """Persist updated risk limits for the authenticated account or agent.
+
+    When an agent context is present (via ``X-Agent-Id`` header), the risk
+    profile is written to the agent's ``risk_profile`` JSONB field instead of
+    the account's, ensuring per-agent risk isolation.
 
     Args:
         body:         New risk limits to apply.
         account:      Injected authenticated account.
+        agent:        Injected authenticated agent (may be None).
         account_repo: Injected :class:`~src.database.repositories.account_repo.AccountRepository`.
+        agent_repo:   Injected :class:`~src.database.repositories.agent_repo.AgentRepository`.
 
     Returns:
         The updated :class:`~src.api.schemas.account.RiskProfileInfo`.
@@ -648,12 +684,22 @@ async def update_risk_profile(
         "daily_loss_limit_pct": body.daily_loss_limit_pct,
         "max_open_orders": body.max_open_orders,
     }
-    await account_repo.update_risk_profile(account.id, profile)
 
-    logger.info(
-        "account.risk_profile_updated",
-        extra={"account_id": str(account.id)},
-    )
+    if agent is not None:
+        # Write to agent's risk_profile when agent context exists
+        existing = dict(agent.risk_profile) if agent.risk_profile else {}
+        existing.update(profile)
+        await agent_repo.update(agent.id, risk_profile=existing)
+        logger.info(
+            "account.risk_profile_updated",
+            extra={"account_id": str(account.id), "agent_id": str(agent.id), "target": "agent"},
+        )
+    else:
+        await account_repo.update_risk_profile(account.id, profile)
+        logger.info(
+            "account.risk_profile_updated",
+            extra={"account_id": str(account.id), "target": "account"},
+        )
 
     return body
 
