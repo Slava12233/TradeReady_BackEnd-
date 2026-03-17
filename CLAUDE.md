@@ -4,6 +4,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **First step rule:** At the start of every conversation, read `development/context.md` before doing anything else. It contains a rolling summary of all development activity, decisions, and current state.
+
 > **Self-maintenance rule:** When modifying code in any folder, update that folder's `CLAUDE.md` if behavior, files, or patterns changed. Update the `<!-- last-updated -->` timestamp when you do.
 
 ## CLAUDE.md Index
@@ -77,6 +79,7 @@ Custom agents that can be delegated to for specialized tasks:
 | `security-auditor` | Audits for auth bypasses, injection risks, secret exposure, agent isolation violations | After security-sensitive changes |
 | `perf-checker` | Detects N+1 queries, blocking async calls, missing indexes, unbounded growth | After changes to DB queries, async code, or hot paths |
 | `context-manager` | Maintains a rolling summary of all development activity — changes, decisions, bugs, learnings, WIP | After every significant change (proactively) |
+| `deploy-checker` | Comprehensive A-Z backend deployment readiness checker — lint, types, tests, migrations, Docker, env vars, security, GitHub Actions pipeline validation | Before deploying to production or merging to main |
 
 ### Mandatory Agent Rules
 
