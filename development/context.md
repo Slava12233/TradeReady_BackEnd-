@@ -4,10 +4,10 @@
 
 ## Current State
 
-**Active work:** Agentic layer buildout complete — all 36 CLAUDE.md files + 8 sub-agents deployed
-**Last session:** 2026-03-17 — Completed full agentic knowledge layer and sub-agent fleet
-**Next steps:** Battle frontend UI (components/battles/ is empty), or begin next feature work
-**Blocked:** Nothing currently blocked
+**Active work:** Wallet price display bug fixed, full live E2E scenario script created
+**Last session:** 2026-03-18 — Fixed wallet 100% USDT bug, created live E2E script, ran 106-step E2E against live backend
+**Next steps:** Battle frontend UI (components/battles/ is empty), investigate battle historical mode 500 error
+**Blocked:** Battle service returns 500 on historical mode creation — needs debugging
 
 ---
 
@@ -103,10 +103,33 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 10. **In-memory backtesting** — sandbox has zero live deps (no Redis, no Binance), look-ahead bias prevented at data layer
 11. **Unified metrics pipeline** — same calculator for backtests and battles, adapter pattern for different input sources
 12. **Self-maintaining knowledge layer** — CLAUDE.md files in every folder, mandatory update rule when code changes
+13. **Dual-source price pattern** — Frontend components that compute asset USDT values must use WS prices (primary) + REST `/market/prices` (30s fallback). WebSocket-only is unreliable for initial page loads.
 
 ---
 
 ## Recent Activity
+
+### 2026-03-18 — Wallet Bug Fix + Live E2E Script
+
+**Changes:**
+- **Bug fix: Wallet showing 100% USDT** — `asset-list.tsx`, `asset-distribution.tsx`, and `allocation-pie-chart.tsx` relied exclusively on WebSocket prices. When WS hadn't streamed `ticker_all` data, all non-USDT assets showed $0 → USDT appeared as 100%. Fixed by adding REST price fallback (`GET /market/prices`, 30s polling via TanStack Query).
+- **New script: `scripts/e2e_full_scenario_live.py`** — Full 8-phase E2E against live backend: register, login, create 3 agents, 25 trades, 6 backtests, 1 battle, analytics, account management. All data persists in DB and is visible in the UI. Supports `--skip-backtest`, `--skip-battle`, `--email`.
+- **CLAUDE.md updates** — `scripts/CLAUDE.md`, `Frontend/src/hooks/CLAUDE.md`, `Frontend/src/components/CLAUDE.md`, `Frontend/CLAUDE.md` all updated with dual-source price pattern and new script.
+
+**E2E Results (live backend):**
+- 101 passed, 5 failed out of 106 steps
+- GammaBot trades: risk manager correctly blocked oversized positions (position_limit_exceeded) — expected behavior
+- Battle historical mode: 500 INTERNAL_ERROR on create — **open bug, needs investigation**
+- Default credentials: `e2e_trader@agentexchange.io` / `Tr@d1ng_S3cur3_2026!`
+
+**Decisions:**
+- Design decision #13: **Dual-source price pattern** — components that compute asset USDT values must use WS prices as primary and REST `/market/prices` as fallback. WebSocket-only is unreliable for initial page loads.
+
+**Learnings:**
+- WebSocket-only price sources break on initial load / slow connections — always have REST fallback
+- Battle service has unresolved bug with historical mode configuration
+
+---
 
 ### 2026-03-17 — Agentic Layer Complete Build
 

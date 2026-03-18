@@ -80,6 +80,10 @@ Custom agents that can be delegated to for specialized tasks:
 | `perf-checker` | Detects N+1 queries, blocking async calls, missing indexes, unbounded growth | After changes to DB queries, async code, or hot paths |
 | `context-manager` | Maintains a rolling summary of all development activity — changes, decisions, bugs, learnings, WIP | After every significant change (proactively) |
 | `deploy-checker` | Comprehensive A-Z backend deployment readiness checker — lint, types, tests, migrations, Docker, env vars, security, GitHub Actions pipeline validation | Before deploying to production or merging to main |
+| `codebase-researcher` | Researches the codebase to answer questions, find patterns, trace data flows, and explain how things work. Uses CLAUDE.md hierarchy as primary navigation | When you need to understand how something works, find implementations, or trace data flows before making changes |
+| `planner` | Expert planning specialist for complex features and refactoring. Creates detailed, phased implementation plans with file paths, risks, and testing strategies | PROACTIVELY when users request feature implementation, architectural changes, or complex refactoring |
+| `security-reviewer` | Security vulnerability detection and remediation. Flags secrets, SSRF, injection, agent isolation violations, OWASP Top 10. Can fix CRITICAL issues directly | PROACTIVELY after writing code that handles user input, auth, API endpoints, or sensitive data |
+| `e2e-tester` | Runs live E2E scenarios against the running platform — creates accounts, agents, trades, backtests, battles. All data visible in the UI. Returns login credentials | When you need to populate realistic data for UI testing, validate the full stack end-to-end, or demo the platform |
 
 ### Mandatory Agent Rules
 

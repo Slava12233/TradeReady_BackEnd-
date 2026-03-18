@@ -1424,10 +1424,10 @@ class TestPhase6_Battles:
         svc.step_historical_batch = AsyncMock(return_value=batch_result)
 
         svc.stop_battle = AsyncMock(return_value=_make_battle_mock(bid, "completed", participants))
-        # Route calls get_live_snapshot (not get_live_metrics)
+        # Route calls get_live_snapshot — must return dicts (passed directly to Pydantic)
         svc.get_live_snapshot = AsyncMock(return_value=[
-            MagicMock(agent_id=aid, equity=Decimal("10500"), pnl=Decimal("500"),
-                      trade_count=10, display_name=name)
+            {"agent_id": str(aid), "display_name": name, "current_equity": "10500",
+             "pnl": "500", "roi_pct": "5.0", "total_trades": 10}
             for aid, name in zip(AGENT_IDS, AGENT_NAMES)
         ])
         # get_results returns a dict matching BattleResultsResponse fields
@@ -1531,7 +1531,8 @@ class TestPhase6_Battles:
         client = _build_battle_client(svc)
         resp = client.get(f"/api/v1/battles/{svc.battle_id}/results")
         assert resp.status_code == 200
-        assert len(resp.json()["rankings"]) == 3
+        data = resp.json()
+        assert len(data["participants"]) == 3
 
     def test_12_replay(self) -> None:
         svc = self._battle_service()
@@ -1588,11 +1589,16 @@ class TestPhase7_Analytics:
         assert resp.status_code == 200
 
     def test_03_market_price_single(self) -> None:
-        """Single market price — requires TradingPair in DB."""
+        """Single market price — requires TradingPair in DB and price in cache."""
+        # PriceCache needs a _redis mock that returns None for hget (timestamp lookup)
+        mock_redis_inner = AsyncMock()
+        mock_redis_inner.hget = AsyncMock(return_value=None)
+
         cache = AsyncMock()
         cache.get_price = AsyncMock(return_value=Decimal("65520.30"))
+        cache._redis = mock_redis_inner
 
-        # The route queries TradingPair from DB first
+        # The route queries TradingPair from DB
         mock_pair = MagicMock()
         mock_pair.symbol = "BTCUSDT"
         mock_pair.base_asset = "BTC"
