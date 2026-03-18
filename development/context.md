@@ -110,6 +110,18 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 
 ## Recent Activity
 
+### 2026-03-18 — Planning Docs Reorganized into development/ccxt/
+
+**Changes:**
+- `docs/plan-task.md` → `development/ccxt/plan-task.md` — 6-phase execution plan (CCXT integration, MCP expansion, SDK, battles, frontend, launch). Moved out of docs/ because it is internal execution tracking, not user-facing documentation.
+- `docs/ccxt_resarch_report.md` → `development/ccxt/ccxt_resarch_report.md` — CCXT integration analysis and research report. Moved for the same reason.
+- `docs/CLAUDE.md` — Removed both files from the docs inventory; logged the move.
+
+**Decisions:**
+- Internal planning and research documents live under `development/` (not `docs/`). `docs/` is for user-facing and external-audience documentation only. This keeps the docs inventory clean and avoids confusion for future agents reading `docs/CLAUDE.md`.
+
+---
+
 ### 2026-03-18 — Phase 2 Complete: MCP Server Expansion (12 → 43 Tools)
 
 **Changes:**

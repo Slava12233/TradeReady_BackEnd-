@@ -22,9 +22,7 @@ The `docs/` directory contains all user-facing documentation for the AgentExchan
 | `framework_guides/crewai.md` | CrewAI developers | Multi-agent crew setup: `@tool`-decorated SDK wrappers, 3-agent crew (analyst/trader/risk manager), sequential and hierarchical `Process` modes, autonomous strategy loop |
 | `framework_guides/agent_zero.md` | Agent Zero developers | Skill file integration: drop `skill.md` into Agent Zero's skills directory, credential injection via system prompt, SDK tool registration, WebSocket background feed |
 | `framework_guides/openclaw.md` | OpenClaw developers | Skill-based integration: `agent.yaml` configuration, `@openclaw.tool` SDK wrappers, session-based and autonomous agent patterns |
-| `plan-task.md` | Internal (team) | 6-phase execution plan: CCXT integration, MCP expansion, SDK polish, freemium tiers, launch competition, framework integrations |
 | `tradeready_research.md` | Internal (team) | Competitive landscape analysis: 15+ competitors, positioning, differentiators, go-to-market |
-| `ccxt_resarch_report.md` | Internal (team) | CCXT integration analysis: pricing ($0), 110 exchanges, architecture, implementation roadmap |
 | `pricing_tiers_business_report.md` | Internal (team) | Freemium tier design and business model analysis |
 | `rate_limits.md` | Developers | API rate limit documentation per endpoint group |
 
@@ -41,5 +39,6 @@ The `docs/` directory contains all user-facing documentation for the AgentExchan
 ## Recent Changes
 
 - `2026-03-17` — Initial CLAUDE.md created
-- `2026-03-18` — Added plan-task.md, tradeready_research.md, ccxt_resarch_report.md, pricing_tiers_business_report.md, rate_limits.md to inventory
+- `2026-03-18` — Added tradeready_research.md, pricing_tiers_business_report.md, rate_limits.md to inventory
+- `2026-03-18` — Moved plan-task.md and ccxt_resarch_report.md to development/ccxt/
 - `2026-03-18` — Updated mcp_server.md inventory entry: 12 tools → 43 tools (Phase 2 MCP expansion)
