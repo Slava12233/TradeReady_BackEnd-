@@ -31,7 +31,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-
 import pytest
 
 from src.accounts.auth import create_jwt

@@ -35,3 +35,6 @@ prometheus-client==0.21.1
 
 # HTTP client (for REST calls to Binance)
 httpx==0.28.1
+
+# Exchange connectivity (110+ exchanges via unified API)
+ccxt>=4.0.0

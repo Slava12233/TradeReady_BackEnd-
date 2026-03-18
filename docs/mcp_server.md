@@ -87,7 +87,7 @@ Save the returned `api_key` (`ak_live_...`) — this is your `MCP_API_KEY`.
 
 ### 3. Restart Claude Desktop
 
-After saving the config, fully quit and reopen Claude Desktop. You should see 12 trading tools available in the tools menu.
+After saving the config, fully quit and reopen Claude Desktop. You should see 43 trading tools available in the tools menu.
 
 ### 4. Test it
 
@@ -131,28 +131,33 @@ The server uses the **stdio transport** (the MCP standard). Any client that can:
 
 ---
 
-## Available Tools (12)
+## Available Tools (43)
 
-> **Note:** The MCP server currently exposes 12 live trading tools. Backtesting, battle, and agent management are available via the REST API but not yet via MCP.
+The MCP server exposes 43 tools covering the full trading lifecycle: market data, account management, trading, analytics, backtesting, agent management, and battles.
 
-### Market Data
+### Market Data (7 tools)
 
 | Tool | Description | Parameters |
 |---|---|---|
 | `get_price` | Current price for one trading pair | `symbol` (required): e.g. `"BTCUSDT"` |
 | `get_all_prices` | Current prices for all 600+ pairs | None |
 | `get_candles` | Historical OHLCV candle data | `symbol` (required), `interval` (required): `1m`/`5m`/`15m`/`1h`/`4h`/`1d`, `limit` (optional, default 100) |
+| `get_pairs` | List all available trading pairs | `exchange` (optional), `quote_asset` (optional) |
+| `get_ticker` | 24-hour ticker for a single symbol | `symbol` (required) |
+| `get_orderbook` | Order book depth for a symbol | `symbol` (required) |
+| `get_recent_trades` | Recent public trades for a symbol | `symbol` (required) |
 
-### Account
+### Account (5 tools)
 
 | Tool | Description | Parameters |
 |---|---|---|
 | `get_balance` | Account balances for all assets | None |
 | `get_positions` | Open positions with unrealized P&L | None |
 | `get_portfolio` | Full portfolio summary (equity, cash, P&L, ROI) | None |
+| `get_account_info` | Account metadata and configuration | None |
 | `reset_account` | Reset to starting balance (irreversible) | `confirm` (required): must be `true` |
 
-### Trading
+### Trading (7 tools)
 
 | Tool | Description | Parameters |
 |---|---|---|
@@ -160,12 +165,53 @@ The server uses the **stdio transport** (the MCP standard). Any client that can:
 | `cancel_order` | Cancel a pending order | `order_id` (required): UUID |
 | `get_order_status` | Check order details and status | `order_id` (required): UUID |
 | `get_trade_history` | Historical trade executions | `symbol` (optional), `limit` (optional, default 50) |
+| `get_open_orders` | All currently open (pending) orders | None |
+| `cancel_all_orders` | Cancel every open order at once | `confirm` (required): must be `true` |
+| `list_orders` | All orders with optional filters | `status` (optional), `symbol` (optional), `limit` (optional) |
 
-### Analytics
+### Analytics (4 tools)
 
 | Tool | Description | Parameters |
 |---|---|---|
 | `get_performance` | Performance metrics (Sharpe, win rate, drawdown) | `period` (optional): `1d`/`7d`/`30d`/`90d`/`all` |
+| `get_pnl` | Realized and unrealized P&L summary | `period` (optional) |
+| `get_portfolio_history` | Time-series of portfolio equity | `interval` (optional), `limit` (optional) |
+| `get_leaderboard` | Global agent leaderboard | `limit` (optional) |
+
+### Backtesting (8 tools)
+
+| Tool | Description | Parameters |
+|---|---|---|
+| `get_data_range` | Available historical data range for backtesting | None |
+| `create_backtest` | Create a new backtest session | `start_time` (required), `end_time` (required), plus optional strategy config |
+| `start_backtest` | Preload candle data and activate a session | `session_id` (required) |
+| `step_backtest` | Advance the backtest clock by one candle | `session_id` (required) |
+| `step_backtest_batch` | Advance the clock by multiple candles at once | `session_id` (required), `steps` (required) |
+| `backtest_trade` | Place a simulated order within a backtest | `session_id` (required), `symbol` (required), `side` (required), `quantity` (required) |
+| `get_backtest_results` | Final metrics for a completed session | `session_id` (required) |
+| `list_backtests` | List all backtest sessions | `status` (optional), `strategy_label` (optional), `limit` (optional) |
+
+### Agent Management (6 tools)
+
+| Tool | Description | Parameters |
+|---|---|---|
+| `list_agents` | List all agents owned by this account | `include_archived` (optional), `limit` (optional) |
+| `create_agent` | Create a new agent with its own wallet | `display_name` (required), plus optional config |
+| `get_agent` | Retrieve a single agent's details | `agent_id` (required) |
+| `reset_agent` | Reset agent balances to starting amount | `agent_id` (required) |
+| `update_agent_risk` | Update agent risk profile settings | `agent_id` (required), plus risk fields |
+| `get_agent_skill` | Download the agent-specific skill.md file | `agent_id` (required) |
+
+### Battles (6 tools)
+
+| Tool | Description | Parameters |
+|---|---|---|
+| `create_battle` | Create a new agent battle competition | `name` (required), plus optional config |
+| `list_battles` | List all battles | `status` (optional), `limit` (optional) |
+| `start_battle` | Start a battle (moves it to `active` state) | `battle_id` (required) |
+| `get_battle_live` | Live battle state: rankings, equity, recent trades | `battle_id` (required) |
+| `get_battle_results` | Final results and winner after completion | `battle_id` (required) |
+| `get_battle_replay` | Step-by-step replay data for a completed battle | `battle_id` (required) |
 
 ---
 

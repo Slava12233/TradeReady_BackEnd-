@@ -1,6 +1,6 @@
 # Scripts
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Standalone scripts for database seeding, data migration, backfill operations, testing, and platform validation.
 
@@ -12,9 +12,9 @@ This directory contains one-off and repeatable scripts that operate directly aga
 
 | Script | Purpose | When to Run |
 |--------|---------|-------------|
-| `seed_pairs.py` | Fetches all active USDT trading pairs from Binance `/api/v3/exchangeInfo` and upserts them into `trading_pairs` table. Extracts LOT_SIZE and MIN_NOTIONAL filters. | **First setup** and periodically to pick up new Binance listings. Run before `backfill_history.py`. |
+| `seed_pairs.py` | Fetches all active USDT trading pairs from Binance or any CCXT exchange (`--exchange okx`) and upserts them into `trading_pairs` table. Extracts LOT_SIZE and MIN_NOTIONAL filters. | **First setup** and periodically to pick up new listings. Run before `backfill_history.py`. |
 | `seed_test_user.py` | Creates a test account (`slava@test.com` / `TestPass123!`) with 3 agents (Alpha Scalper, Beta Swing, Gamma HODL), each with pre-populated balances, trades, orders, and positions. Idempotent. | **Development/demo** — to get a ready-made user with realistic multi-agent data. |
-| `backfill_history.py` | Fetches historical OHLCV klines from Binance public API and batch-inserts into `candles_backfill` hypertable. Supports `--daily` (all pairs, 1d, from 2017), `--hourly` (top 100 pairs, 1h, 5 years), custom `--symbols`, `--resume`, and `--dry-run`. | **After `seed_pairs.py`** — to populate historical candle data for backtesting. Long-running (hours for full backfill). |
+| `backfill_history.py` | Fetches historical OHLCV klines from Binance or any CCXT exchange (`--exchange okx`) and batch-inserts into `candles_backfill` hypertable. Supports `--daily`, `--hourly`, custom `--symbols`, `--resume`, `--dry-run`, and `--exchange`. | **After `seed_pairs.py`** — to populate historical candle data for backtesting. Long-running (hours for full backfill). |
 | `migrate_accounts_to_agents.py` | Creates one `Agent` row per existing `Account`, copying API key, starting balance, and risk profile. | **Once**, after Alembic migration 007 (`create_agents_table`) and before migration 009 (`enforce_agent_id_not_null`). |
 | `backfill_agent_ids.py` | Sets `agent_id` on all rows in `balances`, `orders`, `trades`, `positions`, `trading_sessions`, and `portfolio_snapshots` where it is NULL, using the account-to-agent mapping. Verifies zero NULLs remain. | **Once**, after `migrate_accounts_to_agents.py` and before Alembic migration 009. |
 | `backfill_backtest_agent_ids.py` | Sets `agent_id` on `backtest_sessions` rows where it is NULL, assigning the earliest agent for the session's account. | **Once**, after Alembic migration 013 and before migration 014 (`enforce_backtest_agent_id_not_null`). |
@@ -111,3 +111,4 @@ DURATION_SECONDS=600 python scripts/stability_test_24h.py
 
 - `2026-03-17` — Initial CLAUDE.md created
 - `2026-03-18` — Added `e2e_full_scenario_live.py` to inventory
+- `2026-03-18` — Added `--exchange` flag to `seed_pairs.py` and `backfill_history.py` for CCXT multi-exchange support

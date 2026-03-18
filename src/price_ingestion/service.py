@@ -4,8 +4,18 @@ Run as a standalone process::
 
     python -m src.price_ingestion.service
 
+Supports two modes controlled by the ``EXCHANGE_ID`` environment variable:
+
+- **Legacy mode** (``EXCHANGE_ID=binance`` or unset): Uses the battle-tested
+  ``BinanceWebSocketClient`` for direct Binance WebSocket streaming.
+- **CCXT mode** (any value, e.g. ``EXCHANGE_ID=okx``): Uses the new
+  ``ExchangeWebSocketClient`` powered by CCXT for exchange-agnostic streaming.
+
+Both modes produce identical ``Tick`` namedtuples, so the downstream pipeline
+(``PriceCache``, ``TickBuffer``, ``PriceBroadcaster``) is unchanged.
+
 Responsibilities:
-1. Connect to Binance Combined WebSocket Stream for ALL active USDT pairs.
+1. Connect to the configured exchange's WebSocket stream for all active USDT pairs.
 2. For every incoming tick:
    a. Update Redis ``prices`` hash with the latest price (overwrite).
    b. Update Redis ``ticker:{symbol}`` with rolling 24-h stats.
@@ -18,6 +28,7 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 import logging
 import signal
 import sys
@@ -26,9 +37,9 @@ import structlog
 
 from src.cache.price_cache import PriceCache
 from src.cache.redis_client import RedisClient
+from src.cache.types import Tick
 from src.config import get_settings
 from src.database.session import close_db, get_asyncpg_pool, init_db
-from src.price_ingestion.binance_ws import BinanceWebSocketClient
 from src.price_ingestion.broadcaster import PriceBroadcaster
 from src.price_ingestion.tick_buffer import TickBuffer
 
@@ -39,25 +50,93 @@ log = structlog.get_logger(__name__)
 # Module-level flag set by the signal handler to request a graceful shutdown.
 _shutdown_requested: bool = False
 
+# When set to True, forces the legacy BinanceWebSocketClient even if CCXT is
+# available.  Useful as a safety fallback during the transition period.
+_FORCE_LEGACY_BINANCE: bool = False
+
 
 def _request_shutdown(signum: int, _frame: object) -> None:
     """Signal handler that requests graceful shutdown."""
-    global _shutdown_requested
+    global _shutdown_requested  # noqa: PLW0603
     signal_name = signal.Signals(signum).name
     log.info("Shutdown signal received", signal=signal_name)
     _shutdown_requested = True
+
+
+async def _create_tick_source(settings: object) -> tuple[AsyncGenerator[Tick, None], list[str], object]:
+    """Create the appropriate tick source based on configuration.
+
+    Returns:
+        Tuple of (tick_generator, pair_list, client_object_for_cleanup).
+    """
+    exchange_id = getattr(settings, "exchange_id", "binance")
+
+    # ── Force-legacy path: always use the battle-tested BinanceWebSocketClient ──
+    if _FORCE_LEGACY_BINANCE:
+        from src.price_ingestion.binance_ws import BinanceWebSocketClient  # noqa: PLC0415
+
+        ws_client = BinanceWebSocketClient(
+            ws_base_url=getattr(settings, "binance_ws_url", "wss://stream.binance.com:9443/stream"),
+        )
+        await ws_client.fetch_pairs()
+        pairs = ws_client.get_all_pairs()
+        log.info("Using legacy Binance WebSocket client (forced)", pairs=len(pairs))
+        return ws_client.listen(), pairs, ws_client
+
+    # ── Binance: try CCXT first, fall back to legacy if CCXT unavailable ──
+    if exchange_id == "binance":
+        try:
+            from src.price_ingestion.exchange_ws import ExchangeWebSocketClient  # noqa: PLC0415
+
+            client = ExchangeWebSocketClient(exchange_id)
+            await client.initialize()
+            pairs = client.get_all_pairs()
+            log.info("Using CCXT-based exchange client", exchange=exchange_id, pairs=len(pairs))
+            return client.listen(), pairs, client
+        except ImportError:
+            log.info("CCXT not available — falling back to legacy Binance client")
+        except Exception as exc:  # noqa: BLE001 — fall back to legacy Binance; logged below
+            log.warning(
+                "CCXT client initialization failed — falling back to legacy Binance client",
+                error=str(exc),
+            )
+
+        from src.price_ingestion.binance_ws import BinanceWebSocketClient  # noqa: PLC0415
+
+        ws_client = BinanceWebSocketClient(
+            ws_base_url=getattr(settings, "binance_ws_url", "wss://stream.binance.com:9443/stream"),
+        )
+        await ws_client.fetch_pairs()
+        pairs = ws_client.get_all_pairs()
+        log.info("Using legacy Binance WebSocket client", pairs=len(pairs))
+        return ws_client.listen(), pairs, ws_client
+
+    # ── Non-Binance exchange: must use CCXT ──
+    from src.price_ingestion.exchange_ws import ExchangeWebSocketClient  # noqa: PLC0415
+
+    try:
+        client = ExchangeWebSocketClient(exchange_id)
+        await client.initialize()
+    except Exception as exc:
+        log.error("CCXT client init failed for exchange", exchange=exchange_id, error=str(exc))
+        raise
+
+    pairs = client.get_all_pairs()
+    log.info("Using CCXT-based exchange client", exchange=exchange_id, pairs=len(pairs))
+    return client.listen(), pairs, client
 
 
 async def run() -> None:
     """Main ingestion loop.
 
     Initialises all dependencies, starts the periodic flush background task,
-    then consumes ticks from the Binance WebSocket until a shutdown is requested.
+    then consumes ticks from the configured exchange until a shutdown is requested.
     """
     settings = get_settings()
 
     log.info(
         "Price ingestion service starting",
+        exchange=settings.exchange_id,
         flush_interval=settings.tick_flush_interval,
         buffer_max_size=settings.tick_buffer_max_size,
     )
@@ -83,12 +162,9 @@ async def run() -> None:
         broadcaster=broadcaster,
     )
 
-    ws_client = BinanceWebSocketClient(
-        ws_base_url=settings.binance_ws_url,
-    )
-    await ws_client.fetch_pairs()
-    pair_count = len(ws_client.get_all_pairs())
-    log.info("Streaming pairs loaded", count=pair_count)
+    # ── Create tick source (CCXT or legacy Binance) ────────────────────────
+    tick_source, pairs, ws_client = await _create_tick_source(settings)
+    log.info("Streaming pairs loaded", count=len(pairs))
 
     # ── Start background flush task ────────────────────────────────────────
     flush_task = asyncio.create_task(
@@ -100,7 +176,7 @@ async def run() -> None:
     tick_count: int = 0
     _fatal_exc: BaseException | None = None
     try:
-        async for tick in ws_client.listen():
+        async for tick in tick_source:
             if _shutdown_requested:
                 break
 
@@ -137,6 +213,11 @@ async def run() -> None:
             pass
 
         await buffer.shutdown()
+
+        # Close the exchange client if it has a close method.
+        if hasattr(ws_client, "close"):
+            await ws_client.close()
+
         await redis_client.disconnect()
         await close_db()
 

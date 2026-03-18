@@ -4,10 +4,10 @@
 
 ## Current State
 
-**Active work:** Wallet price display bug fixed, full live E2E scenario script created
-**Last session:** 2026-03-18 — Fixed wallet 100% USDT bug, created live E2E script, ran 106-step E2E against live backend
-**Next steps:** Battle frontend UI (components/battles/ is empty), investigate battle historical mode 500 error
-**Blocked:** Battle service returns 500 on historical mode creation — needs debugging
+**Active work:** Phase 2 (MCP Server Expansion) complete. Phase 3 next.
+**Last session:** 2026-03-18 — MCP tools expanded from 12 to 43; 142 MCP unit tests pass; 1083 total unit tests pass; 0 lint errors
+**Next steps:** Phase 3 — SDK polish, freemium tiers, launch competition
+**Blocked:** None
 
 ---
 
@@ -30,11 +30,12 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 | **Battle System (Backend)** | Production | Live + historical modes, 20 endpoints, ranking, replay |
 | **Battle System (Frontend)** | Not started | `Frontend/src/components/battles/` is empty |
 | **Unified Metrics** | Production | Shared calculator for backtests & battles |
-| **MCP Server** | Production | 12 tools over stdio transport |
+| **MCP Server** | Production | 43 tools over stdio transport (expanded from 12 in Phase 2) |
 | **Python SDK** | Production | Sync + async + WebSocket clients |
 | **Frontend** | Production | Next.js 16, React 19, Tailwind v4, agent switcher, backtest UI |
 | **Monitoring** | Production | Prometheus metrics, health checks, structured logging |
-| **Agentic Layer** | Complete | 36 CLAUDE.md files, 8 sub-agents |
+| **Exchange Abstraction (CCXT)** | Production | Adapter pattern, 110+ exchanges, symbol mapper, multi-exchange backfill |
+| **Agentic Layer** | Complete | 36 CLAUDE.md files, 12 sub-agents |
 
 ### Tech Stack
 
@@ -108,6 +109,26 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 ---
 
 ## Recent Activity
+
+### 2026-03-18 — Phase 2 Complete: MCP Server Expansion (12 → 43 Tools)
+
+**Changes:**
+- `src/mcp/tools.py` — Expanded from 12 to 43 tools. Added 31 new tools across 5 categories: backtesting (8), market + trading (7), agent management (6), battles (6), account + analytics (4). Added `TOOL_COUNT` constant, `_call_api_text()` for plain-text responses, `_text_content()` helper.
+- `src/mcp/server.py` — Updated tool count references from 12 to 43.
+- `src/mcp/__init__.py` — Updated docstring tool count from 12 to 43.
+- `src/mcp/CLAUDE.md` — Completely rewritten to document all 43 tools with categories, parameters, and return shapes.
+- `tests/unit/test_mcp_tools.py` — Expanded from 67 to 142 tests; all 43 tools now covered.
+- `docs/plan-task.md` — Phase 2 marked COMPLETE with all acceptance criteria checked.
+
+**Decisions:**
+- All 31 new tools are thin wrappers over existing REST endpoints — no new backend logic needed. Keeps the MCP layer simple and consistent with the REST API as the single source of truth.
+- `cancel_all_orders` and `reset_account` include client-side confirmation guards to prevent accidental destructive calls.
+- `get_agent_skill` returns plain text (not JSON) via the new `_call_api_text` helper, since the skill document is Markdown prose, not structured data.
+
+**Learnings:**
+- Adding `TOOL_COUNT = 43` as a module constant makes it easy to assert in tests and keep server.py in sync with tools.py without manual counting.
+
+---
 
 ### 2026-03-18 — Wallet Bug Fix + Live E2E Script
 

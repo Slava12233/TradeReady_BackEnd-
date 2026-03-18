@@ -1,8 +1,8 @@
 # Price Ingestion
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
-> Streams real-time trade ticks from Binance WebSocket, caches prices in Redis, and bulk-flushes tick history to TimescaleDB.
+> Streams real-time trade ticks from any exchange (via CCXT or legacy Binance WebSocket), caches prices in Redis, and bulk-flushes tick history to TimescaleDB.
 
 ## What This Module Does
 
@@ -24,11 +24,13 @@ Additionally, `binance_klines.py` provides a REST client for fetching historical
 
 | File | Purpose |
 |------|---------|
-| `service.py` | Main entry point and orchestrator. Wires up all dependencies, runs the tick loop, handles signals. |
-| `binance_ws.py` | `BinanceWebSocketClient` -- fetches USDT pairs, builds combined-stream URLs, manages WS connections with exponential-backoff reconnect, yields `Tick` objects. |
+| `service.py` | Main entry point and orchestrator. Wires up all dependencies, creates tick source (CCXT or legacy Binance), runs the tick loop, handles signals. |
+| `exchange_ws.py` | `ExchangeWebSocketClient` -- CCXT-powered drop-in replacement for `BinanceWebSocketClient`. Works with any exchange. Produces identical `Tick` namedtuples. |
+| `exchange_klines.py` | `fetch_exchange_klines()` -- CCXT-powered drop-in replacement for `fetch_binance_klines()`. Works with any exchange. Falls back to legacy Binance if CCXT unavailable. |
+| `binance_ws.py` | `BinanceWebSocketClient` -- legacy direct Binance WebSocket client. Kept as fallback when CCXT is unavailable or `_FORCE_LEGACY_BINANCE` is set. |
 | `tick_buffer.py` | `TickBuffer` -- asyncio-safe in-memory buffer with time-based and size-based flush triggers. Uses asyncpg `COPY` for bulk inserts. Retains ticks on flush failure. |
 | `broadcaster.py` | `PriceBroadcaster` -- publishes ticks to the Redis `price_updates` pub/sub channel. Supports single and batched (pipeline) publishing. |
-| `binance_klines.py` | `fetch_binance_klines()` -- async function to fetch historical OHLCV candles from the Binance `/api/v3/klines` REST endpoint. Used as a fallback for time ranges not covered by local data. |
+| `binance_klines.py` | `fetch_binance_klines()` -- legacy async function to fetch historical OHLCV candles from Binance REST. Used as fallback for `exchange_klines.py`. |
 | `__init__.py` | Empty package marker. |
 
 ## Architecture & Patterns
@@ -36,7 +38,7 @@ Additionally, `binance_klines.py` provides a REST client for fetching historical
 ### Data Flow
 
 ```
-Binance WS  ──tick──>  service.run()
+Exchange WS (CCXT or legacy Binance)  ──tick──>  service.run()
                           ├── PriceCache.set_price()        [Redis HSET prices {SYMBOL}]
                           ├── PriceCache.update_ticker()     [Redis ticker:{symbol}]
                           └── TickBuffer.add()               [in-memory list]
@@ -159,3 +161,4 @@ python scripts/backfill_history.py
 ## Recent Changes
 
 - `2026-03-17` -- Initial CLAUDE.md created
+- `2026-03-18` -- Added CCXT-based `exchange_ws.py` and `exchange_klines.py`. Updated `service.py` to support multi-exchange via `_create_tick_source()` with legacy Binance fallback.

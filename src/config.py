@@ -42,6 +42,24 @@ class Settings(BaseSettings):
         description="Base URL for the Binance combined stream endpoint.",
     )
 
+    # ── Exchange Connectivity (CCXT) ──────────────────────────────────────────
+    exchange_id: str = Field(
+        default="binance",
+        description="Primary exchange identifier for CCXT (e.g. binance, okx, bybit).",
+    )
+    exchange_api_key: str | None = Field(
+        default=None,
+        description="API key for authenticated exchange operations (Phase 8 live trading).",
+    )
+    exchange_secret: str | None = Field(
+        default=None,
+        description="API secret for authenticated exchange operations (Phase 8 live trading).",
+    )
+    additional_exchanges: str = Field(
+        default="",
+        description="Comma-separated list of additional exchange IDs for multi-exchange ingestion.",
+    )
+
     # ── API Server ────────────────────────────────────────────────────────────
     api_host: str = Field(default="0.0.0.0")  # noqa: S104
     api_port: int = Field(default=8000, ge=1, le=65535)

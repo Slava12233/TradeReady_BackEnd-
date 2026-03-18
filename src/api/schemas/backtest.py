@@ -34,6 +34,13 @@ class BacktestCreateRequest(_BaseSchema):
     pairs: list[str] | None = None
     strategy_label: str = Field(default="default", max_length=100)
     agent_id: str | None = None
+    exchange: str = Field(
+        default="binance",
+        max_length=20,
+        pattern=r"^[a-z][a-z0-9_]{0,19}$",
+        description="Exchange to use for historical data (e.g. binance, okx, bybit).",
+        examples=["binance", "okx", "bybit"],
+    )
 
     @field_serializer("starting_balance")
     def _ser_balance(self, v: Decimal) -> str:

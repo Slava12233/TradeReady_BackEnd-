@@ -2,6 +2,11 @@
 
 Tests that the service correctly initializes dependencies, processes ticks,
 handles errors, and shuts down cleanly.
+
+After the CCXT migration, ``service.py`` no longer imports
+``BinanceWebSocketClient`` at module level — tick source creation is delegated
+to ``_create_tick_source()``.  Tests patch that function to inject a mock
+tick generator, keeping them independent of CCXT availability.
 """
 
 from __future__ import annotations
@@ -27,6 +32,22 @@ def _make_tick(symbol="BTCUSDT", price="50000.00", quantity="0.01") -> Tick:
     )
 
 
+def _mock_tick_source(ticks: list[Tick], pairs: list[str] | None = None):
+    """Create a mock return value for ``_create_tick_source``.
+
+    Returns a tuple of (async_generator, pair_list, mock_client) matching
+    the real function's signature.
+    """
+
+    async def _gen():
+        for t in ticks:
+            yield t
+
+    mock_client = MagicMock()
+    mock_client.close = AsyncMock()
+    return _gen(), pairs or [t.symbol for t in ticks], mock_client
+
+
 class TestServiceRun:
     @patch("src.price_ingestion.service.close_db", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.init_db", new_callable=AsyncMock)
@@ -35,12 +56,12 @@ class TestServiceRun:
     @patch("src.price_ingestion.service.PriceCache")
     @patch("src.price_ingestion.service.PriceBroadcaster")
     @patch("src.price_ingestion.service.TickBuffer")
-    @patch("src.price_ingestion.service.BinanceWebSocketClient")
+    @patch("src.price_ingestion.service._create_tick_source", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.get_settings")
     async def test_service_initializes_dependencies(
         self,
         mock_settings,
-        mock_ws_cls,
+        mock_create_source,
         mock_buffer_cls,
         mock_broadcaster_cls,
         mock_cache_cls,
@@ -49,10 +70,11 @@ class TestServiceRun:
         mock_init_db,
         mock_close_db,
     ) -> None:
-        """run() creates WS client, cache, buffer, and broadcaster."""
+        """run() creates tick source, cache, buffer, and broadcaster."""
         from src.price_ingestion import service
 
         settings = MagicMock()
+        settings.exchange_id = "binance"
         settings.tick_flush_interval = 1.0
         settings.tick_buffer_max_size = 100
         settings.redis_url = "redis://localhost:6379"
@@ -65,18 +87,8 @@ class TestServiceRun:
         mock_redis_instance.disconnect = AsyncMock()
         mock_redis_cls.return_value = mock_redis_instance
 
-        mock_ws = MagicMock()
-        mock_ws.fetch_pairs = AsyncMock(return_value=["BTCUSDT"])
-        mock_ws.get_all_pairs = MagicMock(return_value=["BTCUSDT"])
-
-        # WS listen yields one tick then stops
         tick = _make_tick()
-
-        async def _listen():
-            yield tick
-
-        mock_ws.listen = _listen
-        mock_ws_cls.return_value = mock_ws
+        mock_create_source.return_value = _mock_tick_source([tick])
 
         mock_buffer = MagicMock()
         mock_buffer.add = AsyncMock()
@@ -89,7 +101,6 @@ class TestServiceRun:
         mock_cache.update_ticker = AsyncMock()
         mock_cache_cls.return_value = mock_cache
 
-        # Request shutdown after processing the tick
         original = service._shutdown_requested
         service._shutdown_requested = False
 
@@ -102,7 +113,7 @@ class TestServiceRun:
         mock_init_db.assert_awaited_once()
         mock_get_pool.assert_awaited_once()
         mock_redis_instance.connect.assert_awaited_once()
-        mock_ws.fetch_pairs.assert_awaited_once()
+        mock_create_source.assert_awaited_once()
 
     @patch("src.price_ingestion.service.close_db", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.init_db", new_callable=AsyncMock)
@@ -111,12 +122,12 @@ class TestServiceRun:
     @patch("src.price_ingestion.service.PriceCache")
     @patch("src.price_ingestion.service.PriceBroadcaster")
     @patch("src.price_ingestion.service.TickBuffer")
-    @patch("src.price_ingestion.service.BinanceWebSocketClient")
+    @patch("src.price_ingestion.service._create_tick_source", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.get_settings")
     async def test_processes_tick_message(
         self,
         mock_settings,
-        mock_ws_cls,
+        mock_create_source,
         mock_buffer_cls,
         mock_broadcaster_cls,
         mock_cache_cls,
@@ -125,10 +136,11 @@ class TestServiceRun:
         mock_init_db,
         mock_close_db,
     ) -> None:
-        """Incoming WS message triggers cache update + buffer append."""
+        """Incoming tick triggers cache update + buffer append."""
         from src.price_ingestion import service
 
         settings = MagicMock()
+        settings.exchange_id = "binance"
         settings.tick_flush_interval = 1.0
         settings.tick_buffer_max_size = 100
         settings.redis_url = "redis://localhost:6379"
@@ -142,15 +154,7 @@ class TestServiceRun:
         mock_redis_cls.return_value = mock_redis_instance
 
         tick = _make_tick()
-
-        async def _listen():
-            yield tick
-
-        mock_ws = MagicMock()
-        mock_ws.fetch_pairs = AsyncMock(return_value=["BTCUSDT"])
-        mock_ws.get_all_pairs = MagicMock(return_value=["BTCUSDT"])
-        mock_ws.listen = _listen
-        mock_ws_cls.return_value = mock_ws
+        mock_create_source.return_value = _mock_tick_source([tick])
 
         mock_buffer = MagicMock()
         mock_buffer.add = AsyncMock()
@@ -182,12 +186,12 @@ class TestServiceRun:
     @patch("src.price_ingestion.service.PriceCache")
     @patch("src.price_ingestion.service.PriceBroadcaster")
     @patch("src.price_ingestion.service.TickBuffer")
-    @patch("src.price_ingestion.service.BinanceWebSocketClient")
+    @patch("src.price_ingestion.service._create_tick_source", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.get_settings")
     async def test_shutdown_flushes_buffer(
         self,
         mock_settings,
-        mock_ws_cls,
+        mock_create_source,
         mock_buffer_cls,
         mock_broadcaster_cls,
         mock_cache_cls,
@@ -200,6 +204,7 @@ class TestServiceRun:
         from src.price_ingestion import service
 
         settings = MagicMock()
+        settings.exchange_id = "binance"
         settings.tick_flush_interval = 1.0
         settings.tick_buffer_max_size = 100
         settings.redis_url = "redis://localhost:6379"
@@ -212,15 +217,7 @@ class TestServiceRun:
         mock_redis_instance.disconnect = AsyncMock()
         mock_redis_cls.return_value = mock_redis_instance
 
-        async def _listen():
-            return
-            yield  # noqa: RET504 — make this an async generator
-
-        mock_ws = MagicMock()
-        mock_ws.fetch_pairs = AsyncMock(return_value=[])
-        mock_ws.get_all_pairs = MagicMock(return_value=[])
-        mock_ws.listen = _listen
-        mock_ws_cls.return_value = mock_ws
+        mock_create_source.return_value = _mock_tick_source([], pairs=[])
 
         mock_buffer = MagicMock()
         mock_buffer.add = AsyncMock()
@@ -247,12 +244,12 @@ class TestServiceRun:
     @patch("src.price_ingestion.service.PriceCache")
     @patch("src.price_ingestion.service.PriceBroadcaster")
     @patch("src.price_ingestion.service.TickBuffer")
-    @patch("src.price_ingestion.service.BinanceWebSocketClient")
+    @patch("src.price_ingestion.service._create_tick_source", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.get_settings")
     async def test_shutdown_closes_connections(
         self,
         mock_settings,
-        mock_ws_cls,
+        mock_create_source,
         mock_buffer_cls,
         mock_broadcaster_cls,
         mock_cache_cls,
@@ -265,6 +262,7 @@ class TestServiceRun:
         from src.price_ingestion import service
 
         settings = MagicMock()
+        settings.exchange_id = "binance"
         settings.tick_flush_interval = 1.0
         settings.tick_buffer_max_size = 100
         settings.redis_url = "redis://localhost:6379"
@@ -277,15 +275,7 @@ class TestServiceRun:
         mock_redis_instance.disconnect = AsyncMock()
         mock_redis_cls.return_value = mock_redis_instance
 
-        async def _listen():
-            return
-            yield  # noqa: RET504
-
-        mock_ws = MagicMock()
-        mock_ws.fetch_pairs = AsyncMock(return_value=[])
-        mock_ws.get_all_pairs = MagicMock(return_value=[])
-        mock_ws.listen = _listen
-        mock_ws_cls.return_value = mock_ws
+        mock_create_source.return_value = _mock_tick_source([], pairs=[])
 
         mock_buffer = MagicMock()
         mock_buffer.shutdown = AsyncMock()
@@ -312,12 +302,12 @@ class TestServiceRun:
     @patch("src.price_ingestion.service.PriceCache")
     @patch("src.price_ingestion.service.PriceBroadcaster")
     @patch("src.price_ingestion.service.TickBuffer")
-    @patch("src.price_ingestion.service.BinanceWebSocketClient")
+    @patch("src.price_ingestion.service._create_tick_source", new_callable=AsyncMock)
     @patch("src.price_ingestion.service.get_settings")
     async def test_handles_fatal_error_in_loop(
         self,
         mock_settings,
-        mock_ws_cls,
+        mock_create_source,
         mock_buffer_cls,
         mock_broadcaster_cls,
         mock_cache_cls,
@@ -330,6 +320,7 @@ class TestServiceRun:
         from src.price_ingestion import service
 
         settings = MagicMock()
+        settings.exchange_id = "binance"
         settings.tick_flush_interval = 1.0
         settings.tick_buffer_max_size = 100
         settings.redis_url = "redis://localhost:6379"
@@ -342,15 +333,15 @@ class TestServiceRun:
         mock_redis_instance.disconnect = AsyncMock()
         mock_redis_cls.return_value = mock_redis_instance
 
-        async def _listen():
-            yield _make_tick()
+        tick = _make_tick()
+
+        async def _exploding_gen():
+            yield tick
             raise RuntimeError("Connection exploded")
 
-        mock_ws = MagicMock()
-        mock_ws.fetch_pairs = AsyncMock(return_value=["BTCUSDT"])
-        mock_ws.get_all_pairs = MagicMock(return_value=["BTCUSDT"])
-        mock_ws.listen = _listen
-        mock_ws_cls.return_value = mock_ws
+        mock_client = MagicMock()
+        mock_client.close = AsyncMock()
+        mock_create_source.return_value = (_exploding_gen(), ["BTCUSDT"], mock_client)
 
         mock_buffer = MagicMock()
         mock_buffer.add = AsyncMock()

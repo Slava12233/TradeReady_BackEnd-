@@ -27,7 +27,7 @@ from src.database.models import Battle, BattleParticipant
 from src.database.repositories.agent_repo import AgentRepository
 from src.database.repositories.battle_repo import BattleRepository
 from src.database.repositories.trade_repo import TradeRepository
-from src.utils.exceptions import PermissionDeniedError
+from src.utils.exceptions import BattleInvalidStateError, PermissionDeniedError
 
 logger = structlog.get_logger(__name__)
 
@@ -47,21 +47,6 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
     "active": {"paused", "completed", "cancelled"},
     "paused": {"active", "completed", "cancelled"},
 }
-
-
-class BattleInvalidStateError(Exception):
-    """Raised when a battle operation is attempted in the wrong state."""
-
-    def __init__(
-        self,
-        message: str = "Battle is not in the required state.",
-        *,
-        current_status: str | None = None,
-        required_status: str | None = None,
-    ) -> None:
-        self.current_status = current_status
-        self.required_status = required_status
-        super().__init__(message)
 
 
 class BattleService:

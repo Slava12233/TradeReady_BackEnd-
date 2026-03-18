@@ -1,16 +1,18 @@
-"""Seed the ``trading_pairs`` table from Binance REST exchange info.
+"""Seed the ``trading_pairs`` table from Binance or any CCXT-supported exchange.
 
 Standalone script — run directly or via ``python -m scripts.seed_pairs``.
 
-Fetches all symbols from the Binance ``/api/v3/exchangeInfo`` endpoint,
-filters for pairs that are **TRADING** and have **USDT** as the quote asset,
-extracts LOT_SIZE and MIN_NOTIONAL filter values, then upserts each pair into
-the ``trading_pairs`` table (insert-or-update by symbol primary key).
+Fetches all active USDT trading pairs, extracts lot size and min notional
+filters, then upserts each pair into the ``trading_pairs`` table.
 
 Usage::
 
-    # With default DATABASE_URL from .env:
+    # Binance (default):
     python scripts/seed_pairs.py
+
+    # Any CCXT exchange:
+    python scripts/seed_pairs.py --exchange okx
+    python scripts/seed_pairs.py --exchange bybit
 
     # Override database URL:
     DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db python scripts/seed_pairs.py
@@ -219,8 +221,59 @@ async def seed_pairs(
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_pairs_via_ccxt(exchange_id: str) -> list[dict[str, Any]]:
+    """Fetch trading pairs via CCXT for any exchange.
+
+    Returns data in the same format as :func:`fetch_usdt_pairs` for
+    compatibility with the existing :func:`seed_pairs` function.
+    """
+    from src.exchange.ccxt_adapter import CCXTAdapter  # noqa: PLC0415
+
+    adapter = CCXTAdapter(exchange_id)
+    await adapter.initialize()
+    try:
+        markets = await adapter.fetch_markets("USDT")
+        # Convert ExchangeMarket to the dict format expected by seed_pairs().
+        pairs: list[dict[str, Any]] = []
+        for m in markets:
+            pairs.append(
+                {
+                    "symbol": m.symbol,
+                    "baseAsset": m.base_asset,
+                    "quoteAsset": m.quote_asset,
+                    "status": "TRADING" if m.status == "active" else "BREAK",
+                    "filters": [
+                        {
+                            "filterType": "LOT_SIZE",
+                            "minQty": str(m.min_qty) if m.min_qty is not None else None,
+                            "maxQty": str(m.max_qty) if m.max_qty is not None else None,
+                            "stepSize": str(m.step_size) if m.step_size is not None else None,
+                        },
+                        {
+                            "filterType": "MIN_NOTIONAL",
+                            "minNotional": str(m.min_notional) if m.min_notional is not None else None,
+                        },
+                    ],
+                }
+            )
+        logger.info("Fetched %d USDT pairs from %s via CCXT", len(pairs), exchange_id)
+        return pairs
+    finally:
+        await adapter.close()
+
+
 async def main() -> None:
     """Main entry point: fetch pairs, seed the database, log results."""
+    import argparse  # noqa: PLC0415
+
+    parser = argparse.ArgumentParser(description="Seed trading pairs from an exchange.")
+    parser.add_argument(
+        "--exchange", type=str, default="binance",
+        help="Exchange ID for CCXT (e.g. binance, okx, bybit). Default: binance",
+    )
+    args = parser.parse_args()
+    exchange_id = args.exchange.lower()
+
     # Import here so the script can also run from the repo root without
     # the full FastAPI app being initialised (src.config is still used for
     # the DATABASE_URL default).
@@ -241,29 +294,34 @@ async def main() -> None:
             "Could not load src.config — falling back to DATABASE_URL env var."
         )
 
-    logger.info("Connecting to database …")
+    logger.info("Connecting to database … (exchange: %s)", exchange_id)
     engine = create_async_engine(database_url, echo=False, pool_pre_ping=True)
     factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
 
     try:
-        async with httpx.AsyncClient() as http_client:
-            pairs = await fetch_usdt_pairs(http_client)
+        # Use CCXT for non-Binance exchanges; use direct Binance API for Binance
+        # (proven, includes richer filter data).
+        if exchange_id != "binance":
+            pairs = await _fetch_pairs_via_ccxt(exchange_id)
+        else:
+            async with httpx.AsyncClient() as http_client:
+                pairs = await fetch_usdt_pairs(http_client)
 
         if not pairs:
-            logger.error("No USDT pairs returned from Binance — aborting.")
+            logger.error("No USDT pairs returned from %s — aborting.", exchange_id)
             sys.exit(1)
 
         async with factory() as session:
             count = await seed_pairs(session, pairs)
 
-        logger.info("Successfully upserted %d trading pairs.", count)
+        logger.info("Successfully upserted %d trading pairs from %s.", count, exchange_id)
 
     except httpx.RequestError as exc:
-        logger.error("Network error fetching Binance exchange info: %s", exc)
+        logger.error("Network error fetching exchange info: %s", exc)
         sys.exit(1)
     except httpx.HTTPStatusError as exc:
         logger.error(
-            "Binance API returned HTTP %d: %s",
+            "Exchange API returned HTTP %d: %s",
             exc.response.status_code,
             exc.response.text[:200],
         )

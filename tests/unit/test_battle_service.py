@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -58,13 +58,13 @@ def sample_battle():
 class TestCreateBattle:
     async def test_create_with_preset(self, service):
         service._battle_repo.create_battle.return_value = MagicMock()
-        result = await service.create_battle(uuid4(), "Sprint Battle", preset="quick_1h")
+        await service.create_battle(uuid4(), "Sprint Battle", preset="quick_1h")
         service._battle_repo.create_battle.assert_called_once()
 
     async def test_create_with_custom_config(self, service):
         config = {"duration_type": "fixed", "duration_seconds": 7200}
         service._battle_repo.create_battle.return_value = MagicMock()
-        result = await service.create_battle(uuid4(), "Custom Battle", config=config)
+        await service.create_battle(uuid4(), "Custom Battle", config=config)
         service._battle_repo.create_battle.assert_called_once()
 
 
@@ -74,7 +74,7 @@ class TestUpdateBattle:
         service._battle_repo.get_battle.return_value = sample_battle
         service._battle_repo.update_battle.return_value = sample_battle
 
-        result = await service.update_battle(
+        await service.update_battle(
             sample_battle.id, sample_battle.account_id, name="New Name"
         )
         service._battle_repo.update_battle.assert_called_once()
@@ -106,7 +106,7 @@ class TestParticipantManagement:
         service._agent_repo.get_by_id.return_value = agent
         service._battle_repo.add_participant.return_value = MagicMock()
 
-        result = await service.add_participant(
+        await service.add_participant(
             sample_battle.id, uuid4(), sample_battle.account_id
         )
         service._battle_repo.add_participant.assert_called_once()
@@ -150,7 +150,7 @@ class TestStartBattle:
         service._battle_repo.update_participant.return_value = MagicMock()
         service._battle_repo.update_status.return_value = sample_battle
 
-        result = await service.start_battle(sample_battle.id, sample_battle.account_id)
+        await service.start_battle(sample_battle.id, sample_battle.account_id)
         service._battle_repo.update_status.assert_called_once()
 
     async def test_start_with_one_participant_fails(self, service, sample_battle):
@@ -172,7 +172,7 @@ class TestPauseResume:
         service._battle_repo.get_participant.return_value = participant
         service._battle_repo.update_participant.return_value = participant
 
-        result = await service.pause_agent(
+        await service.pause_agent(
             sample_battle.id, uuid4(), sample_battle.account_id
         )
         service._battle_repo.update_participant.assert_called_once()
@@ -195,7 +195,7 @@ class TestPauseResume:
         service._battle_repo.get_participant.return_value = participant
         service._battle_repo.update_participant.return_value = participant
 
-        result = await service.resume_agent(
+        await service.resume_agent(
             sample_battle.id, uuid4(), sample_battle.account_id
         )
         service._battle_repo.update_participant.assert_called_once()
@@ -235,7 +235,7 @@ class TestStopBattle:
         service._wallet_manager.restore_wallet.return_value = None
         service._battle_repo.update_status.return_value = sample_battle
 
-        result = await service.stop_battle(sample_battle.id, sample_battle.account_id)
+        await service.stop_battle(sample_battle.id, sample_battle.account_id)
         service._battle_repo.update_status.assert_called_once()
 
 
@@ -245,7 +245,7 @@ class TestCancelBattle:
         service._battle_repo.get_battle.return_value = sample_battle
         service._battle_repo.update_status.return_value = sample_battle
 
-        result = await service.cancel_battle(sample_battle.id, sample_battle.account_id)
+        await service.cancel_battle(sample_battle.id, sample_battle.account_id)
         service._battle_repo.update_status.assert_called_once()
 
     async def test_cancel_completed_fails(self, service, sample_battle):

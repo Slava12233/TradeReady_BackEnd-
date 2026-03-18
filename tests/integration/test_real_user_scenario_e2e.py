@@ -1,3 +1,4 @@
+# ruff: noqa: N801
 """Comprehensive E2E test: Real user scenario with 3 agents, trades, backtests, and battles.
 
 Simulates a complete user journey through the platform:
@@ -26,7 +27,6 @@ User Credentials (for UI login after running against live):
 
 from __future__ import annotations
 
-import copy
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -38,7 +38,7 @@ import pytest
 from src.accounts.auth import create_jwt
 from src.agents.service import AgentCredentials
 from src.config import Settings
-from src.database.models import Account, Agent, Balance, Battle, BattleParticipant, Order, Trade
+from src.database.models import Account, Agent, Battle, BattleParticipant, Order, Trade
 from src.order_engine.engine import OrderResult
 
 pytestmark = pytest.mark.slow
@@ -402,8 +402,13 @@ def _build_agent_client(agent_service=None, account=None):
 def _build_trading_client(order_engine=None, risk_manager=None, order_repo=None, trade_repo=None):
     """Client for trading endpoints (auth via _authed_request per call)."""
     from src.dependencies import (
-        get_db_session, get_order_engine, get_order_repo, get_redis,
-        get_risk_manager, get_settings, get_trade_repo,
+        get_db_session,
+        get_order_engine,
+        get_order_repo,
+        get_redis,
+        get_risk_manager,
+        get_settings,
+        get_trade_repo,
     )
 
     if order_engine is None:
@@ -485,9 +490,15 @@ def _build_account_client(balance_manager=None, tracker=None, account_service=No
     """Client for account endpoints (auth via _authed_request per call)."""
     from src.api.middleware.auth import get_current_agent
     from src.dependencies import (
-        get_account_repo, get_account_service, get_agent_repo,
-        get_balance_manager, get_db_session, get_portfolio_tracker,
-        get_redis, get_settings, get_trade_repo,
+        get_account_repo,
+        get_account_service,
+        get_agent_repo,
+        get_balance_manager,
+        get_db_session,
+        get_portfolio_tracker,
+        get_redis,
+        get_settings,
+        get_trade_repo,
     )
 
     redis = _mock_redis()
@@ -897,7 +908,7 @@ class TestPhase2_AgentCreation:
 
     def _agent_service(self):
         svc = AsyncMock()
-        agents = [_make_agent_mock(aid, name) for aid, name in zip(AGENT_IDS, AGENT_NAMES)]
+        agents = [_make_agent_mock(aid, name) for aid, name in zip(AGENT_IDS, AGENT_NAMES, strict=False)]
         svc.list_agents = AsyncMock(return_value=agents)
         svc.get_agent_overview = AsyncMock(return_value=[
             {"id": str(a.id), "display_name": a.display_name, "status": "active",
@@ -1428,7 +1439,7 @@ class TestPhase6_Battles:
         svc.get_live_snapshot = AsyncMock(return_value=[
             {"agent_id": str(aid), "display_name": name, "current_equity": "10500",
              "pnl": "500", "roi_pct": "5.0", "total_trades": 10}
-            for aid, name in zip(AGENT_IDS, AGENT_NAMES)
+            for aid, name in zip(AGENT_IDS, AGENT_NAMES, strict=False)
         ])
         # get_results returns a dict matching BattleResultsResponse fields
         svc.get_results = AsyncMock(return_value={

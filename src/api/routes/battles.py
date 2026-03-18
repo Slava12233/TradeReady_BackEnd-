@@ -135,7 +135,7 @@ async def create_battle(
         config=body.config,
         ranking_metric=body.ranking_metric,
         battle_mode=body.battle_mode,
-        backtest_config=body.backtest_config.model_dump() if body.backtest_config else None,
+        backtest_config=body.backtest_config.model_dump(mode="json") if body.backtest_config else None,
     )
     return _battle_to_response(battle)
 

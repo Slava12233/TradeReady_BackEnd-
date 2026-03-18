@@ -1,6 +1,6 @@
 # Documentation
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Public-facing documentation for the AgentExchange platform: API reference, guides, tutorials, and framework integrations for AI agent developers.
 
@@ -15,13 +15,18 @@ The `docs/` directory contains all user-facing documentation for the AgentExchan
 | `quickstart.md` | New users, developers | 5-minute onboarding: Docker setup, account registration, first trade via curl and Python SDK |
 | `api_reference.md` | Backend developers, agent builders | Complete REST API reference covering all endpoints (auth, market, trading, account, analytics), WebSocket protocol, error codes, rate limits, and response shapes |
 | `skill.md` | LLM agents (system prompt injection) | Drop-in Markdown instruction file for any AI agent's context window; contains full API spec, auth flow, order types, error handling, and trading workflows in LLM-readable format (~46KB) |
-| `mcp_server.md` | AI agent developers using MCP clients | Setup guide for the Model Context Protocol server: Claude Desktop, Cline, and generic MCP client configuration; lists all 12 available tools with parameters |
+| `mcp_server.md` | AI agent developers using MCP clients | Setup guide for the Model Context Protocol server: Claude Desktop, Cline, and generic MCP client configuration; lists all 43 available tools with parameters across 7 categories (market data, account, trading, analytics, backtesting, agent management, battles) |
 | `backtesting-guide.md` | Agent developers, strategy builders | Technical guide covering the full backtesting lifecycle: session creation, stepping, sandbox trading, order types, results endpoints, strategy examples (SMA crossover, RSI, breakout, rotation), step batching, and position sizing |
 | `backtesting-explained.md` | Non-technical users, stakeholders | Plain-English explanation of backtesting using analogies (flight simulator, time machine); covers metrics definitions (Sharpe, drawdown, win rate), strategy types, and iteration workflow without code |
 | `framework_guides/langchain.md` | LangChain developers | Step-by-step integration: SDK client setup, LangChain `Tool` and `StructuredTool` wrappers, `AgentExecutor` with ReAct prompt, WebSocket streaming, async agent pattern |
 | `framework_guides/crewai.md` | CrewAI developers | Multi-agent crew setup: `@tool`-decorated SDK wrappers, 3-agent crew (analyst/trader/risk manager), sequential and hierarchical `Process` modes, autonomous strategy loop |
 | `framework_guides/agent_zero.md` | Agent Zero developers | Skill file integration: drop `skill.md` into Agent Zero's skills directory, credential injection via system prompt, SDK tool registration, WebSocket background feed |
 | `framework_guides/openclaw.md` | OpenClaw developers | Skill-based integration: `agent.yaml` configuration, `@openclaw.tool` SDK wrappers, session-based and autonomous agent patterns |
+| `plan-task.md` | Internal (team) | 6-phase execution plan: CCXT integration, MCP expansion, SDK polish, freemium tiers, launch competition, framework integrations |
+| `tradeready_research.md` | Internal (team) | Competitive landscape analysis: 15+ competitors, positioning, differentiators, go-to-market |
+| `ccxt_resarch_report.md` | Internal (team) | CCXT integration analysis: pricing ($0), 110 exchanges, architecture, implementation roadmap |
+| `pricing_tiers_business_report.md` | Internal (team) | Freemium tier design and business model analysis |
+| `rate_limits.md` | Developers | API rate limit documentation per endpoint group |
 
 ## Common Tasks
 
@@ -36,3 +41,5 @@ The `docs/` directory contains all user-facing documentation for the AgentExchan
 ## Recent Changes
 
 - `2026-03-17` — Initial CLAUDE.md created
+- `2026-03-18` — Added plan-task.md, tradeready_research.md, ccxt_resarch_report.md, pricing_tiers_business_report.md, rate_limits.md to inventory
+- `2026-03-18` — Updated mcp_server.md inventory entry: 12 tools → 43 tools (Phase 2 MCP expansion)

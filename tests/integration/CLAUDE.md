@@ -164,10 +164,11 @@ pytest tests/integration/ -v -m "not slow"
 
 - **Redis pipeline mocks**: The rate limit middleware uses `async with redis.pipeline() as pipe:`. The mock must wire up `__aenter__`/`__aexit__` on the pipeline object, plus sync `incr`/`expire` methods (pipeline commands are sync; only `execute()` is async).
 
-- **Two different exception hierarchies for battles**: `BattleInvalidStateError` exists both in `src.utils.exceptions` (inherits `TradingPlatformError`, maps to HTTP 409) and in `src.battles.service` (plain `Exception`, caught as 500). Some tests assert 500 because the route raises the service-level exception.
+- **Battle exception hierarchy unified (2026-03-18)**: The duplicate `BattleInvalidStateError` in `src.battles.service` was removed. Only `src.utils.exceptions.BattleInvalidStateError` exists now, mapping correctly to HTTP 409.
 
 - **Backtest tests create real accounts**: The Docker-dependent backtest tests register accounts via the API. If the DB is not clean between runs, you may get `DuplicateAccountError`. Each test uses a unique `display_name` to mitigate this.
 
 ## Recent Changes
 
 - `2026-03-17` -- Initial CLAUDE.md created
+- `2026-03-18` -- Updated battle exception gotcha (duplicate class removed). Fixed lint: E402 in test_auth_endpoints, N801 suppressed in test_real_user_scenario_e2e.

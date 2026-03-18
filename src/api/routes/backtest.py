@@ -143,6 +143,7 @@ async def create_backtest(
         pairs=body.pairs,
         strategy_label=body.strategy_label,
         agent_id=agent_id,
+        exchange=body.exchange,
     )
 
     session = await engine.create_session(account_id, config, db)

@@ -1,6 +1,6 @@
 """MCP Server — Model Context Protocol integration for AI agents.
 
-Exposes 12 trading tools over the MCP stdio transport so that Claude-based
+Exposes 43 trading tools over the MCP stdio transport so that Claude-based
 agents and any MCP-compatible framework can discover and invoke trading
 operations against the platform's REST API.
 

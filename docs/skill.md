@@ -1148,25 +1148,88 @@ except AgentExchangeError as e:
 
 ## MCP Server (Claude / MCP-Compatible Agents)
 
-Start the MCP server to expose 12 live trading tools via Model Context Protocol (backtesting, battles, and agent management are REST-only for now):
+Start the MCP server to expose 43 trading tools via Model Context Protocol — covering market data, account, trading, analytics, backtesting, agent management, and battles:
 ```bash
 python -m src.mcp.server
 ```
+
+**Market Data (7)**
 
 | Tool | Description |
 |---|---|
 | `get_price` | Current price for one symbol |
 | `get_all_prices` | Prices for all 600+ pairs |
 | `get_candles` | OHLCV history (symbol, interval, limit) |
+| `get_pairs` | List all available trading pairs |
+| `get_ticker` | 24-hour ticker stats for a symbol |
+| `get_orderbook` | Order book depth for a symbol |
+| `get_recent_trades` | Recent public trades for a symbol |
+
+**Account (5)**
+
+| Tool | Description |
+|---|---|
 | `get_balance` | Account asset balances |
 | `get_positions` | Open positions with unrealized P&L |
+| `get_portfolio` | Full portfolio snapshot |
+| `get_account_info` | Account metadata and configuration |
+| `reset_account` | Reset account to a fresh session |
+
+**Trading (7)**
+
+| Tool | Description |
+|---|---|
 | `place_order` | Place market, limit, stop-loss, or take-profit |
 | `cancel_order` | Cancel a pending order by ID |
 | `get_order_status` | Status of a specific order |
-| `get_portfolio` | Full portfolio snapshot |
 | `get_trade_history` | Paginated trade execution history |
+| `get_open_orders` | All currently open (pending) orders |
+| `cancel_all_orders` | Cancel every open order at once |
+| `list_orders` | All orders with optional filters |
+
+**Analytics (4)**
+
+| Tool | Description |
+|---|---|
 | `get_performance` | Sharpe ratio, drawdown, win rate (by period) |
-| `reset_account` | Reset account to a fresh session |
+| `get_pnl` | Realized and unrealized P&L summary |
+| `get_portfolio_history` | Time-series of portfolio equity |
+| `get_leaderboard` | Global agent leaderboard |
+
+**Backtesting (8)**
+
+| Tool | Description |
+|---|---|
+| `get_data_range` | Available historical data range |
+| `create_backtest` | Create a new backtest session |
+| `start_backtest` | Preload data and activate a session |
+| `step_backtest` | Advance the clock by one candle |
+| `step_backtest_batch` | Advance the clock by multiple candles |
+| `backtest_trade` | Place a simulated order within a backtest |
+| `get_backtest_results` | Final metrics for a completed session |
+| `list_backtests` | List all backtest sessions |
+
+**Agent Management (6)**
+
+| Tool | Description |
+|---|---|
+| `list_agents` | List all agents owned by this account |
+| `create_agent` | Create a new agent with its own wallet |
+| `get_agent` | Retrieve a single agent's details |
+| `reset_agent` | Reset agent balances to starting amount |
+| `update_agent_risk` | Update agent risk profile settings |
+| `get_agent_skill` | Download the agent-specific skill.md file |
+
+**Battles (6)**
+
+| Tool | Description |
+|---|---|
+| `create_battle` | Create a new agent battle competition |
+| `list_battles` | List all battles |
+| `start_battle` | Start a battle |
+| `get_battle_live` | Live battle state: rankings, equity, recent trades |
+| `get_battle_results` | Final results and winner after completion |
+| `get_battle_replay` | Step-by-step replay data for a completed battle |
 
 ---
 
@@ -1362,4 +1425,4 @@ Both `override_config` and `agent_ids` are optional. Returns a new `Battle` in `
 
 ### MCP Server Note
 
-The MCP server currently exposes 12 live trading tools only. Backtesting, battle, and agent management features are available via the REST API but not yet via MCP.
+The MCP server exposes all 43 tools, covering market data, trading, account, analytics, backtesting, agent management, and battles. See `docs/mcp_server.md` for full setup instructions.

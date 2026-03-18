@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -26,14 +26,15 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `src/backtesting/CLAUDE.md` | Backtest engine, sandbox, time simulation, data replay |
 | `src/battles/CLAUDE.md` | Battle system, ranking, snapshots, historical engine |
 | `src/cache/CLAUDE.md` | Redis cache layer, key patterns, pub/sub |
+| `src/exchange/CLAUDE.md` | CCXT-powered exchange abstraction, adapter pattern, symbol mapper |
 | `src/database/CLAUDE.md` | ORM models, async session management, repository pattern |
 | `src/database/repositories/CLAUDE.md` | All repository classes, query patterns |
-| `src/mcp/CLAUDE.md` | MCP server, 12 tools, stdio transport |
+| `src/mcp/CLAUDE.md` | MCP server, 43 tools, stdio transport |
 | `src/metrics/CLAUDE.md` | Unified metrics calculator, adapters |
 | `src/monitoring/CLAUDE.md` | Prometheus metrics, health checks |
 | `src/order_engine/CLAUDE.md` | Order execution, matching, slippage |
 | `src/portfolio/CLAUDE.md` | Portfolio tracking, PnL calculation, snapshots |
-| `src/price_ingestion/CLAUDE.md` | Binance WS, tick buffering, flush cycle |
+| `src/price_ingestion/CLAUDE.md` | Exchange WS (CCXT + legacy Binance), tick buffering, flush cycle |
 | `src/risk/CLAUDE.md` | Risk manager, circuit breaker, position limits |
 | `src/tasks/CLAUDE.md` | Celery tasks, beat schedule, cleanup jobs |
 | `src/utils/CLAUDE.md` | Exception hierarchy, shared utilities |
@@ -190,19 +191,20 @@ This is a simulated crypto exchange where AI agents trade **virtual USDT** again
 
 | # | Component | Module |
 |---|-----------|--------|
-| 1 | **Price Ingestion** — Binance WS → Redis + TimescaleDB | `src/price_ingestion/` |
-| 2 | **Redis Cache** — sub-ms price lookups, rate limiting, pub/sub | `src/cache/` |
-| 3 | **TimescaleDB** — tick history, OHLCV candles, trades | `src/database/` |
-| 4 | **Order Engine** — Market/Limit/Stop-Loss/Take-Profit | `src/order_engine/` |
-| 5 | **Account Management** — registration, auth, API keys, balances | `src/accounts/` |
-| 6 | **Portfolio Tracker** — real-time PnL, Sharpe, drawdown | `src/portfolio/` |
-| 7 | **Risk Management** — position limits, daily loss circuit breaker | `src/risk/` |
-| 8 | **API Gateway** — REST + WebSocket, middleware | `src/api/` |
-| 9 | **Monitoring** — Prometheus metrics, health checks, structured logs | `src/monitoring/` |
-| 10 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
-| 11 | **Agent Management** — multi-agent CRUD, per-agent wallets, API keys | `src/agents/` |
-| 12 | **Battle System** — agent vs agent competitions with rankings, replays | `src/battles/` |
-| 13 | **Unified Metrics** — shared calculator for backtests & battles | `src/metrics/` |
+| 1 | **Exchange Abstraction** — CCXT adapter for 110+ exchanges, symbol mapper | `src/exchange/` |
+| 2 | **Price Ingestion** — Exchange WS (CCXT or legacy Binance) → Redis + TimescaleDB | `src/price_ingestion/` |
+| 3 | **Redis Cache** — sub-ms price lookups, rate limiting, pub/sub | `src/cache/` |
+| 4 | **TimescaleDB** — tick history, OHLCV candles, trades | `src/database/` |
+| 5 | **Order Engine** — Market/Limit/Stop-Loss/Take-Profit | `src/order_engine/` |
+| 6 | **Account Management** — registration, auth, API keys, balances | `src/accounts/` |
+| 7 | **Portfolio Tracker** — real-time PnL, Sharpe, drawdown | `src/portfolio/` |
+| 8 | **Risk Management** — position limits, daily loss circuit breaker | `src/risk/` |
+| 9 | **API Gateway** — REST + WebSocket, middleware | `src/api/` |
+| 10 | **Monitoring** — Prometheus metrics, health checks, structured logs | `src/monitoring/` |
+| 11 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
+| 12 | **Agent Management** — multi-agent CRUD, per-agent wallets, API keys | `src/agents/` |
+| 13 | **Battle System** — agent vs agent competitions with rankings, replays | `src/battles/` |
+| 14 | **Unified Metrics** — shared calculator for backtests & battles | `src/metrics/` |
 
 ### Multi-Agent Architecture
 
@@ -247,7 +249,7 @@ RateLimitMiddleware → AuthMiddleware → LoggingMiddleware → route handler
 
 ### Key Data Flows
 
-**Price ingestion:** Binance WebSocket → update Redis `HSET prices {SYMBOL} {price}` → buffer ticks in memory → periodic flush to TimescaleDB via asyncpg COPY → broadcast on Redis pub/sub for WebSocket clients.
+**Price ingestion:** Exchange WebSocket (via CCXT adapter or legacy Binance client) → update Redis `HSET prices {SYMBOL} {price}` → buffer ticks in memory → periodic flush to TimescaleDB via asyncpg COPY → broadcast on Redis pub/sub for WebSocket clients. The exchange is configurable via `EXCHANGE_ID` env var (default: `binance`). All CCXT calls go through the `ExchangeAdapter` interface in `src/exchange/`.
 
 **Order execution:** `POST /api/v1/trade/order` → RiskManager (8-step validation) → fetch price from Redis → market orders fill immediately with slippage; limit/stop orders queue as pending and are matched by background Celery task.
 
@@ -335,7 +337,7 @@ Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
 
 **Python SDK** (`sdk/`): `AgentExchangeClient` (sync), `AsyncAgentExchangeClient` (async), `AgentExchangeWS` (streaming). Install locally: `pip install -e sdk/`. See `sdk/CLAUDE.md`.
 
-**MCP Server** (`src/mcp/`): 12 trading tools over stdio transport. See `src/mcp/CLAUDE.md`.
+**MCP Server** (`src/mcp/`): 43 trading tools over stdio transport. See `src/mcp/CLAUDE.md`.
 
 **Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. See `Frontend/CLAUDE.md`.
 
@@ -362,7 +364,11 @@ pnpm dlx shadcn@latest add <component-name>  # Add shadcn/ui component
 |---|---|
 | `DATABASE_URL` | TimescaleDB async connection string |
 | `REDIS_URL` | Redis connection string |
-| `BINANCE_WS_URL` | Binance WebSocket base URL |
+| `BINANCE_WS_URL` | Binance WebSocket base URL (legacy fallback) |
+| `EXCHANGE_ID` | Primary exchange for CCXT (default `binance`; e.g. `okx`, `bybit`) |
+| `EXCHANGE_API_KEY` | Exchange API key for live trading (Phase 8, optional) |
+| `EXCHANGE_SECRET` | Exchange API secret for live trading (Phase 8, optional) |
+| `ADDITIONAL_EXCHANGES` | Comma-separated extra exchange IDs for multi-exchange ingestion |
 | `JWT_SECRET` | JWT signing secret (64+ chars) |
 | `TRADING_FEE_PCT` | Simulated fee (default 0.1%) |
 | `DEFAULT_STARTING_BALANCE` | New account balance (default 10000 USDT) |

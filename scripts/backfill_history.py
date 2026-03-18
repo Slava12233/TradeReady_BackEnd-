@@ -1,17 +1,18 @@
-"""Backfill historical candles from Binance public API into candles_backfill.
+"""Backfill historical candles from any exchange into candles_backfill.
 
-Fetches OHLCV klines from ``GET /api/v3/klines`` (no API key needed) and
-batch-inserts them into the ``candles_backfill`` TimescaleDB hypertable so
-that backtests can cover years of historical data.
+Fetches OHLCV klines via CCXT (110+ exchanges) or the Binance public API
+and batch-inserts them into the ``candles_backfill`` TimescaleDB hypertable
+so that backtests can cover years of historical data.
 
 Usage::
 
-    python scripts/backfill_history.py --all                       # Daily + hourly
+    python scripts/backfill_history.py --all                       # Daily + hourly (Binance)
     python scripts/backfill_history.py --daily                     # All pairs, 1d, from 2017-01-01
     python scripts/backfill_history.py --hourly                    # Top 100 pairs, 1h, 5 years
     python scripts/backfill_history.py --symbols BTCUSDT,ETHUSDT --interval 1d --start 2017-01-01
     python scripts/backfill_history.py --daily --dry-run           # Preview only
     python scripts/backfill_history.py --daily --resume            # Skip already-fetched ranges
+    python scripts/backfill_history.py --exchange okx --daily      # Backfill from OKX via CCXT
 """
 
 from __future__ import annotations
@@ -139,6 +140,8 @@ async def _backfill_symbol(
     dry_run: bool,
     semaphore: asyncio.Semaphore,
     progress: dict,
+    exchange_id: str = "binance",
+    ccxt_adapter: object | None = None,
 ) -> int:
     """Backfill one symbol. Returns number of candles inserted."""
     async with semaphore:
@@ -169,7 +172,12 @@ async def _backfill_symbol(
         while start_ms < end_ms:
             page += 1
             try:
-                klines = await _fetch_klines_page(client, symbol, interval, start_ms, end_ms)
+                if ccxt_adapter is not None:
+                    klines = await _fetch_klines_page_ccxt(
+                        ccxt_adapter, symbol, interval, start_ms, end_ms,
+                    )
+                else:
+                    klines = await _fetch_klines_page(client, symbol, interval, start_ms, end_ms)
             except Exception as exc:
                 logger.error("Failed to fetch %s %s page %d: %s", symbol, interval, page, exc)
                 break
@@ -250,6 +258,7 @@ async def run_backfill(
     resume: bool,
     dry_run: bool,
     session_factory: async_sessionmaker,
+    exchange_id: str = "binance",
 ) -> tuple[int, int, int]:
     """Run backfill for a list of symbols. Returns (ok, failed, total_candles)."""
     semaphore = asyncio.Semaphore(3)
@@ -257,31 +266,45 @@ async def run_backfill(
         "done": 0,
         "total": len(symbols),
         "wall_start": time.monotonic(),
-        "label": f"{interval}",
+        "label": f"{exchange_id}:{interval}",
     }
 
     ok = 0
     failed = 0
     total_candles = 0
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        tasks = []
-        for sym in symbols:
-            tasks.append(
-                _backfill_symbol(
-                    client, session_factory, sym, interval,
-                    start_dt, end_dt, resume, dry_run, semaphore, progress,
-                )
-            )
+    # For non-Binance exchanges, use CCXT.  For Binance, use the direct API
+    # (proven, faster, handles rate limits better).
+    use_ccxt = exchange_id != "binance"
+    ccxt_adapter = None
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, res in enumerate(results):
-            if isinstance(res, Exception):
-                logger.error("Symbol %s failed: %s", symbols[i], res)
-                failed += 1
-            else:
-                ok += 1
-                total_candles += res
+    if use_ccxt:
+        ccxt_adapter = await _create_ccxt_adapter(exchange_id)
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            tasks = []
+            for sym in symbols:
+                tasks.append(
+                    _backfill_symbol(
+                        client, session_factory, sym, interval,
+                        start_dt, end_dt, resume, dry_run, semaphore, progress,
+                        exchange_id=exchange_id,
+                        ccxt_adapter=ccxt_adapter,
+                    )
+                )
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, res in enumerate(results):
+                if isinstance(res, Exception):
+                    logger.error("Symbol %s failed: %s", symbols[i], res)
+                    failed += 1
+                else:
+                    ok += 1
+                    total_candles += res
+    finally:
+        if ccxt_adapter is not None:
+            await ccxt_adapter.close()  # type: ignore[union-attr]
 
     return ok, failed, total_candles
 
@@ -293,7 +316,7 @@ async def run_backfill(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Backfill historical candles from Binance into candles_backfill.",
+        description="Backfill historical candles into candles_backfill (Binance or any CCXT exchange).",
     )
     parser.add_argument("--all", action="store_true", help="Run both --daily and --hourly jobs")
     parser.add_argument("--daily", action="store_true", help="All pairs, 1d, from 2017-01-01")
@@ -303,7 +326,75 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--start", type=str, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes")
     parser.add_argument("--resume", action="store_true", help="Skip already-fetched ranges")
+    parser.add_argument(
+        "--exchange", type=str, default="binance",
+        help="Exchange ID for CCXT (e.g. binance, okx, bybit). Default: binance",
+    )
     return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# CCXT-based kline fetching (for non-Binance exchanges)
+# ---------------------------------------------------------------------------
+
+
+async def _fetch_klines_page_ccxt(
+    adapter: object,
+    symbol: str,
+    interval: str,
+    start_ms: int,
+    end_ms: int,
+) -> list[list]:
+    """Fetch one page of klines via CCXT adapter.
+
+    Returns data in the same format as the Binance API for compatibility
+    with the existing _backfill_symbol logic.
+    """
+    since_dt = datetime.fromtimestamp(start_ms / 1000, tz=UTC)
+    candles = await adapter.fetch_ohlcv(  # type: ignore[union-attr]
+        symbol, timeframe=interval, since=since_dt, limit=MAX_CANDLES_PER_REQUEST,
+    )
+    # Convert ExchangeCandle objects to Binance-compatible list format:
+    # [open_time_ms, open, high, low, close, volume, ?, ?, trade_count, ...]
+    result = []
+    for c in candles:
+        open_ms = int(c.timestamp.timestamp() * 1000)
+        if open_ms > end_ms:
+            break
+        result.append([
+            open_ms,             # [0] open time ms
+            str(c.open),         # [1] open
+            str(c.high),         # [2] high
+            str(c.low),          # [3] low
+            str(c.close),        # [4] close
+            str(c.volume),       # [5] volume
+            0,                   # [6] close time (unused)
+            "0",                 # [7] quote volume (unused)
+            c.trade_count,       # [8] trade count
+        ])
+    return result
+
+
+async def _fetch_ccxt_symbols(exchange_id: str, quote_asset: str = "USDT") -> list[str]:
+    """Fetch all active trading pair symbols from an exchange via CCXT."""
+    from src.exchange.ccxt_adapter import CCXTAdapter  # noqa: PLC0415
+
+    adapter = CCXTAdapter(exchange_id)
+    await adapter.initialize()
+    try:
+        markets = await adapter.fetch_markets(quote_asset)
+        return sorted(m.symbol for m in markets)
+    finally:
+        await adapter.close()
+
+
+async def _create_ccxt_adapter(exchange_id: str) -> object:
+    """Create and initialize a CCXT adapter for kline fetching."""
+    from src.exchange.ccxt_adapter import CCXTAdapter  # noqa: PLC0415
+
+    adapter = CCXTAdapter(exchange_id)
+    await adapter.initialize()
+    return adapter
 
 
 async def main() -> None:
@@ -338,6 +429,9 @@ async def main() -> None:
         total_failed = 0
         total_candles = 0
 
+        exchange_id = args.exchange.lower()
+        logger.info("Exchange: %s", exchange_id)
+
         if args.symbols:
             # Custom symbol mode
             symbols = [s.strip().upper() for s in args.symbols.split(",")]
@@ -348,6 +442,7 @@ async def main() -> None:
             ok, failed, candles = await run_backfill(
                 symbols, args.interval, start_dt, now,
                 args.resume, args.dry_run, factory,
+                exchange_id=exchange_id,
             )
             total_ok += ok
             total_failed += failed
@@ -356,35 +451,48 @@ async def main() -> None:
         else:
             # Preset jobs
             if args.all or args.daily:
-                # Fetch all our trading pairs
-                our_pairs = await _get_our_trading_pairs(factory)
-                if not our_pairs:
-                    logger.error("No trading pairs in DB. Run seed_pairs.py first.")
-                    sys.exit(1)
-                symbols = sorted(our_pairs)
-                logger.info("Daily backfill: %d symbols from %s", len(symbols), DEFAULT_DAILY_START.date())
+                # For non-Binance exchanges, fetch symbols via CCXT.
+                if exchange_id != "binance":
+                    symbols = await _fetch_ccxt_symbols(exchange_id)
+                    if not symbols:
+                        logger.error("No USDT pairs found on %s via CCXT.", exchange_id)
+                        sys.exit(1)
+                else:
+                    our_pairs = await _get_our_trading_pairs(factory)
+                    if not our_pairs:
+                        logger.error("No trading pairs in DB. Run seed_pairs.py first.")
+                        sys.exit(1)
+                    symbols = sorted(our_pairs)
+
+                logger.info("Daily backfill: %d symbols from %s (%s)", len(symbols), DEFAULT_DAILY_START.date(), exchange_id)
 
                 ok, failed, candles = await run_backfill(
                     symbols, "1d", DEFAULT_DAILY_START, now,
                     args.resume, args.dry_run, factory,
+                    exchange_id=exchange_id,
                 )
                 total_ok += ok
                 total_failed += failed
                 total_candles += candles
 
             if args.all or args.hourly:
-                our_pairs = await _get_our_trading_pairs(factory)
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    top_symbols = await _fetch_top_volume_symbols(client, limit=100)
+                if exchange_id != "binance":
+                    # For non-Binance, use the same CCXT symbols (no volume sorting yet).
+                    symbols = await _fetch_ccxt_symbols(exchange_id)
+                    symbols = symbols[:100]  # Top 100 by alphabetical (volume sort TBD)
+                else:
+                    our_pairs = await _get_our_trading_pairs(factory)
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        top_symbols = await _fetch_top_volume_symbols(client, limit=100)
+                    symbols = [s for s in top_symbols if s in our_pairs]
 
-                # Intersect with our pairs
-                symbols = [s for s in top_symbols if s in our_pairs]
                 hourly_start = now - timedelta(days=365 * DEFAULT_HOURLY_LOOKBACK_YEARS)
-                logger.info("Hourly backfill: %d symbols from %s", len(symbols), hourly_start.date())
+                logger.info("Hourly backfill: %d symbols from %s (%s)", len(symbols), hourly_start.date(), exchange_id)
 
                 ok, failed, candles = await run_backfill(
                     symbols, "1h", hourly_start, now,
                     args.resume, args.dry_run, factory,
+                    exchange_id=exchange_id,
                 )
                 total_ok += ok
                 total_failed += failed

@@ -244,3 +244,4 @@ The 5-second interval is configured in the Celery beat schedule (`src/tasks/batt
 ## Recent Changes
 
 - `2026-03-17` -- Initial CLAUDE.md created
+- `2026-03-18` -- Fixed battle creation 500: `model_dump(mode="json")` for datetime serialization in JSONB. Removed local `BattleInvalidStateError` class — now uses the correct one from `src.utils.exceptions` (maps to HTTP 409 instead of 500).

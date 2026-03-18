@@ -1,8 +1,8 @@
 # Unit Tests
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
-> 974 unit tests across 62 files covering every backend component — services, repositories, engines, middleware, tasks, and the SDK client.
+> 1083 unit tests across 63 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, and the SDK client.
 
 ## What This Module Does
 
@@ -40,7 +40,7 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_health.py` | 10 | Health check endpoint — DB/Redis/Binance status, degraded mode |
 | `test_historical_battle_engine.py` | 26 | `HistoricalBattleEngine` — shared clock, per-agent sandboxes, step, batch, order, complete |
 | `test_logging_middleware.py` | 10 | `LoggingMiddleware` — request/response logging, sensitive header redaction |
-| `test_mcp_tools.py` | 67 | MCP server tools — all 12 trading tools over stdio transport |
+| `test_mcp_tools.py` | 142 | MCP server tools — all 43 trading tools over stdio transport |
 | `test_metrics_adapters.py` | 13 | Metric adapters — `from_sandbox_trades`, `from_sandbox_snapshots`, `from_db_trades`, `from_battle_snapshots` |
 | `test_metrics_consistency.py` | 5 | Cross-domain metrics consistency — backtest vs battle produce identical results for same inputs |
 | `test_order_engine.py` | 16 | `OrderEngine` — market buy/sell, limit, stop_loss, take_profit, cancel, execute_pending |
@@ -50,7 +50,7 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_portfolio_metrics.py` | 14 | `PerformanceMetrics` — Sharpe, Sortino, drawdown, win rate from trade history |
 | `test_portfolio_tracker.py` | 8 | `PortfolioTracker` — get_portfolio, get_positions, get_pnl, agent-scoped |
 | `test_price_cache.py` | 21 | `PriceCache` — get/set price, get_all, pipeline batch update, pub/sub |
-| `test_price_ingestion_service.py` | 6 | `PriceIngestionService` — message parsing, tick buffering, flush |
+| `test_price_ingestion_service.py` | 6 | Price ingestion service — tick source creation, tick processing, shutdown, error handling (patches `_create_tick_source`) |
 | `test_rate_limit_middleware.py` | 13 | `RateLimitMiddleware` — per-endpoint limits, header injection, Redis key patterns |
 | `test_redis_client.py` | 8 | Redis client wrapper — connect, disconnect, health check |
 | `test_risk_manager.py` | 23 | `RiskManager` 8-step validation chain — account status, daily loss, rate limit, order size, position limit, balance |
@@ -61,6 +61,7 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_snapshot_engine_pnl.py` | 6 | Snapshot PnL — unrealized PnL calculation with real price cache lookups |
 | `test_snapshot_repo.py` | 15 | `SnapshotRepository` — insert, query by time range, bulk insert |
 | `test_snapshot_service.py` | 4 | `SnapshotService` — periodic capture orchestration |
+| `test_symbol_mapper.py` | 30 | `SymbolMapper` — forward/reverse mapping, heuristic fallback, round-trip, market data loading |
 | `test_task_backtest_cleanup.py` | 9 | Celery task: auto-cancel stale backtests, delete old detail data |
 | `test_task_battle_snapshots.py` | 10 | Celery task: battle snapshot capture (5s interval), auto-completion (10s) |
 | `test_task_candle_aggregation.py` | 5 | Celery task: OHLCV candle aggregation from raw ticks |
@@ -173,3 +174,4 @@ pytest tests/unit/ --cov=src --cov-report=html                  # with coverage
 ## Recent Changes
 
 - `2026-03-17` — Initial CLAUDE.md created
+- `2026-03-18` — Added `test_symbol_mapper.py` (30 tests). Updated `test_price_ingestion_service.py` to patch `_create_tick_source` instead of removed module-level `BinanceWebSocketClient` import. Total: 1012 tests, 63 files.

@@ -53,6 +53,7 @@ class BacktestConfig:
     pairs: list[str] | None = None
     strategy_label: str = "default"
     agent_id: UUID | None = None
+    exchange: str = "binance"
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +146,7 @@ class BacktestEngine:
             The created :class:`BacktestSessionModel`.
         """
         # Validate data availability
-        replayer = DataReplayer(db, config.pairs, step_interval=config.candle_interval)
+        replayer = DataReplayer(db, config.pairs, step_interval=config.candle_interval, exchange=config.exchange)
         data_range = await replayer.get_data_range()
 
         if data_range is None:
@@ -218,6 +219,7 @@ class BacktestEngine:
             candle_interval=session.candle_interval,
             pairs=session.pairs,
             strategy_label=session.strategy_label,
+            exchange=getattr(session, "exchange", "binance") or "binance",
         )
 
         simulator = TimeSimulator(
@@ -237,7 +239,7 @@ class BacktestEngine:
             risk_limits=risk_limits,
         )
 
-        replayer = DataReplayer(db, config.pairs, step_interval=config.candle_interval)
+        replayer = DataReplayer(db, config.pairs, step_interval=config.candle_interval, exchange=config.exchange)
 
         # Bulk-preload all price data for the entire backtest period into
         # memory.  This replaces ~525K individual DB queries with one query.
@@ -629,7 +631,7 @@ class BacktestEngine:
                 )
             )
 
-        await db.flush()
+        await db.commit()
 
         _per_pair = calculate_per_pair_stats(active.sandbox.trades)
 

@@ -104,13 +104,22 @@ class DataReplayer:
         session: AsyncSession,
         pairs: list[str] | None = None,
         step_interval: int = 60,
+        exchange: str = "binance",
     ) -> None:
         self._session = session
         self._pairs = pairs
         self._step_interval = step_interval
+        self._exchange = exchange
         # Preloaded price cache: bucket → {symbol → close}
         self._price_cache: dict[datetime, dict[str, Decimal]] = {}
         self._cache_loaded = False
+
+        if exchange != "binance":
+            logger.warning(
+                "data_replayer.exchange_not_filtered",
+                exchange=exchange,
+                msg="candles_backfill has no exchange column yet — data is Binance-sourced",
+            )
 
     async def preload_range(self, start_time: datetime, end_time: datetime) -> int:
         """Bulk-load all candle close prices for a time range into memory.
