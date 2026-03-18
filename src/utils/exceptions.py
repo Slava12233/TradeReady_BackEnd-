@@ -880,6 +880,11 @@ __all__ = [
     # Battles
     "BattleNotFoundError",
     "BattleInvalidStateError",
+    # Strategies
+    "StrategyNotFoundError",
+    "StrategyInvalidStateError",
+    # Training
+    "TrainingRunNotFoundError",
 ]
 
 
@@ -934,4 +939,87 @@ class BattleInvalidStateError(TradingPlatformError):
             details["current_status"] = current_status
         if required_status is not None:
             details["required_status"] = required_status
+        super().__init__(message, details=details)
+
+
+# ---------------------------------------------------------------------------
+# Strategy errors (400 / 404 / 409)
+# ---------------------------------------------------------------------------
+
+
+class StrategyNotFoundError(TradingPlatformError):
+    """Raised when a strategy cannot be found by ID.
+
+    Error code: ``STRATEGY_NOT_FOUND``
+    HTTP status: 404
+    """
+
+    code = "STRATEGY_NOT_FOUND"
+    http_status = 404
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        strategy_id: UUID | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if strategy_id is not None:
+            details["strategy_id"] = str(strategy_id)
+        if message is None:
+            message = f"Strategy '{strategy_id}' not found." if strategy_id else "Strategy not found."
+        super().__init__(message, details=details)
+
+
+class StrategyInvalidStateError(TradingPlatformError):
+    """Raised when a strategy operation is attempted in the wrong state.
+
+    Error code: ``STRATEGY_INVALID_STATE``
+    HTTP status: 409
+    """
+
+    code = "STRATEGY_INVALID_STATE"
+    http_status = 409
+
+    def __init__(
+        self,
+        message: str = "Strategy is not in the required state for this operation.",
+        *,
+        current_status: str | None = None,
+        required_status: str | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if current_status is not None:
+            details["current_status"] = current_status
+        if required_status is not None:
+            details["required_status"] = required_status
+        super().__init__(message, details=details)
+
+
+# ---------------------------------------------------------------------------
+# Training errors (404)
+# ---------------------------------------------------------------------------
+
+
+class TrainingRunNotFoundError(TradingPlatformError):
+    """Raised when a training run cannot be found by ID.
+
+    Error code: ``TRAINING_RUN_NOT_FOUND``
+    HTTP status: 404
+    """
+
+    code = "TRAINING_RUN_NOT_FOUND"
+    http_status = 404
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        run_id: UUID | None = None,
+    ) -> None:
+        details: dict[str, Any] = {}
+        if run_id is not None:
+            details["run_id"] = str(run_id)
+        if message is None:
+            message = f"Training run '{run_id}' not found." if run_id else "Training run not found."
         super().__init__(message, details=details)

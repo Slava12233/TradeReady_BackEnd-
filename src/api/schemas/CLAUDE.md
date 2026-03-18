@@ -1,6 +1,6 @@
 # API Schemas
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Pydantic v2 request/response schemas for every REST API endpoint, with strict Decimal-as-string serialization and consistent validation patterns.
 
@@ -19,6 +19,9 @@ This package defines all Pydantic v2 `BaseModel` subclasses used as request bodi
 | `auth.py` | Register, login (API key + password), JWT token (`/auth/*`) |
 | `backtest.py` | Backtest lifecycle, sandbox trading, results, comparison (`/backtest/*`) |
 | `battles.py` | Battle CRUD, participants, live/results/replay, historical steps (`/battles/*`) |
+| `strategies.py` | Strategy CRUD, versions, deploy/undeploy (`/strategies/*`) |
+| `strategy_tests.py` | Strategy test runs, results, version comparison (`/strategies/*/test*`) |
+| `training.py` | Training runs, episodes, learning curves, comparison (`/training/*`) |
 | `market.py` | Pairs, prices, tickers, candles, public trades, order book (`/market/*`) |
 | `trading.py` | Order placement, order detail/list, cancel, trade history (`/trade/*`) |
 | `waitlist.py` | Waitlist subscription (`/waitlist/*`) |

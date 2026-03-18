@@ -1,6 +1,6 @@
 # AgentExchange Python SDK
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Universal Python client library for the AgentExchange AI crypto trading platform -- sync, async, and WebSocket.
 
@@ -12,11 +12,11 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 
 | File | Purpose |
 |------|---------|
-| `agentexchange/__init__.py` | Package root; re-exports all 3 clients, 12 models, 9 exceptions; defines `__version__` |
-| `agentexchange/client.py` | `AgentExchangeClient` -- synchronous REST client (httpx, 22 methods) |
-| `agentexchange/async_client.py` | `AsyncAgentExchangeClient` -- async REST client (httpx async, 22 methods) |
+| `agentexchange/__init__.py` | Package root; re-exports all 3 clients, 13 models, 9 exceptions; defines `__version__` |
+| `agentexchange/client.py` | `AgentExchangeClient` -- synchronous REST client (httpx, 35 methods) |
+| `agentexchange/async_client.py` | `AsyncAgentExchangeClient` -- async REST client (httpx async, 35 methods) |
 | `agentexchange/ws_client.py` | `AgentExchangeWS` -- WebSocket client (websockets lib, decorator-based subscriptions) |
-| `agentexchange/models.py` | 12 frozen dataclasses: `Price`, `Ticker`, `Candle`, `Balance`, `Position`, `Order`, `Trade`, `Portfolio`, `PnL`, `Performance`, `Snapshot`, `LeaderboardEntry`, `AccountInfo` |
+| `agentexchange/models.py` | 13 frozen dataclasses: `Price`, `Ticker`, `Candle`, `Balance`, `Position`, `Portfolio`, `PnL`, `Order`, `Trade`, `Performance`, `Snapshot`, `LeaderboardEntry`, `AccountInfo` |
 | `agentexchange/exceptions.py` | Exception hierarchy (10 classes) + `raise_for_response()` factory |
 | `agentexchange/py.typed` | PEP 561 marker for type-checker discovery |
 | `pyproject.toml` | Package config: Python 3.12+, deps `httpx>=0.28` + `websockets>=14.0`, MIT license |
@@ -26,12 +26,15 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 
 ### Client Design
 
-Both REST clients (`AgentExchangeClient` and `AsyncAgentExchangeClient`) share an identical public API surface of 22 methods organized into 4 groups:
+Both REST clients (`AgentExchangeClient` and `AsyncAgentExchangeClient`) share an identical public API surface of 35 methods organized into 7 groups:
 
 - **Market data** (6): `get_price`, `get_all_prices`, `get_candles`, `get_ticker`, `get_recent_trades`, `get_orderbook`
 - **Trading** (8): `place_market_order`, `place_limit_order`, `place_stop_loss`, `place_take_profit`, `get_order`, `get_open_orders`, `cancel_order`, `cancel_all_orders`, `get_trade_history`
 - **Account** (6): `get_account_info`, `get_balance`, `get_positions`, `get_portfolio`, `get_pnl`, `reset_account`
 - **Analytics** (3): `get_performance`, `get_portfolio_history`, `get_leaderboard`
+- **Strategies** (6): `create_strategy`, `get_strategies`, `get_strategy`, `create_version`, `deploy_strategy`, `undeploy_strategy`
+- **Strategy Testing** (4): `run_test`, `get_test_status`, `get_test_results`, `compare_versions`
+- **Training** (3): `get_training_runs`, `get_training_run`, `compare_training_runs`
 
 ### Authentication Flow
 
@@ -59,7 +62,7 @@ Connection management: auto-reconnect with exponential backoff (1s to 60s cap), 
 
 ### Models
 
-All 12 response models are frozen dataclasses with:
+All 13 response models are frozen dataclasses with:
 - `Decimal` for all monetary/price fields (never `float`)
 - `from_dict(data)` classmethod for deserialization from JSON dicts
 - Internal helpers: `_decimal()`, `_decimal_opt()`, `_dt()`, `_dt_opt()`, `_uuid()`, `_uuid_opt()`
@@ -176,3 +179,4 @@ cd sdk && ruff check . && mypy agentexchange/
 ## Recent Changes
 
 - `2026-03-17` -- Initial CLAUDE.md created
+- `2026-03-18` -- Fixed model count: 12 -> 13 frozen dataclasses (AccountInfo was undercounted)

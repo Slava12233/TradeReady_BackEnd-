@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
-description: "Reviews code after every change for compliance with project standards, architecture rules, and conventions. Reads all relevant CLAUDE.md files to understand the module being changed, then checks for violations."
-tools: Read, Grep, Glob, Bash
+description: "Reviews code after every change for compliance with project standards, architecture rules, and conventions. Reads all relevant CLAUDE.md files to understand the module being changed, then checks for violations. Saves a report to development/code-reviews/."
+tools: Read, Write, Grep, Glob, Bash
 model: sonnet
 ---
 
@@ -110,14 +110,46 @@ Check every change against these categories:
 - Mock all external deps in unit tests
 - Use factory fixtures from `tests/conftest.py`
 
-#### 3.10 Frontend Standards (if applicable)
-- `"use client"` directive on client components
-- Tailwind v4 — styles via `@theme inline` in `globals.css`, no `tailwind.config.ts`
-- `cn()` for class merging
-- `font-mono tabular-nums` on financial numbers
-- TanStack Query for REST data, Zustand for WS/streaming state
-- Agent scoping via `activeAgentId` in query keys
-- No cross-feature component imports
+#### 3.10 Frontend Standards (when `Frontend/` files changed)
+
+Read `Frontend/CLAUDE.md` and the relevant component/hook/store CLAUDE.md before reviewing.
+
+**Component structure:**
+- `"use client"` directive required on any component using hooks, event handlers, or browser APIs
+- Single named export per file (no default exports)
+- `interface` for props, `type` for unions/intersections
+- Every component accepts and merges optional `className` via `cn()`
+- JSDoc with `@example` on exported functions
+
+**Styling:**
+- Tailwind v4 only — no `tailwind.config.ts`, theme via `@theme inline` in `globals.css`
+- `cn()` from `@/lib/utils` for conditional class merging
+- Design tokens only — never hardcode hex colors. Use `text-profit`, `text-loss`, `text-accent`, `text-foreground`, `bg-card`, `border-border`
+- `font-mono tabular-nums` on ALL financial numbers (prices, PnL, percentages, balances)
+- Never `border-white/10` — use `border-border` for theme compatibility
+
+**State management (never mix layers):**
+- **Zustand** (`@/stores/`) — WebSocket streaming data, auth session, UI prefs
+- **TanStack Query** (`@/hooks/`) — all REST API data with caching
+- **React state** — component-local UI state only
+- Never duplicate server state in Zustand
+
+**Data patterns:**
+- Agent scoping: `activeAgentId` must be in query keys for agent-scoped data
+- Dual-source price pattern: WS prices primary, REST fallback — don't remove fallback
+- `use-candles.ts` bypasses Zustand (direct callback to TradingView) — this is intentional
+
+**Architecture rules:**
+- No cross-feature component imports (`dashboard/` must not import from `agents/`)
+- Shared components go in `shared/`, not duplicated across features
+- Heavy libs (TradingView, Remotion, Recharts) must be lazy-loaded / code-split
+- Landing page components must not import dashboard feature components
+- `@/*` path alias for all imports (maps to `./src/*`)
+
+**TypeScript:**
+- Strict mode, no `any` — use `unknown` with type guards
+- All shared types in `@/lib/types.ts`
+- Files: `kebab-case.tsx`, Components: `PascalCase`, Hooks: `use-` prefix, Constants: `UPPER_SNAKE_CASE`
 
 #### 3.11 Middleware & Auth
 - Middleware execution order: Logging (outermost) → Auth → RateLimit (innermost)
@@ -160,6 +192,53 @@ Optional improvements for readability, performance, or consistency.
 ### Passed Checks
 [List of standard categories that were checked and passed cleanly]
 ```
+
+### Step 5: Save Report to File
+
+After completing the review, **always** save a report file to `development/code-reviews/`.
+
+1. Generate a timestamp by running:
+   ```bash
+   date +"%Y-%m-%d_%H-%M"
+   ```
+
+2. Determine a short `scope` from the reviewed files (e.g., `strategy-routes`, `battle-service`, `auth-middleware`). Use the most prominent module or feature touched.
+
+3. Determine the **verdict**:
+   - `PASS` — no critical issues or warnings
+   - `PASS WITH WARNINGS` — no critical issues, but has warnings
+   - `NEEDS FIXES` — has critical issues that must be fixed
+
+4. Write the report file using the Write tool to `development/code-reviews/review_{timestamp}_{scope}.md` with this format:
+
+```markdown
+# Code Review Report
+
+- **Date:** {YYYY-MM-DD HH:MM}
+- **Reviewer:** code-reviewer agent
+- **Verdict:** {PASS | PASS WITH WARNINGS | NEEDS FIXES}
+
+## Files Reviewed
+- `path/to/file1.py`
+- `path/to/file2.py`
+
+## CLAUDE.md Files Consulted
+- `path/to/CLAUDE.md`
+
+## Critical Issues
+{list or "None"}
+
+## Warnings
+{list or "None"}
+
+## Suggestions
+{list or "None"}
+
+## Passed Checks
+{list of standard categories that passed}
+```
+
+5. After writing the file, confirm to the caller that the report was saved and include the file path.
 
 ## Rules
 

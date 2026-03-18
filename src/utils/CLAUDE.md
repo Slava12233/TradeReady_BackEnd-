@@ -1,6 +1,6 @@
 # Utils Module
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Shared exception hierarchy and utility functions used across the entire platform.
 
@@ -8,7 +8,7 @@
 
 Provides two core pieces of infrastructure that every other module depends on:
 
-1. **Exception hierarchy** (`exceptions.py`) -- A single base class `TradingPlatformError` with ~20 domain-specific subclasses. Each exception carries a machine-readable `code`, an HTTP status, and an optional `details` dict. The global exception handler in `src/main.py` catches `TradingPlatformError` and auto-serializes it to the standard `{"error": {"code": ..., "message": ..., "details": ...}}` JSON envelope.
+1. **Exception hierarchy** (`exceptions.py`) -- A single base class `TradingPlatformError` with ~27 domain-specific subclasses. Each exception carries a machine-readable `code`, an HTTP status, and an optional `details` dict. The global exception handler in `src/main.py` catches `TradingPlatformError` and auto-serializes it to the standard `{"error": {"code": ..., "message": ..., "details": ...}}` JSON envelope.
 
 2. **Helper functions** (`helpers.py`) -- Small, stateless utilities for time, pagination, decimal formatting, and symbol parsing that are used across services, repositories, and API routes.
 
@@ -73,8 +73,15 @@ TradingPlatformError (500)
   |     BacktestNoDataError (400, BACKTEST_NO_DATA)
   |
   +-- Battles
-        BattleNotFoundError (404, BATTLE_NOT_FOUND)
-        BattleInvalidStateError (409, BATTLE_INVALID_STATE)
+  |     BattleNotFoundError (404, BATTLE_NOT_FOUND)
+  |     BattleInvalidStateError (409, BATTLE_INVALID_STATE)
+  |
+  +-- Strategies
+  |     StrategyNotFoundError (404, STRATEGY_NOT_FOUND)
+  |     StrategyInvalidStateError (409, STRATEGY_INVALID_STATE)
+  |
+  +-- Training
+        TrainingRunNotFoundError (404, TRAINING_RUN_NOT_FOUND)
 ```
 
 ### Exception design conventions
@@ -124,6 +131,9 @@ TradingPlatformError (500)
 | `BacktestNoDataError` | `BACKTEST_NO_DATA` | 400 | `details` |
 | `BattleNotFoundError` | `BATTLE_NOT_FOUND` | 404 | `battle_id` |
 | `BattleInvalidStateError` | `BATTLE_INVALID_STATE` | 409 | `current_status`, `required_status` |
+| `StrategyNotFoundError` | `STRATEGY_NOT_FOUND` | 404 | `strategy_id` |
+| `StrategyInvalidStateError` | `STRATEGY_INVALID_STATE` | 409 | `current_status`, `required_status` |
+| `TrainingRunNotFoundError` | `TRAINING_RUN_NOT_FOUND` | 404 | `run_id` |
 
 ### helpers.py
 
@@ -170,4 +180,5 @@ TradingPlatformError (500)
 
 ## Recent Changes
 
+- `2026-03-18` -- Added StrategyNotFoundError, StrategyInvalidStateError, TrainingRunNotFoundError to exception hierarchy and public API table
 - `2026-03-17` -- Initial CLAUDE.md created

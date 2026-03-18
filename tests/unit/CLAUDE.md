@@ -2,7 +2,7 @@
 
 <!-- last-updated: 2026-03-18 -->
 
-> 1083 unit tests across 63 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, and the SDK client.
+> 1184 unit tests across 70 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
 
 ## What This Module Does
 
@@ -40,7 +40,14 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_health.py` | 10 | Health check endpoint — DB/Redis/Binance status, degraded mode |
 | `test_historical_battle_engine.py` | 26 | `HistoricalBattleEngine` — shared clock, per-agent sandboxes, step, batch, order, complete |
 | `test_logging_middleware.py` | 10 | `LoggingMiddleware` — request/response logging, sensitive header redaction |
-| `test_mcp_tools.py` | 142 | MCP server tools — all 43 trading tools over stdio transport |
+| `test_mcp_tools.py` | 142 | MCP server tools — all 43 original trading tools over stdio transport |
+| `test_mcp_strategy_tools.py` | 21 | MCP strategy/training tools — 15 new tools (strategy management, testing, training observation) |
+| `test_indicator_engine.py` | 26 | `IndicatorEngine` — RSI, MACD, SMA, EMA, Bollinger, ADX, ATR against known values |
+| `test_strategy_service.py` | 16 | `StrategyService` — create, get, list, update, archive, versions, deploy/undeploy |
+| `test_strategy_executor.py` | 21 | `StrategyExecutor` — 19 condition keys, entry/exit logic, position sizing, trailing stop |
+| `test_test_aggregator.py` | 5 | `TestAggregator` — aggregation math (avg, median, std, by-pair) |
+| `test_recommendation_engine.py` | 10 | `RecommendationEngine` — each recommendation rule triggers correctly |
+| `test_training_tracker.py` | 10 | `TrainingRunService` — register, record episode, complete, learning curve, comparison |
 | `test_metrics_adapters.py` | 13 | Metric adapters — `from_sandbox_trades`, `from_sandbox_snapshots`, `from_db_trades`, `from_battle_snapshots` |
 | `test_metrics_consistency.py` | 5 | Cross-domain metrics consistency — backtest vs battle produce identical results for same inputs |
 | `test_order_engine.py` | 16 | `OrderEngine` — market buy/sell, limit, stop_loss, take_profit, cancel, execute_pending |
@@ -174,4 +181,5 @@ pytest tests/unit/ --cov=src --cov-report=html                  # with coverage
 ## Recent Changes
 
 - `2026-03-17` — Initial CLAUDE.md created
-- `2026-03-18` — Added `test_symbol_mapper.py` (30 tests). Updated `test_price_ingestion_service.py` to patch `_create_tick_source` instead of removed module-level `BinanceWebSocketClient` import. Total: 1012 tests, 63 files.
+- `2026-03-18` — Added `test_symbol_mapper.py` (30 tests). Updated `test_price_ingestion_service.py` to patch `_create_tick_source` instead of removed module-level `BinanceWebSocketClient` import.
+- `2026-03-18` — Removed duplicate inventory rows. Verified 70 files on disk match 70 entries in the table.

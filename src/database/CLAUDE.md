@@ -1,6 +1,6 @@
 # Database Layer
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > SQLAlchemy ORM models, async session management, and repository pattern for TimescaleDB/PostgreSQL.
 
@@ -8,7 +8,7 @@
 
 This module defines the entire data layer for the AI Agent Crypto Trading Platform. It contains:
 
-1. **ORM models** (`models.py`) -- all 17 table definitions using SQLAlchemy 2.0 mapped columns
+1. **ORM models** (`models.py`) -- all 23 table definitions using SQLAlchemy 2.0 mapped columns (17 original + 6 strategy/training tables)
 2. **Session management** (`session.py`) -- async engine, session factory, and raw asyncpg pool as lazy singletons
 3. **Repository classes** (`repositories/`) -- data access layer with one repository per domain entity (covered in `repositories/CLAUDE.md`)
 
@@ -18,7 +18,7 @@ The database is **TimescaleDB** (PostgreSQL extension). Three tables are hyperta
 
 | File | Purpose |
 |------|---------|
-| `models.py` | All 17 ORM model classes inheriting from shared `Base` |
+| `models.py` | All 23 ORM model classes inheriting from shared `Base` |
 | `session.py` | Async engine, `async_sessionmaker`, raw `asyncpg` pool, `init_db()`/`close_db()` lifecycle |
 | `__init__.py` | Empty (package marker only) |
 | `repositories/` | One repository class per domain entity (has its own CLAUDE.md) |
@@ -59,6 +59,14 @@ All models inherit from `Base` (a plain `DeclarativeBase`). No mixins or abstrac
 - `Battle` -- competition config and state machine (draft/pending/active/completed/cancelled)
 - `BattleParticipant` -- agent enrollment with starting balance and final rank
 - `BattleSnapshot` -- time-series equity during battle (hypertable, BIGSERIAL + timestamp composite PK)
+
+**Strategies/Training:**
+- `Strategy` -- strategy metadata, versioning, lifecycle (draft/testing/validated/deployed/archived)
+- `StrategyVersion` -- immutable versioned strategy definitions (JSONB)
+- `StrategyTestRun` -- multi-episode test run orchestration
+- `StrategyTestEpisode` -- individual test episode results (FK to backtest_sessions)
+- `TrainingRun` -- RL training run tracking
+- `TrainingEpisode` -- individual training episode results (FK to backtest_sessions)
 
 **Reference/utility:**
 - `Tick` -- raw Binance trade ticks (hypertable, 1-hour chunks; composite PK: time+symbol+trade_id)
@@ -101,7 +109,7 @@ Trading tables (`balances`, `orders`, `trades`, `positions`, `portfolio_snapshot
 | Export | Description |
 |--------|-------------|
 | `Base` | Declarative base for Alembic `target_metadata` |
-| 17 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot` |
+| 24 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode` |
 
 ## Dependencies
 

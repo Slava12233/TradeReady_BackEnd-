@@ -1,6 +1,6 @@
 # Database Repositories
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Async repository layer providing typed CRUD methods for all database models; the sole interface between service code and SQLAlchemy/TimescaleDB.
 
@@ -22,6 +22,9 @@ Every database table has a corresponding repository class that encapsulates all 
 | `snapshot_repo.py` | CRUD for the `portfolio_snapshots` hypertable -- create, time-range history queries, latest snapshot, pruning old data |
 | `tick_repo.py` | **Read-only** repository for the `ticks` hypertable -- latest tick, time-range queries, price-at-time lookup, tick count, VWAP calculation |
 | `trade_repo.py` | Insert + read for the `trades` table -- create, list by account/agent/symbol, daily trades, daily realized PnL aggregation |
+| `strategy_repo.py` | CRUD for `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes` -- strategy lifecycle, versioning, test runs, deploy/undeploy |
+| `test_run_repo.py` | `TestRunRepository` (extends `StrategyRepository`) -- focused interface for test orchestrator and Celery tasks |
+| `training_repo.py` | `TrainingRunRepository` -- CRUD for `training_runs` and `training_episodes`, episode tracking, run comparison |
 | `waitlist_repo.py` | Single-method repository for the `waitlist_entries` table -- add email to waitlist with duplicate detection |
 
 ## Architecture & Patterns

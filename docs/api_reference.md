@@ -15,8 +15,11 @@
 6. [Trading Endpoints](#trading-endpoints)
 7. [Account Endpoints](#account-endpoints)
 8. [Analytics Endpoints](#analytics-endpoints)
-9. [Error Codes](#error-codes)
-10. [WebSocket Reference](#websocket-reference)
+9. [Strategy Endpoints](#strategy-endpoints)
+10. [Strategy Test Endpoints](#strategy-test-endpoints)
+11. [Training Endpoints](#training-endpoints)
+12. [Error Codes](#error-codes)
+13. [WebSocket Reference](#websocket-reference)
 
 ---
 
@@ -1628,6 +1631,592 @@ curl "http://localhost:8000/api/v1/analytics/leaderboard?period=7d" \
     }
   ]
 }
+```
+
+---
+
+## Strategy Endpoints
+
+Manage versioned trading strategies. All endpoints require authentication.
+
+**Base path:** `/api/v1/strategies`
+
+---
+
+### POST /strategies
+
+Create a new strategy.
+
+**Auth required:** Yes
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string (1–200 chars) | Yes | Strategy name |
+| `description` | string (max 2000 chars) | No | Human-readable description |
+| `definition` | object | Yes | Strategy definition JSON (see below) |
+
+**Strategy definition object:**
+
+| Field | Type | Description |
+|---|---|---|
+| `pairs` | string array | Trading pairs, e.g. `["BTCUSDT"]` |
+| `timeframe` | string | Candle interval: `"1m"`, `"5m"`, `"15m"`, `"1h"`, `"4h"`, `"1d"` |
+| `entry_conditions` | object | Condition keys → threshold values (ALL must be true) |
+| `exit_conditions` | object | Condition keys → threshold values (ANY triggers exit) |
+| `position_size_pct` | number | % of total equity per position |
+| `max_positions` | integer | Max simultaneous open positions |
+
+**Response: HTTP 201**
+
+| Field | Type | Description |
+|---|---|---|
+| `strategy_id` | UUID string | Strategy identifier |
+| `name` | string | Strategy name |
+| `description` | string \| null | Description |
+| `current_version` | integer | Current version number (starts at 1) |
+| `status` | string | Strategy status: `"draft"`, `"testing"`, `"validated"`, `"deployed"`, `"archived"` |
+| `deployed_at` | ISO-8601 datetime \| null | When last deployed |
+| `created_at` | ISO-8601 datetime | Creation timestamp |
+| `updated_at` | ISO-8601 datetime | Last update timestamp |
+
+**curl example:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/strategies \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ak_live_..." \
+  -d '{
+    "name": "BTC RSI Scalper",
+    "definition": {
+      "pairs": ["BTCUSDT"],
+      "timeframe": "1h",
+      "entry_conditions": {"rsi_below": 30},
+      "exit_conditions": {"take_profit_pct": 5, "stop_loss_pct": 2},
+      "position_size_pct": 10,
+      "max_positions": 3
+    }
+  }'
+```
+
+---
+
+### GET /strategies
+
+List all strategies for the authenticated account. Supports filtering and pagination.
+
+**Auth required:** Yes
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `status` | string | — | Filter by status (`"draft"`, `"deployed"`, etc.) |
+| `limit` | integer (1–100) | 50 | Page size |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response: HTTP 200**
+
+| Field | Type | Description |
+|---|---|---|
+| `strategies` | array | List of strategy summary objects (same shape as POST response) |
+| `total` | integer | Total count matching the filter |
+| `limit` | integer | Page size used |
+| `offset` | integer | Offset used |
+
+---
+
+### GET /strategies/{strategy_id}
+
+Get strategy detail including the current version's definition and latest test results.
+
+**Auth required:** Yes
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `strategy_id` | UUID | Strategy identifier |
+
+**Response: HTTP 200**
+
+All fields from `StrategyResponse` plus:
+
+| Field | Type | Description |
+|---|---|---|
+| `current_definition` | object \| null | Full definition JSON of the current version |
+| `latest_test_results` | object \| null | Aggregated results from the latest completed test run |
+
+---
+
+### PUT /strategies/{strategy_id}
+
+Update strategy metadata (name and/or description). Does not change the definition; use `POST /{id}/versions` for that.
+
+**Auth required:** Yes
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string (1–200 chars) | No | New strategy name |
+| `description` | string (max 2000 chars) | No | New description |
+
+**Response: HTTP 200** — updated `StrategyResponse`
+
+---
+
+### DELETE /strategies/{strategy_id}
+
+Archive (soft-delete) a strategy. The strategy and all its versions remain in the database but the status changes to `"archived"`. A deployed strategy must be undeployed first.
+
+**Auth required:** Yes
+
+**Response: HTTP 200** — archived `StrategyResponse` with `status: "archived"`
+
+---
+
+### POST /strategies/{strategy_id}/versions
+
+Create a new version of a strategy with an updated definition. The version number is auto-incremented and becomes the new `current_version`.
+
+**Auth required:** Yes
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `definition` | object | Yes | Updated strategy definition JSON |
+| `change_notes` | string (max 2000 chars) | No | Description of what changed |
+
+**Response: HTTP 201**
+
+| Field | Type | Description |
+|---|---|---|
+| `version_id` | UUID string | Version identifier |
+| `strategy_id` | UUID string | Parent strategy identifier |
+| `version` | integer | Version number |
+| `definition` | object | Full strategy definition |
+| `change_notes` | string \| null | Change notes |
+| `parent_version` | integer \| null | Version this was derived from |
+| `status` | string | Version status |
+| `created_at` | ISO-8601 datetime | Creation timestamp |
+
+---
+
+### GET /strategies/{strategy_id}/versions
+
+List all versions of a strategy in descending version order.
+
+**Auth required:** Yes
+
+**Response: HTTP 200** — array of `StrategyVersionResponse` objects
+
+---
+
+### GET /strategies/{strategy_id}/versions/{version}
+
+Get a specific version by version number.
+
+**Auth required:** Yes
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `strategy_id` | UUID | Strategy identifier |
+| `version` | integer | Version number (e.g. `1`, `2`) |
+
+**Response: HTTP 200** — `StrategyVersionResponse`
+
+---
+
+### POST /strategies/{strategy_id}/deploy
+
+Deploy a specific version to live trading status. Sets `status` to `"deployed"` and records `deployed_at`.
+
+**Auth required:** Yes
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `version` | integer (≥ 1) | Yes | Version number to deploy |
+
+**Response: HTTP 200** — updated `StrategyResponse` with `status: "deployed"`
+
+---
+
+### POST /strategies/{strategy_id}/undeploy
+
+Stop a deployed strategy. Sets `status` back to `"validated"`.
+
+**Auth required:** Yes
+
+**Request body:** None
+
+**Response: HTTP 200** — updated `StrategyResponse` with `status: "validated"`
+
+---
+
+## Strategy Test Endpoints
+
+Run multi-episode backtests against a strategy definition and compare versions. All endpoints require authentication.
+
+**Base path:** `/api/v1/strategies/{strategy_id}`
+
+---
+
+### POST /strategies/{strategy_id}/test
+
+Trigger a new asynchronous strategy test run. The test executes multiple backtest episodes against historical data and aggregates the results.
+
+**Auth required:** Yes
+
+**Request body:**
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `version` | integer (≥ 1) | Yes | — | Strategy version to test |
+| `episodes` | integer (1–100) | No | 10 | Number of independent test episodes |
+| `date_range` | object | Yes | — | Historical data range to draw episodes from |
+| `date_range.start` | ISO-8601 datetime | Yes | — | Start of the candidate date range |
+| `date_range.end` | ISO-8601 datetime | Yes | — | End of the candidate date range |
+| `randomize_dates` | boolean | No | true | Randomize episode start dates within the range |
+| `episode_duration_days` | integer (1–365) | No | 30 | Duration of each episode in days |
+| `starting_balance` | string | No | `"10000"` | Starting balance per episode (USDT) |
+
+**Response: HTTP 201**
+
+| Field | Type | Description |
+|---|---|---|
+| `test_run_id` | UUID string | Test run identifier — use to poll for results |
+| `status` | string | Initial status: `"queued"` or `"running"` |
+| `episodes_total` | integer | Total episodes requested |
+| `episodes_completed` | integer | Episodes completed so far |
+| `progress_pct` | float | Completion percentage (0–100) |
+| `version` | integer | Strategy version being tested |
+
+**curl example:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/strategies/STRATEGY_ID/test \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ak_live_..." \
+  -d '{
+    "version": 1,
+    "episodes": 20,
+    "date_range": {"start": "2025-01-01T00:00:00Z", "end": "2025-12-31T23:59:59Z"},
+    "randomize_dates": true,
+    "episode_duration_days": 30,
+    "starting_balance": "10000"
+  }'
+```
+
+---
+
+### GET /strategies/{strategy_id}/tests
+
+List all test runs for a strategy ordered by creation date descending.
+
+**Auth required:** Yes
+
+**Response: HTTP 200** — array of `TestRunResponse` objects (same shape as POST response above)
+
+---
+
+### GET /strategies/{strategy_id}/tests/{test_id}
+
+Get the status and results of a specific test run.
+
+**Auth required:** Yes
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `strategy_id` | UUID | Strategy identifier |
+| `test_id` | UUID | Test run identifier |
+
+**Response: HTTP 200**
+
+All `TestRunResponse` fields plus:
+
+| Field | Type | Description |
+|---|---|---|
+| `results` | object \| null | Aggregated results (present when `status` is `"completed"`) |
+| `recommendations` | string array \| null | Improvement suggestions generated from results |
+| `config` | object \| null | Test configuration snapshot |
+
+**Results object fields (when completed):**
+
+| Field | Type | Description |
+|---|---|---|
+| `avg_roi_pct` | float | Average ROI across episodes |
+| `avg_sharpe` | float | Average Sharpe ratio |
+| `avg_max_drawdown_pct` | float | Average maximum drawdown |
+| `win_rate_pct` | float | % of episodes with positive ROI |
+| `total_trades` | integer | Total trades across all episodes |
+| `episodes_completed` | integer | Number of completed episodes |
+
+---
+
+### POST /strategies/{strategy_id}/tests/{test_id}/cancel
+
+Cancel a running or queued test run.
+
+**Auth required:** Yes
+
+**Request body:** None
+
+**Response: HTTP 200** — `TestRunResponse` with `status: "cancelled"`
+
+---
+
+### GET /strategies/{strategy_id}/test-results
+
+Get the latest completed test results for a strategy (shortcut — no need to look up the test run ID).
+
+**Auth required:** Yes
+
+**Response: HTTP 200** — `TestResultsResponse` (same as `GET /tests/{test_id}`)
+
+Returns `404` if no completed test runs exist for the strategy.
+
+---
+
+### GET /strategies/{strategy_id}/compare-versions
+
+Compare test results between two strategy versions.
+
+**Auth required:** Yes
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `v1` | integer (≥ 1) | Yes | First version number |
+| `v2` | integer (≥ 1) | Yes | Second version number |
+
+**Response: HTTP 200**
+
+| Field | Type | Description |
+|---|---|---|
+| `v1` | object | Metrics for version 1 |
+| `v2` | object | Metrics for version 2 |
+| `improvements` | object | Delta values (positive = v2 is better): `roi_pct`, `sharpe` |
+| `verdict` | string | Plain-English summary of which version performs better |
+
+**Version metrics object:**
+
+| Field | Type | Description |
+|---|---|---|
+| `version` | integer | Version number |
+| `avg_roi_pct` | float \| null | Average ROI across test episodes |
+| `avg_sharpe` | float \| null | Average Sharpe ratio |
+| `avg_max_drawdown_pct` | float \| null | Average max drawdown |
+| `total_trades` | integer | Total trades across episodes |
+| `episodes_completed` | integer | Episodes used for comparison |
+
+**curl example:**
+
+```bash
+curl "http://localhost:8000/api/v1/strategies/STRATEGY_ID/compare-versions?v1=1&v2=2" \
+  -H "X-API-Key: ak_live_..."
+```
+
+**Response example:**
+
+```json
+{
+  "v1": {"version": 1, "avg_roi_pct": 3.2, "avg_sharpe": 0.81, "avg_max_drawdown_pct": 8.4, "total_trades": 124, "episodes_completed": 20},
+  "v2": {"version": 2, "avg_roi_pct": 5.1, "avg_sharpe": 1.12, "avg_max_drawdown_pct": 6.8, "total_trades": 98, "episodes_completed": 20},
+  "improvements": {"roi_pct": 1.9, "sharpe": 0.31},
+  "verdict": "Version 2 improves on version 1 across both ROI and Sharpe ratio."
+}
+```
+
+---
+
+## Training Endpoints
+
+Track reinforcement learning training runs. Intended for use by the `tradeready-gym` Gymnasium wrapper, with query endpoints for monitoring from dashboards or notebooks.
+
+**Base path:** `/api/v1/training`
+
+---
+
+### POST /training/runs
+
+Register a new training run. Called automatically by the `tradeready-gym` wrapper when a new training session begins.
+
+**Auth required:** Yes
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `run_id` | UUID string | Yes | Client-generated UUID for this run |
+| `config` | object | No | Training configuration (hyperparameters, env settings, etc.) |
+| `strategy_id` | UUID string | No | Optional linked strategy UUID |
+
+**Response: HTTP 201**
+
+| Field | Type | Description |
+|---|---|---|
+| `run_id` | UUID string | Training run identifier |
+| `status` | string | Run status: `"running"`, `"completed"`, `"failed"` |
+| `config` | object \| null | Stored training configuration |
+| `episodes_total` | integer \| null | Total episodes planned (null until known) |
+| `episodes_completed` | integer | Episodes reported so far |
+| `started_at` | ISO-8601 datetime \| null | Start timestamp |
+| `completed_at` | ISO-8601 datetime \| null | Completion timestamp |
+
+---
+
+### POST /training/runs/{run_id}/episodes
+
+Report a completed training episode with performance metrics. Called by the Gym wrapper after each episode.
+
+**Auth required:** Yes
+
+**Path parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `run_id` | UUID | Training run identifier |
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `episode_number` | integer (≥ 1) | Yes | Sequential episode number |
+| `session_id` | UUID string | No | Optional backtest session UUID for this episode |
+| `roi_pct` | float | No | Episode return on investment (%) |
+| `sharpe_ratio` | float | No | Episode Sharpe ratio |
+| `max_drawdown_pct` | float | No | Episode maximum drawdown (%) |
+| `total_trades` | integer | No | Number of trades placed |
+| `reward_sum` | float | No | Total RL reward accumulated in the episode |
+
+**Response: HTTP 200** — updated `TrainingRunResponse`
+
+---
+
+### POST /training/runs/{run_id}/complete
+
+Mark a training run as complete. Called by the Gym wrapper when training ends.
+
+**Auth required:** Yes
+
+**Request body:** None
+
+**Response: HTTP 200** — `TrainingRunResponse` with `status: "completed"` and `completed_at` set
+
+---
+
+### GET /training/runs
+
+List all training runs for the authenticated account.
+
+**Auth required:** Yes
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `status` | string | — | Filter by status (`"running"`, `"completed"`, `"failed"`) |
+| `limit` | integer (1–100) | 50 | Page size |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response: HTTP 200** — array of `TrainingRunResponse` objects
+
+---
+
+### GET /training/runs/{run_id}
+
+Get full training run detail including learning curve data and per-episode breakdown.
+
+**Auth required:** Yes
+
+**Response: HTTP 200**
+
+All `TrainingRunResponse` fields plus:
+
+| Field | Type | Description |
+|---|---|---|
+| `learning_curve` | object \| null | Pre-computed learning curve data (metric → values array) |
+| `aggregate_stats` | object \| null | Aggregate statistics across all completed episodes |
+| `episodes` | array | Per-episode records: `episode_number`, `metrics`, `created_at` |
+
+---
+
+### GET /training/runs/{run_id}/learning-curve
+
+Get learning curve data suitable for charting, with optional smoothing.
+
+**Auth required:** Yes
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `metric` | string | `"roi_pct"` | Metric to plot: `"roi_pct"`, `"sharpe_ratio"`, `"max_drawdown_pct"`, `"reward_sum"` |
+| `window` | integer (1–100) | 10 | Smoothing window size (moving average) |
+
+**Response: HTTP 200**
+
+| Field | Type | Description |
+|---|---|---|
+| `episode_numbers` | integer array | Episode numbers on the x-axis |
+| `raw_values` | float array | Raw metric values per episode |
+| `smoothed_values` | float array | Moving-average smoothed values |
+| `metric` | string | Metric name |
+| `window` | integer | Smoothing window used |
+
+**curl example:**
+
+```bash
+curl "http://localhost:8000/api/v1/training/runs/RUN_ID/learning-curve?metric=roi_pct&window=10" \
+  -H "X-API-Key: ak_live_..."
+```
+
+---
+
+### GET /training/compare
+
+Compare multiple training runs side-by-side.
+
+**Auth required:** Yes
+
+**Query parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `run_ids` | string | Yes | Comma-separated list of run UUIDs (e.g. `"uuid1,uuid2,uuid3"`) |
+
+**Response: HTTP 200**
+
+| Field | Type | Description |
+|---|---|---|
+| `runs` | array | List of run comparison objects |
+
+**Run comparison object:**
+
+| Field | Type | Description |
+|---|---|---|
+| `run_id` | UUID string | Training run identifier |
+| `status` | string | Run status |
+| `episodes_completed` | integer | Episodes completed |
+| `aggregate_stats` | object \| null | Aggregate statistics (includes avg ROI, Sharpe, etc.) |
+| `started_at` | string \| null | Start timestamp |
+| `completed_at` | string \| null | Completion timestamp |
+
+**curl example:**
+
+```bash
+curl "http://localhost:8000/api/v1/training/compare?run_ids=RUN_ID_1,RUN_ID_2" \
+  -H "X-API-Key: ak_live_..."
 ```
 
 ---

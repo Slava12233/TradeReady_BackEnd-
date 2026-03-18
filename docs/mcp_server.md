@@ -131,9 +131,9 @@ The server uses the **stdio transport** (the MCP standard). Any client that can:
 
 ---
 
-## Available Tools (43)
+## Available Tools (58)
 
-The MCP server exposes 43 tools covering the full trading lifecycle: market data, account management, trading, analytics, backtesting, agent management, and battles.
+The MCP server exposes 58 tools covering the full trading lifecycle: market data, account management, trading, analytics, backtesting, agent management, battles, strategy management, strategy testing, and training observation.
 
 ### Market Data (7 tools)
 

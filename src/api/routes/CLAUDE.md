@@ -1,6 +1,6 @@
 # API Routes
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > FastAPI route modules implementing all REST endpoints for the AI Agent Crypto Trading Platform.
 
@@ -20,6 +20,9 @@ This directory contains all HTTP route handlers, organized by domain. Each file 
 | `analytics.py` | `/api/v1/analytics` | Required | Performance metrics, portfolio history, leaderboard |
 | `backtest.py` | `/api/v1` | Required | Backtest lifecycle, sandbox trading/market/account, results, mode management |
 | `battles.py` | `/api/v1/battles` | JWT only | Battle lifecycle, participants, live/results/replay, historical battles |
+| `strategies.py` | `/api/v1/strategies` | Required | Strategy CRUD, versioning, deploy/undeploy (10 endpoints) |
+| `strategy_tests.py` | `/api/v1/strategies` | Required | Strategy testing: start, list, get, cancel, results, compare (6 endpoints) |
+| `training.py` | `/api/v1/training` | Required | Training runs: register, report episodes, complete, list, detail, learning curve, compare (7 endpoints) |
 | `waitlist.py` | `/api/v1/waitlist` | Public | Landing page email collection |
 | `__init__.py` | — | — | Package docstring only |
 

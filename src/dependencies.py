@@ -722,3 +722,142 @@ try:
     BattleServiceDep: TypeAlias = Annotated[_BattleService, Depends(get_battle_service)]
 except ImportError:
     BattleServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Strategy repository
+# ---------------------------------------------------------------------------
+
+
+async def get_strategy_repo(
+    db: DbSessionDep,
+) -> StrategyRepoDep:
+    """Return a ``StrategyRepository`` wired to the current session."""
+    from src.database.repositories.strategy_repo import StrategyRepository  # noqa: PLC0415
+
+    return StrategyRepository(db)
+
+
+try:
+    from src.database.repositories.strategy_repo import StrategyRepository as _StrategyRepo
+
+    StrategyRepoDep: TypeAlias = Annotated[_StrategyRepo, Depends(get_strategy_repo)]
+except ImportError:
+    StrategyRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Strategy service
+# ---------------------------------------------------------------------------
+
+
+async def get_strategy_service(
+    repo: StrategyRepoDep,
+) -> StrategyServiceDep:
+    """Return a ``StrategyService`` wired to the current strategy repository."""
+    from src.strategies.service import StrategyService  # noqa: PLC0415
+
+    return StrategyService(repo)
+
+
+try:
+    from src.strategies.service import StrategyService as _StrategyService
+
+    StrategyServiceDep: TypeAlias = Annotated[_StrategyService, Depends(get_strategy_service)]
+except ImportError:
+    StrategyServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Test run repository
+# ---------------------------------------------------------------------------
+
+
+async def get_test_run_repo(
+    db: DbSessionDep,
+) -> TestRunRepoDep:
+    """Return a ``TestRunRepository`` wired to the current session."""
+    from src.database.repositories.test_run_repo import TestRunRepository  # noqa: PLC0415
+
+    return TestRunRepository(db)
+
+
+try:
+    from src.database.repositories.test_run_repo import TestRunRepository as _TestRunRepo
+
+    TestRunRepoDep: TypeAlias = Annotated[_TestRunRepo, Depends(get_test_run_repo)]
+except ImportError:
+    TestRunRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Test orchestrator
+# ---------------------------------------------------------------------------
+
+
+async def get_test_orchestrator(
+    repo: StrategyRepoDep,
+    service: StrategyServiceDep,
+) -> TestOrchestratorDep:
+    """Return a ``TestOrchestrator`` wired to repo and service."""
+    from src.strategies.test_orchestrator import TestOrchestrator  # noqa: PLC0415
+
+    return TestOrchestrator(repo, service)
+
+
+try:
+    from src.strategies.test_orchestrator import TestOrchestrator as _TestOrchestrator
+
+    TestOrchestratorDep: TypeAlias = Annotated[_TestOrchestrator, Depends(get_test_orchestrator)]
+except ImportError:
+    TestOrchestratorDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+
+# Note: IndicatorEngine is constructed directly inside Celery tasks
+# (src/tasks/strategy_tasks.py), not injected via DI, because it
+# accumulates per-episode state that must not leak between requests.
+
+
+# ---------------------------------------------------------------------------
+# Training run repository
+# ---------------------------------------------------------------------------
+
+
+async def get_training_run_repo(
+    db: DbSessionDep,
+) -> TrainingRunRepoDep:
+    """Return a ``TrainingRunRepository`` wired to the current session."""
+    from src.database.repositories.training_repo import TrainingRunRepository  # noqa: PLC0415
+
+    return TrainingRunRepository(db)
+
+
+try:
+    from src.database.repositories.training_repo import TrainingRunRepository as _TrainingRunRepo
+
+    TrainingRunRepoDep: TypeAlias = Annotated[_TrainingRunRepo, Depends(get_training_run_repo)]
+except ImportError:
+    TrainingRunRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Training run service
+# ---------------------------------------------------------------------------
+
+
+async def get_training_run_service(
+    repo: TrainingRunRepoDep,
+) -> TrainingRunServiceDep:
+    """Return a ``TrainingRunService`` wired to the current repository."""
+    from src.training.tracker import TrainingRunService  # noqa: PLC0415
+
+    return TrainingRunService(repo)
+
+
+try:
+    from src.training.tracker import TrainingRunService as _TrainingRunService
+
+    TrainingRunServiceDep: TypeAlias = Annotated[_TrainingRunService, Depends(get_training_run_service)]
+except ImportError:
+    TrainingRunServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]

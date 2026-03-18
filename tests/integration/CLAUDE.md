@@ -1,6 +1,6 @@
 # Integration Tests
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > End-to-end and API-level tests for every REST endpoint, WebSocket, and the backtesting/battle engines, using either mocked infrastructure or real Docker services.
 
@@ -25,6 +25,9 @@ Integration tests verify the full request-response cycle through the FastAPI app
 | `test_backtest_api.py` | 9 | Backtest endpoint validation: auth required, invalid inputs, error format, list/best/mode |
 | `test_backtest_e2e.py` | 1 | Full backtest lifecycle: create, start, step, order, batch step, cancel, results, equity curve, trade log (Docker) |
 | `test_battle_endpoints.py` | 30 | All 20 battle REST endpoints: CRUD, participants, lifecycle (start/pause/resume/stop), live metrics, results, replay, historical step/batch/order/prices |
+| `test_strategy_api.py` | 8 | Strategy REST endpoints: CRUD, versions, deploy/undeploy, owner isolation |
+| `test_strategy_test_flow.py` | 5 | Strategy test flow: start test, list, get results, cancel, compare versions |
+| `test_training_api.py` | 6 | Training API: register run, report episode, complete, list, learning curve, compare |
 | `test_battle_websocket.py` | 8 | Battle WebSocket channel subscriptions and events |
 | `test_concurrent_backtests.py` | 1 | 5 concurrent backtests with independent results (Docker) |
 | `test_full_trade_flow.py` | 5 | Full trading flow: order placement through execution |
@@ -34,9 +37,10 @@ Integration tests verify the full request-response cycle through the FastAPI app
 | `test_no_lookahead.py` | 1 | Candle timestamps never exceed virtual clock during backtest (Docker) |
 | `test_rate_limiting.py` | 56 | Rate limit middleware: per-endpoint limits, headers, 429 responses, reset timing |
 | `test_trading_endpoints.py` | 87 | All trading endpoints: place order (market/limit/stop/TP), get/list/cancel orders, trade history, validation, error codes |
+| `test_real_user_scenario_e2e.py` | 52 | Full realistic user scenario: register, create agents, place trades, backtests, battles, analytics, account management (Docker) |
 | `test_websocket.py` | 49 | WebSocket connect/disconnect, subscribe/unsubscribe, ticker/candle/order/portfolio channels, heartbeat, subscription cap, Redis bridge |
 
-**Total: ~433 test functions across 20 files.**
+**Total: ~556 test functions across 24 files.**
 
 ## Setup & Dependencies
 
@@ -172,3 +176,4 @@ pytest tests/integration/ -v -m "not slow"
 
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Updated battle exception gotcha (duplicate class removed). Fixed lint: E402 in test_auth_endpoints, N801 suppressed in test_real_user_scenario_e2e.
+- `2026-03-18` -- Added `test_real_user_scenario_e2e.py` (52 tests) to inventory table. Updated total to ~556 tests across 24 files.

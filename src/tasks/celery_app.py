@@ -50,6 +50,7 @@ app = Celery(
         "src.tasks.cleanup",
         "src.tasks.backtest_cleanup",
         "src.tasks.battle_snapshots",
+        "src.tasks.strategy_tasks",
     ],
 )
 

@@ -2,13 +2,13 @@
 
 <!-- last-updated: 2026-03-18 -->
 
-> Exposes 43 trading tools over MCP stdio transport so AI agents (Claude Desktop, cline, etc.) can discover and invoke trading operations against the platform REST API.
+> Exposes 58 trading tools over MCP stdio transport so AI agents (Claude Desktop, cline, etc.) can discover and invoke trading operations against the platform REST API.
 
 ## What This Module Does
 
 The MCP (Model Context Protocol) server runs as a standalone process (`python -m src.mcp.server`) that communicates with MCP-compatible clients over **stdio transport** (JSON-RPC over stdin/stdout). It translates MCP tool calls into authenticated REST API requests against the trading platform using `httpx.AsyncClient`.
 
-The server registers 43 tools covering the full trading lifecycle: market data, account management, trading, backtesting, agent management, battles, and analytics. All REST calls are authenticated via `X-API-Key` header (and optionally `Authorization: Bearer` for JWT-protected endpoints).
+The server registers 58 tools covering the full trading lifecycle: market data, account management, trading, backtesting, agent management, battles, analytics, strategy management, strategy testing, and training observation. All REST calls are authenticated via `X-API-Key` header (and optionally `Authorization: Bearer` for JWT-protected endpoints).
 
 ## Key Files
 
@@ -16,7 +16,7 @@ The server registers 43 tools covering the full trading lifecycle: market data, 
 |------|---------|
 | `__init__.py` | Package docstring; no exports |
 | `server.py` | Entry point: env config, HTTP client factory, MCP `Server` creation, stdio transport loop |
-| `tools.py` | 43 tool definitions (`_TOOL_DEFINITIONS`), `register_tools()`, `_dispatch()` routing, REST call helpers |
+| `tools.py` | 58 tool definitions (`_TOOL_DEFINITIONS`), `register_tools()`, `_dispatch()` routing, REST call helpers. Covers: market data (7), account (5), trading (7), analytics (4), backtesting (8), agent management (6), battles (6), strategies (7), strategy testing (5), training observation (3) |
 
 ## Architecture & Patterns
 
@@ -41,7 +41,7 @@ All logging goes to **stderr** (never stdout) because stdout is owned by the MCP
 
 ### `register_tools(server: Server, http_client: httpx.AsyncClient) -> None`
 
-Registers all 43 tools on the given MCP server. Called once at startup.
+Registers all 58 tools on the given MCP server. Called once at startup.
 
 ### `create_server() -> tuple[Server, httpx.AsyncClient]`
 
@@ -51,11 +51,11 @@ Factory that builds the configured server and HTTP client. Exits with code 1 if 
 
 Async entry point. Run via `python -m src.mcp.server`.
 
-### `TOOL_COUNT = 43`
+### `TOOL_COUNT = 58`
 
 Constant for the total number of tools. Useful for tests and documentation.
 
-### The 43 Tools
+### The 58 Tools
 
 #### Market Data (7 tools)
 
@@ -133,7 +133,37 @@ Constant for the total number of tools. Useful for tests and documentation.
 | 40 | `start_battle` | POST | `/api/v1/battles/{id}/start` | `battle_id` |
 | 41 | `get_battle_live` | GET | `/api/v1/battles/{id}/live` | `battle_id` |
 | 42 | `get_battle_results` | GET | `/api/v1/battles/{id}/results` | `battle_id` |
-| 43 | `get_battle_replay` | GET | `/api/v1/battles/{id}/replay` | `battle_id` |
+| 58 | `get_battle_replay` | GET | `/api/v1/battles/{id}/replay` | `battle_id` |
+
+#### Strategy Management (7 tools)
+
+| # | Tool | Method | REST Endpoint | Required Args |
+|---|------|--------|---------------|---------------|
+| 44 | `create_strategy` | POST | `/api/v1/strategies` | `name`, `definition` |
+| 45 | `get_strategies` | GET | `/api/v1/strategies` | (none; optional `status`, `limit`, `offset`) |
+| 46 | `get_strategy` | GET | `/api/v1/strategies/{id}` | `strategy_id` |
+| 47 | `create_strategy_version` | POST | `/api/v1/strategies/{id}/versions` | `strategy_id`, `definition` |
+| 48 | `get_strategy_versions` | GET | `/api/v1/strategies/{id}/versions` | `strategy_id` |
+| 49 | `deploy_strategy` | POST | `/api/v1/strategies/{id}/deploy` | `strategy_id`, `version` |
+| 50 | `undeploy_strategy` | POST | `/api/v1/strategies/{id}/undeploy` | `strategy_id` |
+
+#### Strategy Testing (5 tools)
+
+| # | Tool | Method | REST Endpoint | Required Args |
+|---|------|--------|---------------|---------------|
+| 51 | `run_strategy_test` | POST | `/api/v1/strategies/{id}/test` | `strategy_id`, `version` |
+| 52 | `get_test_status` | GET | `/api/v1/strategies/{id}/tests/{test_id}` | `strategy_id`, `test_id` |
+| 53 | `get_test_results` | GET | `/api/v1/strategies/{id}/tests/{test_id}` | `strategy_id`, `test_id` |
+| 54 | `compare_versions` | GET | `/api/v1/strategies/{id}/compare-versions` | `strategy_id`, `v1`, `v2` |
+| 55 | `get_strategy_recommendations` | GET | `/api/v1/strategies/{id}/test-results` | `strategy_id` |
+
+#### Training Observation (3 tools)
+
+| # | Tool | Method | REST Endpoint | Required Args |
+|---|------|--------|---------------|---------------|
+| 56 | `get_training_runs` | GET | `/api/v1/training/runs` | (none; optional `status`, `limit`, `offset`) |
+| 57 | `get_training_run_detail` | GET | `/api/v1/training/runs/{run_id}` | `run_id` |
+| 58 | `compare_training_runs` | GET | `/api/v1/training/compare` | `run_ids` (comma-separated) |
 
 ## Dependencies
 
@@ -191,5 +221,6 @@ API_BASE_URL=https://api.example.com MCP_API_KEY=ak_live_... python -m src.mcp.s
 
 ## Recent Changes
 
+- `2026-03-18` -- Expanded from 43 to 58 tools (Phase STR-4): added strategy management (7), strategy testing (5), and training observation (3) tools. Updated TOOL_COUNT, docstrings, and dispatch routes.
 - `2026-03-18` -- Expanded from 12 to 43 tools (Phase 2 MCP Server Expansion): added backtesting (8), market+trading (7), agent management (6), battle (6), and account+analytics (4) tools. Added `_call_api_text()` and `_text_content()` helpers. Added `TOOL_COUNT` constant. 142 unit tests, 0 lint errors.
 - `2026-03-17` -- Initial CLAUDE.md created

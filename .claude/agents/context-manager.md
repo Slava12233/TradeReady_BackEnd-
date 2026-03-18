@@ -50,6 +50,15 @@ When something was tried and didn't work:
 - Why it failed
 - What was done instead
 
+### 7. Frontend Changes
+When frontend code changes (components, hooks, stores, types, pages):
+- New/modified components and their feature area
+- Hook API changes (new hooks, changed signatures, new query keys)
+- Store structure changes (new slices, changed persistence)
+- Type/schema updates in `src/lib/types.ts`
+- Styling/theme changes in `globals.css` or `chart-theme.ts`
+- New pages or route changes in `src/app/`
+
 ## Where You Write
 
 You maintain a single rolling log file:
@@ -110,7 +119,7 @@ git diff --name-only --cached
 git log --oneline -10
 ```
 
-Also read any conversation context provided by the parent agent about what was just done and why.
+Check for both backend (`src/`) and frontend (`Frontend/src/`) changes. Also read any conversation context provided by the parent agent about what was just done and why.
 
 ### Step 3: Summarize Changes
 
@@ -145,6 +154,10 @@ If code changes warrant it, update the `## Recent Changes` section in the affect
 ```
 
 Update the `<!-- last-updated: YYYY-MM-DD -->` timestamp.
+
+This applies to **both backend and frontend** CLAUDE.md files:
+- Backend: `src/{module}/CLAUDE.md`
+- Frontend: `Frontend/src/components/{feature}/CLAUDE.md`, `Frontend/src/hooks/CLAUDE.md`, `Frontend/src/stores/CLAUDE.md`, `Frontend/src/lib/CLAUDE.md`, `Frontend/src/app/CLAUDE.md`
 
 ### Step 7: Prune Old Entries
 

@@ -785,6 +785,260 @@ class AgentExchangeClient:
         )
         return [Snapshot.from_dict(s) for s in data.get("snapshots", [])]
 
+    # ------------------------------------------------------------------
+    # Strategies (6 methods)
+    # ------------------------------------------------------------------
+
+    def create_strategy(
+        self,
+        name: str,
+        definition: dict[str, Any],
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new trading strategy.
+
+        Args:
+            name:       Strategy name.
+            definition: Strategy definition dict (pairs, conditions, etc.).
+            description: Optional strategy description.
+
+        Returns:
+            Strategy response dict.
+        """
+        body: dict[str, Any] = {"name": name, "definition": definition}
+        if description:
+            body["description"] = description
+        return self._request("POST", "/api/v1/strategies", json=body)
+
+    def get_strategies(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List all strategies for the account.
+
+        Args:
+            status: Optional filter by status.
+            limit:  Max results.
+            offset: Pagination offset.
+
+        Returns:
+            Dict with ``strategies`` list and ``total`` count.
+        """
+        return self._request(
+            "GET", "/api/v1/strategies",
+            params={"status": status, "limit": limit, "offset": offset},
+        )
+
+    def get_strategy(self, strategy_id: str | UUID) -> dict[str, Any]:
+        """Get detailed strategy info including current version and test results.
+
+        Args:
+            strategy_id: UUID of the strategy.
+
+        Returns:
+            Strategy detail response dict.
+        """
+        return self._request("GET", f"/api/v1/strategies/{strategy_id}")
+
+    def create_version(
+        self,
+        strategy_id: str | UUID,
+        definition: dict[str, Any],
+        change_notes: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new version of a strategy.
+
+        Args:
+            strategy_id:  UUID of the strategy.
+            definition:   Updated strategy definition.
+            change_notes: Description of changes.
+
+        Returns:
+            Version response dict.
+        """
+        body: dict[str, Any] = {"definition": definition}
+        if change_notes:
+            body["change_notes"] = change_notes
+        return self._request(
+            "POST", f"/api/v1/strategies/{strategy_id}/versions", json=body
+        )
+
+    def deploy_strategy(
+        self, strategy_id: str | UUID, version: int
+    ) -> dict[str, Any]:
+        """Deploy a strategy version for live trading.
+
+        Args:
+            strategy_id: UUID of the strategy.
+            version:     Version number to deploy.
+
+        Returns:
+            Strategy response dict.
+        """
+        return self._request(
+            "POST", f"/api/v1/strategies/{strategy_id}/deploy",
+            json={"version": version},
+        )
+
+    def undeploy_strategy(self, strategy_id: str | UUID) -> dict[str, Any]:
+        """Stop live trading for a deployed strategy.
+
+        Args:
+            strategy_id: UUID of the strategy.
+
+        Returns:
+            Strategy response dict.
+        """
+        return self._request(
+            "POST", f"/api/v1/strategies/{strategy_id}/undeploy"
+        )
+
+    # ------------------------------------------------------------------
+    # Strategy Testing (4 methods)
+    # ------------------------------------------------------------------
+
+    def run_test(
+        self,
+        strategy_id: str | UUID,
+        version: int,
+        *,
+        episodes: int = 10,
+        date_range: dict[str, str] | None = None,
+        episode_duration_days: int = 30,
+    ) -> dict[str, Any]:
+        """Trigger a multi-episode test of a strategy version.
+
+        Args:
+            strategy_id:          UUID of the strategy.
+            version:              Version number to test.
+            episodes:             Number of test episodes.
+            date_range:           Optional ``{"start": "...", "end": "..."}`` dict.
+            episode_duration_days: Days per episode.
+
+        Returns:
+            Test run response dict with ``test_run_id``.
+        """
+        body: dict[str, Any] = {"version": version, "episodes": episodes}
+        if date_range:
+            body["date_range"] = date_range
+        body["episode_duration_days"] = episode_duration_days
+        return self._request(
+            "POST", f"/api/v1/strategies/{strategy_id}/test", json=body
+        )
+
+    def get_test_status(
+        self, strategy_id: str | UUID, test_id: str | UUID
+    ) -> dict[str, Any]:
+        """Get the status and progress of a strategy test run.
+
+        Args:
+            strategy_id: UUID of the strategy.
+            test_id:     UUID of the test run.
+
+        Returns:
+            Test run status dict.
+        """
+        return self._request(
+            "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
+        )
+
+    def get_test_results(
+        self, strategy_id: str | UUID, test_id: str | UUID
+    ) -> dict[str, Any]:
+        """Get full test results with metrics and recommendations.
+
+        Args:
+            strategy_id: UUID of the strategy.
+            test_id:     UUID of the test run.
+
+        Returns:
+            Test results dict with aggregated metrics and recommendations.
+        """
+        return self._request(
+            "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
+        )
+
+    def compare_versions(
+        self, strategy_id: str | UUID, v1: int, v2: int
+    ) -> dict[str, Any]:
+        """Compare test results between two strategy versions.
+
+        Args:
+            strategy_id: UUID of the strategy.
+            v1:          First version number.
+            v2:          Second version number.
+
+        Returns:
+            Version comparison dict with improvements and verdict.
+        """
+        return self._request(
+            "GET", f"/api/v1/strategies/{strategy_id}/compare-versions",
+            params={"v1": v1, "v2": v2},
+        )
+
+    # ------------------------------------------------------------------
+    # Training (3 methods)
+    # ------------------------------------------------------------------
+
+    def get_training_runs(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List all training runs.
+
+        Args:
+            status: Optional filter by status.
+            limit:  Max results.
+            offset: Pagination offset.
+
+        Returns:
+            List of training run dicts.
+        """
+        return self._request(
+            "GET", "/api/v1/training/runs",
+            params={"status": status, "limit": limit, "offset": offset},
+        )
+
+    def get_training_run(self, run_id: str | UUID) -> dict[str, Any]:
+        """Get full detail of a training run.
+
+        Args:
+            run_id: UUID of the training run.
+
+        Returns:
+            Training run detail dict with learning curve and episodes.
+        """
+        return self._request("GET", f"/api/v1/training/runs/{run_id}")
+
+    def compare_training_runs(
+        self, run_ids: list[str | UUID]
+    ) -> dict[str, Any]:
+        """Compare multiple training runs side-by-side.
+
+        Args:
+            run_ids: List of training run UUIDs.
+
+        Returns:
+            Comparison dict with per-run metrics.
+        """
+        # Validate all IDs as UUIDs to prevent injection
+        validated = [str(UUID(str(rid))) for rid in run_ids]
+        ids_str = ",".join(validated)
+        return self._request(
+            "GET", "/api/v1/training/compare",
+            params={"run_ids": ids_str},
+        )
+
+    # ------------------------------------------------------------------
+    # Analytics (3 methods)
+    # ------------------------------------------------------------------
+
     def get_leaderboard(
         self,
         period: str = "all",

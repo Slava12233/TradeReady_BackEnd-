@@ -13,8 +13,8 @@ The `tests/` directory contains all automated tests for the trading platform. Te
 | File | Purpose |
 |------|---------|
 | `conftest.py` | Shared fixtures: mock DB session, mock Redis, mock price cache, ORM factories, test settings |
-| `unit/` | 60+ unit test files; each tests a single module in isolation with mocks |
-| `integration/` | 21 integration test files; test API endpoints, E2E workflows, WebSocket, backtesting flows |
+| `unit/` | 70 unit test files; each tests a single module in isolation with mocks |
+| `integration/` | 24 integration test files (~556 tests); test API endpoints, E2E workflows, WebSocket, backtesting, strategy, and training flows |
 | `__init__.py` | Empty package marker (exists at `tests/`, `tests/unit/`, `tests/integration/`) |
 
 ## Architecture & Patterns

@@ -19,7 +19,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `src/accounts/CLAUDE.md` | Account service, registration, auth, API keys, balance management |
 | `src/agents/CLAUDE.md` | Multi-agent CRUD, clone, reset, avatar generation |
 | `src/api/CLAUDE.md` | API gateway overview, middleware stack, route registry |
-| `src/api/routes/CLAUDE.md` | All REST endpoints (86+), auth requirements, patterns |
+| `src/api/routes/CLAUDE.md` | All REST endpoints (90+), auth requirements, patterns |
 | `src/api/schemas/CLAUDE.md` | Pydantic v2 schemas, validation patterns |
 | `src/api/middleware/CLAUDE.md` | Auth, rate limiting, logging middleware — execution order |
 | `src/api/websocket/CLAUDE.md` | WebSocket channels, protocol, subscription model |
@@ -29,14 +29,16 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `src/exchange/CLAUDE.md` | CCXT-powered exchange abstraction, adapter pattern, symbol mapper |
 | `src/database/CLAUDE.md` | ORM models, async session management, repository pattern |
 | `src/database/repositories/CLAUDE.md` | All repository classes, query patterns |
-| `src/mcp/CLAUDE.md` | MCP server, 43 tools, stdio transport |
+| `src/mcp/CLAUDE.md` | MCP server, 58 tools, stdio transport |
 | `src/metrics/CLAUDE.md` | Unified metrics calculator, adapters |
 | `src/monitoring/CLAUDE.md` | Prometheus metrics, health checks |
 | `src/order_engine/CLAUDE.md` | Order execution, matching, slippage |
 | `src/portfolio/CLAUDE.md` | Portfolio tracking, PnL calculation, snapshots |
 | `src/price_ingestion/CLAUDE.md` | Exchange WS (CCXT + legacy Binance), tick buffering, flush cycle |
 | `src/risk/CLAUDE.md` | Risk manager, circuit breaker, position limits |
+| `src/strategies/CLAUDE.md` | Strategy registry — CRUD, versioning, testing, deployment |
 | `src/tasks/CLAUDE.md` | Celery tasks, beat schedule, cleanup jobs |
+| `src/training/CLAUDE.md` | Training run observation — tracking, learning curves, comparison |
 | `src/utils/CLAUDE.md` | Exception hierarchy, shared utilities |
 
 ### Tests
@@ -44,25 +46,51 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | Path | Description |
 |------|-------------|
 | `tests/CLAUDE.md` | Test philosophy, conftest fixtures, async patterns, gotchas |
-| `tests/unit/CLAUDE.md` | Unit test inventory (62 files, 974 tests), mock patterns |
-| `tests/integration/CLAUDE.md` | Integration test setup (20 files, 433 tests), app factory |
+| `tests/unit/CLAUDE.md` | Unit test inventory (70 files, 1184 tests), mock patterns |
+| `tests/integration/CLAUDE.md` | Integration test setup (24 files, 504 tests), app factory |
+
+### Frontend (`Frontend/`)
+
+| Path | Description |
+|------|-------------|
+| `Frontend/CLAUDE.md` | Next.js 16 / React 19 / Tailwind v4 frontend conventions, architecture |
+| `Frontend/src/app/CLAUDE.md` | App Router structure, layouts, route groups |
+| `Frontend/src/components/CLAUDE.md` | Component organization (130+ files), shadcn/ui patterns |
+| `Frontend/src/components/agents/CLAUDE.md` | Agent CRUD UI — cards, grid, create modal, edit drawer |
+| `Frontend/src/components/alerts/CLAUDE.md` | Price alert management — create dialog, alert sections |
+| `Frontend/src/components/analytics/CLAUDE.md` | Analytics charts — equity, drawdown, PnL, heatmaps |
+| `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
+| `Frontend/src/components/battles/CLAUDE.md` | Battle UI components (planned, not yet built) |
+| `Frontend/src/components/coin/CLAUDE.md` | Coin detail — TradingView chart, order book, stats |
+| `Frontend/src/components/dashboard/CLAUDE.md` | Dashboard — portfolio, equity chart, positions, orders |
+| `Frontend/src/components/landing/CLAUDE.md` | Landing page sections — hero, features, CTA |
+| `Frontend/src/components/layout/CLAUDE.md` | App shell — sidebar, header, agent switcher, WS provider |
+| `Frontend/src/components/leaderboard/CLAUDE.md` | Agent rankings — table, filters, profile modal |
+| `Frontend/src/components/market/CLAUDE.md` | Market table (600+ pairs), virtual scrolling, search |
+| `Frontend/src/components/settings/CLAUDE.md` | Settings — account, API keys, risk config, theme |
+| `Frontend/src/components/setup/CLAUDE.md` | Onboarding wizard — multi-step registration flow |
+| `Frontend/src/components/shared/CLAUDE.md` | Reusable domain building blocks (16 components) |
+| `Frontend/src/components/strategies/CLAUDE.md` | Strategy management UI — list, detail, version history, deploy controls |
+| `Frontend/src/components/trades/CLAUDE.md` | Trade history — table, filters, export, detail modal |
+| `Frontend/src/components/training/CLAUDE.md` | Training run observation UI — run list, episode tracking, learning curves |
+| `Frontend/src/components/ui/CLAUDE.md` | ~59 shadcn/ui primitives + custom visual effects |
+| `Frontend/src/components/wallet/CLAUDE.md` | Wallet — balance card, asset list, distribution chart |
+| `Frontend/src/hooks/CLAUDE.md` | Hook inventory (23 hooks), TanStack Query patterns |
+| `Frontend/src/lib/CLAUDE.md` | API client, utilities, constants, chart config |
+| `Frontend/src/remotion/CLAUDE.md` | Remotion video compositions for landing animations |
+| `Frontend/src/stores/CLAUDE.md` | Zustand stores (6), persistence, agent state |
+| `Frontend/src/styles/CLAUDE.md` | Chart theme, style utilities |
 
 ### Infrastructure & Other
 
 | Path | Description |
 |------|-------------|
 | `alembic/CLAUDE.md` | Migration workflow, async env, naming convention, inventory |
-| `Frontend/CLAUDE.md` | Next.js 16 / React 19 / Tailwind v4 frontend conventions |
-| `Frontend/src/app/CLAUDE.md` | App Router structure, layouts, route groups |
-| `Frontend/src/components/CLAUDE.md` | Component organization (130+ files), shadcn/ui patterns |
-| `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
-| `Frontend/src/components/battles/CLAUDE.md` | Battle UI components (planned, not yet built) |
-| `Frontend/src/hooks/CLAUDE.md` | Hook inventory (23 hooks), TanStack Query patterns |
-| `Frontend/src/lib/CLAUDE.md` | API client, utilities, constants, chart config |
-| `Frontend/src/stores/CLAUDE.md` | Zustand stores (6), persistence, agent state |
 | `sdk/CLAUDE.md` | Python SDK — sync/async clients, WebSocket client |
 | `scripts/CLAUDE.md` | Available scripts, when to run each, dependencies |
 | `docs/CLAUDE.md` | Documentation inventory, audience for each doc |
+| `development/CLAUDE.md` | Development planning docs, progress tracking, archived phase plans |
+| `development/code-reviews/CLAUDE.md` | Code review reports from code-reviewer agent |
 
 ---
 
@@ -85,6 +113,7 @@ Custom agents that can be delegated to for specialized tasks:
 | `planner` | Expert planning specialist for complex features and refactoring. Creates detailed, phased implementation plans with file paths, risks, and testing strategies | PROACTIVELY when users request feature implementation, architectural changes, or complex refactoring |
 | `security-reviewer` | Security vulnerability detection and remediation. Flags secrets, SSRF, injection, agent isolation violations, OWASP Top 10. Can fix CRITICAL issues directly | PROACTIVELY after writing code that handles user input, auth, API endpoints, or sensitive data |
 | `e2e-tester` | Runs live E2E scenarios against the running platform — creates accounts, agents, trades, backtests, battles. All data visible in the UI. Returns login credentials | When you need to populate realistic data for UI testing, validate the full stack end-to-end, or demo the platform |
+| `frontend-developer` | Full-stack frontend development agent — implements components, hooks, pages, and features in Next.js 16 / React 19 / Tailwind v4. Reads CLAUDE.md hierarchy for navigation | When implementing frontend features, components, pages, or UI changes |
 
 ### Mandatory Agent Rules
 
@@ -281,7 +310,7 @@ All service/repo instantiation goes through `src/dependencies.py` using FastAPI'
 # Use the typed aliases — NOT raw Annotated[Type, Depends(get_function)]
 async def handler(db: DbSessionDep, cache: PriceCacheDep, settings: SettingsDep):
 ```
-Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `AccountRepoDep`, `BalanceRepoDep`, `OrderRepoDep`, `TradeRepoDep`, `TickRepoDep`, `SnapshotRepoDep`, `BalanceManagerDep`, `AccountServiceDep`, `SlippageCalcDep`, `OrderEngineDep`, `RiskManagerDep`, `PortfolioTrackerDep`, `PerformanceMetricsDep`, `SnapshotServiceDep`, `BacktestEngineDep`, `BacktestRepoDep`, `AgentRepoDep`, `AgentServiceDep`.
+Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `AccountRepoDep`, `BalanceRepoDep`, `OrderRepoDep`, `TradeRepoDep`, `TickRepoDep`, `SnapshotRepoDep`, `BalanceManagerDep`, `AccountServiceDep`, `SlippageCalcDep`, `OrderEngineDep`, `RiskManagerDep`, `CircuitBreakerRedisDep`, `PortfolioTrackerDep`, `PerformanceMetricsDep`, `SnapshotServiceDep`, `BacktestEngineDep`, `BacktestRepoDep`, `BattleRepoDep`, `BattleServiceDep`, `AgentRepoDep`, `AgentServiceDep`, `StrategyRepoDep`, `StrategyServiceDep`, `TestRunRepoDep`, `TestOrchestratorDep`, `TrainingRunRepoDep`, `TrainingRunServiceDep`.
 
 Key patterns:
 - **Lazy imports** inside dependency functions (`# noqa: PLC0415`) to avoid circular imports — do not move these to module level
@@ -337,7 +366,7 @@ Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
 
 **Python SDK** (`sdk/`): `AgentExchangeClient` (sync), `AsyncAgentExchangeClient` (async), `AgentExchangeWS` (streaming). Install locally: `pip install -e sdk/`. See `sdk/CLAUDE.md`.
 
-**MCP Server** (`src/mcp/`): 43 trading tools over stdio transport. See `src/mcp/CLAUDE.md`.
+**MCP Server** (`src/mcp/`): 58 trading tools over stdio transport. See `src/mcp/CLAUDE.md`.
 
 **Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. See `Frontend/CLAUDE.md`.
 

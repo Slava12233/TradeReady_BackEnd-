@@ -48,6 +48,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB
@@ -1771,3 +1772,342 @@ class BattleSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<BattleSnapshot battle={self.battle_id} agent={self.agent_id} equity={self.equity}>"
+
+
+# ── Strategy tables ────────────────────────────────────────────────────────
+
+
+class Strategy(Base):
+    """Strategy metadata and lifecycle.
+
+    Attributes:
+        id:              UUID primary key.
+        account_id:      Foreign key → ``accounts.id`` (owner).
+        name:            Strategy display name.
+        description:     Optional description.
+        current_version: Current version number.
+        status:          Lifecycle status (draft/testing/validated/deployed/archived).
+        deployed_at:     UTC timestamp when deployed to live trading.
+        created_at:      UTC creation timestamp.
+        updated_at:      UTC last-modified timestamp.
+    """
+
+    __tablename__ = "strategies"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(VARCHAR(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    status: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, server_default="draft")
+    deployed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    account: Mapped[Account] = relationship("Account")
+    versions: Mapped[list[StrategyVersion]] = relationship(
+        "StrategyVersion",
+        back_populates="strategy",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'testing', 'validated', 'deployed', 'archived')",
+            name="ck_strategies_status",
+        ),
+        Index("idx_strategies_account", "account_id"),
+        Index("idx_strategies_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Strategy id={self.id} name={self.name!r} status={self.status}>"
+
+
+class StrategyVersion(Base):
+    """Immutable versioned strategy definition.
+
+    Attributes:
+        id:             UUID primary key.
+        strategy_id:    Foreign key → ``strategies.id``.
+        version:        Version number (auto-incremented by service).
+        definition:     JSONB strategy definition.
+        change_notes:   Optional description of changes.
+        parent_version: Version this was derived from.
+        status:         Version status (draft/testing/validated/deployed).
+        created_at:     UTC creation timestamp.
+    """
+
+    __tablename__ = "strategy_versions"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    strategy_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    change_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, server_default="draft")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    strategy: Mapped[Strategy] = relationship("Strategy", back_populates="versions")
+
+    __table_args__ = (
+        UniqueConstraint("strategy_id", "version", name="uq_sv_strategy_version"),
+        CheckConstraint(
+            "status IN ('draft', 'testing', 'validated', 'deployed')",
+            name="ck_sv_status",
+        ),
+        Index("idx_sv_strategy", "strategy_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<StrategyVersion strategy={self.strategy_id} v={self.version} status={self.status}>"
+
+
+class StrategyTestRun(Base):
+    """Multi-episode test run for a strategy version.
+
+    Attributes:
+        id:                 UUID primary key.
+        strategy_id:        Foreign key → ``strategies.id``.
+        version:            Strategy version being tested.
+        config:             JSONB test configuration.
+        episodes_total:     Total episodes to run.
+        episodes_completed: Completed episode count.
+        status:             Run status (queued/running/completed/failed/cancelled).
+        results:            JSONB aggregated results.
+        recommendations:    JSONB list of improvement suggestions.
+        started_at:         UTC start timestamp.
+        completed_at:       UTC completion timestamp.
+        created_at:         UTC creation timestamp.
+    """
+
+    __tablename__ = "strategy_test_runs"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    strategy_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    episodes_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    episodes_completed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    status: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, server_default="queued")
+    results: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    recommendations: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    strategy: Mapped[Strategy] = relationship("Strategy")
+    episodes: Mapped[list[StrategyTestEpisode]] = relationship(
+        "StrategyTestEpisode",
+        back_populates="test_run",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed', 'cancelled')",
+            name="ck_str_status",
+        ),
+        Index("idx_str_strategy", "strategy_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<StrategyTestRun id={self.id} status={self.status} {self.episodes_completed}/{self.episodes_total}>"
+
+
+class StrategyTestEpisode(Base):
+    """Individual test episode result.
+
+    Attributes:
+        id:                  UUID primary key.
+        test_run_id:         Foreign key → ``strategy_test_runs.id``.
+        episode_number:      Sequential episode number within the run.
+        backtest_session_id: Foreign key → ``backtest_sessions.id`` (optional).
+        metrics:             JSONB episode metrics.
+        created_at:          UTC creation timestamp.
+    """
+
+    __tablename__ = "strategy_test_episodes"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    test_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("strategy_test_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    episode_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    backtest_session_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("backtest_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    test_run: Mapped[StrategyTestRun] = relationship("StrategyTestRun", back_populates="episodes")
+
+    __table_args__ = (Index("idx_ste_test_run", "test_run_id"),)
+
+    def __repr__(self) -> str:
+        return f"<StrategyTestEpisode run={self.test_run_id} ep={self.episode_number}>"
+
+
+class TrainingRun(Base):
+    """RL training run tracking.
+
+    Attributes:
+        id:                 UUID primary key.
+        account_id:         Foreign key → ``accounts.id``.
+        strategy_id:        Optional FK → ``strategies.id``.
+        config:             JSONB training configuration.
+        episodes_total:     Total planned episodes (may be unknown).
+        episodes_completed: Completed episode count.
+        status:             Run status (running/completed/failed/cancelled).
+        aggregate_stats:    JSONB aggregated statistics.
+        learning_curve:     JSONB learning curve data.
+        started_at:         UTC start timestamp.
+        completed_at:       UTC completion timestamp.
+    """
+
+    __tablename__ = "training_runs"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    episodes_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    episodes_completed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    status: Mapped[str] = mapped_column(VARCHAR(20), nullable=False, server_default="running")
+    aggregate_stats: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    learning_curve: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    account: Mapped[Account] = relationship("Account")
+    episodes: Mapped[list[TrainingEpisode]] = relationship(
+        "TrainingEpisode",
+        back_populates="training_run",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'cancelled')",
+            name="ck_tr_status",
+        ),
+        Index("idx_tr_account", "account_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TrainingRun id={self.id} status={self.status} episodes={self.episodes_completed}>"
+
+
+class TrainingEpisode(Base):
+    """Individual training episode result.
+
+    Attributes:
+        id:                  UUID primary key.
+        training_run_id:     Foreign key → ``training_runs.id``.
+        episode_number:      Sequential episode number.
+        backtest_session_id: Optional FK → ``backtest_sessions.id``.
+        metrics:             JSONB episode metrics.
+        created_at:          UTC creation timestamp.
+    """
+
+    __tablename__ = "training_episodes"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    training_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("training_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    episode_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    backtest_session_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("backtest_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    training_run: Mapped[TrainingRun] = relationship("TrainingRun", back_populates="episodes")
+
+    __table_args__ = (Index("idx_te_training_run", "training_run_id"),)
+
+    def __repr__(self) -> str:
+        return f"<TrainingEpisode run={self.training_run_id} ep={self.episode_number}>"

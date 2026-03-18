@@ -30,7 +30,10 @@ from src.api.routes.auth import router as auth_router
 from src.api.routes.backtest import router as backtest_router
 from src.api.routes.battles import router as battles_router
 from src.api.routes.market import router as market_router
+from src.api.routes.strategies import router as strategies_router
+from src.api.routes.strategy_tests import router as strategy_tests_router
 from src.api.routes.trading import router as trading_router
+from src.api.routes.training import router as training_router
 from src.api.routes.waitlist import router as waitlist_router
 from src.api.websocket.handlers import (
     handle_message,
@@ -231,6 +234,9 @@ def create_app() -> FastAPI:
     application.include_router(analytics_router)
     application.include_router(backtest_router)
     application.include_router(battles_router)
+    application.include_router(strategies_router)
+    application.include_router(strategy_tests_router)
+    application.include_router(training_router)
     application.include_router(waitlist_router)
 
     # ── WebSocket endpoint ────────────────────────────────────────────────────

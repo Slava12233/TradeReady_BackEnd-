@@ -1425,4 +1425,211 @@ Both `override_config` and `agent_ids` are optional. Returns a new `Battle` in `
 
 ### MCP Server Note
 
-The MCP server exposes all 43 tools, covering market data, trading, account, analytics, backtesting, agent management, and battles. See `docs/mcp_server.md` for full setup instructions.
+The MCP server exposes all 58 tools, covering market data, trading, account, analytics, backtesting, agent management, battles, strategy management, strategy testing, and training observation. See `docs/mcp_server.md` for full setup instructions.
+
+---
+
+## Strategy Development Cycle
+
+You can create, version, test, and deploy rule-based trading strategies entirely through the REST API. All strategy endpoints are under `/api/v1/strategies` and require authentication.
+
+### Workflow
+
+The full development loop is:
+
+1. **Create** a strategy with a definition (conditions + position sizing)
+2. **Test** it — runs multiple backtest episodes across historical data
+3. **Read results** — get aggregated metrics and improvement recommendations
+4. **Improve** — create a new version with updated conditions
+5. **Compare** — compare version 1 vs version 2 metrics side-by-side
+6. **Deploy** — promote the best version to live trading status
+
+### Strategy Definition Format
+
+A strategy definition is a JSON object with these fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `pairs` | string array | Trading pairs to monitor, e.g. `["BTCUSDT", "ETHUSDT"]` |
+| `timeframe` | string | Candle interval: `"1m"`, `"5m"`, `"15m"`, `"1h"`, `"4h"`, `"1d"` |
+| `entry_conditions` | object | Map of condition keys to threshold values (ALL must be true) |
+| `exit_conditions` | object | Map of condition keys to threshold values (ANY triggers exit) |
+| `position_size_pct` | number | % of total equity to allocate per position (e.g. `10` = 10%) |
+| `max_positions` | integer | Maximum simultaneous open positions |
+
+### Entry Condition Keys
+
+All entry conditions must be true simultaneously for a position to open.
+
+| Key | Value type | Trigger condition |
+|---|---|---|
+| `rsi_below` | number (0–100) | RSI-14 is below the threshold — oversold signal |
+| `rsi_above` | number (0–100) | RSI-14 is above the threshold — overbought momentum |
+| `macd_cross_above` | `true` | MACD line has crossed above the signal line — bullish |
+| `macd_cross_below` | `true` | MACD line has crossed below the signal line — bearish |
+| `price_above_sma` | integer (period) | Current price is above the SMA of the given period |
+| `price_below_sma` | integer (period) | Current price is below the SMA of the given period |
+| `price_above_ema` | integer (period) | Current price is above the EMA of the given period |
+| `price_below_ema` | integer (period) | Current price is below the EMA of the given period |
+| `bb_below_lower` | `true` | Price is below the lower Bollinger Band — mean-reversion buy signal |
+| `bb_above_upper` | `true` | Price is above the upper Bollinger Band — breakout signal |
+| `adx_above` | number | ADX is above the threshold — trend is strong enough to trade |
+| `volume_above_ma` | number (multiplier) | Current volume is above `volume_ma_20 × multiplier` — volume confirmation |
+
+### Exit Condition Keys
+
+Any single exit condition being true triggers a market sell of the full position.
+
+| Key | Value type | Trigger condition |
+|---|---|---|
+| `stop_loss_pct` | number | Exit if price drops this % below entry price |
+| `take_profit_pct` | number | Exit if price rises this % above entry price |
+| `trailing_stop_pct` | number | Exit if price drops this % below the highest price seen since entry |
+| `max_hold_candles` | integer | Exit after holding for this many candles regardless of price |
+| `rsi_above` | number (0–100) | Exit if RSI-14 rises above threshold — overbought |
+| `rsi_below` | number (0–100) | Exit if RSI-14 falls below threshold — momentum lost |
+| `macd_cross_below` | `true` | Exit if MACD line crosses below signal line — bearish signal |
+
+### Example Strategy Definition
+
+```json
+{
+  "pairs": ["BTCUSDT", "ETHUSDT"],
+  "timeframe": "1h",
+  "entry_conditions": {
+    "rsi_below": 35,
+    "macd_cross_above": true,
+    "adx_above": 20
+  },
+  "exit_conditions": {
+    "take_profit_pct": 5,
+    "stop_loss_pct": 2,
+    "trailing_stop_pct": 3,
+    "max_hold_candles": 72
+  },
+  "position_size_pct": 10,
+  "max_positions": 3
+}
+```
+
+### Create a Strategy
+
+```bash
+curl -X POST http://localhost:8000/api/v1/strategies \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ak_live_..." \
+  -d '{
+    "name": "BTC RSI Scalper",
+    "description": "Buy oversold BTC, exit on recovery",
+    "definition": {
+      "pairs": ["BTCUSDT"],
+      "timeframe": "1h",
+      "entry_conditions": {"rsi_below": 30},
+      "exit_conditions": {"take_profit_pct": 5, "stop_loss_pct": 2},
+      "position_size_pct": 10,
+      "max_positions": 3
+    }
+  }'
+```
+
+Response includes `strategy_id` (UUID), `status`, and `current_version` (starts at 1).
+
+### Run a Test
+
+```bash
+curl -X POST http://localhost:8000/api/v1/strategies/{strategy_id}/test \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ak_live_..." \
+  -d '{
+    "version": 1,
+    "episodes": 20,
+    "date_range": {"start": "2025-01-01T00:00:00Z", "end": "2025-12-31T23:59:59Z"},
+    "randomize_dates": true,
+    "episode_duration_days": 30,
+    "starting_balance": "10000"
+  }'
+```
+
+Returns a `test_run_id` and initial status (`"queued"` or `"running"`). Tests run asynchronously.
+
+### Get Test Results
+
+```bash
+# Poll for completion
+curl http://localhost:8000/api/v1/strategies/{strategy_id}/tests/{test_run_id} \
+  -H "X-API-Key: ak_live_..."
+
+# Get the latest completed results directly
+curl http://localhost:8000/api/v1/strategies/{strategy_id}/test-results \
+  -H "X-API-Key: ak_live_..."
+```
+
+Results include aggregated metrics (`avg_roi_pct`, `avg_sharpe`, `avg_max_drawdown_pct`, `win_rate_pct`, `total_trades`) and a `recommendations` list with specific improvement suggestions.
+
+### Compare Two Versions
+
+```bash
+curl "http://localhost:8000/api/v1/strategies/{strategy_id}/compare-versions?v1=1&v2=2" \
+  -H "X-API-Key: ak_live_..."
+```
+
+Returns per-version metrics and a `verdict` string explaining which version performs better and why.
+
+### Deploy a Strategy
+
+```bash
+curl -X POST http://localhost:8000/api/v1/strategies/{strategy_id}/deploy \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ak_live_..." \
+  -d '{"version": 2}'
+```
+
+Sets strategy `status` to `"deployed"` and records `deployed_at`.
+
+---
+
+## RL Developer
+
+If you are building a reinforcement learning agent that trains against the AgentExchange platform, use the `tradeready-gym` Gymnasium wrapper:
+
+```bash
+pip install tradeready-gym
+```
+
+The wrapper connects to this API to run backtest episodes as RL training steps. It reports each episode's results back to the platform automatically.
+
+### Training Results via REST API
+
+Training runs are tracked under `/api/v1/training`. You can query them at any time:
+
+```bash
+# List all your training runs
+curl http://localhost:8000/api/v1/training/runs \
+  -H "X-API-Key: ak_live_..."
+
+# Get a specific run with learning curve + all episodes
+curl http://localhost:8000/api/v1/training/runs/{run_id} \
+  -H "X-API-Key: ak_live_..."
+
+# Get learning curve data for a metric
+curl "http://localhost:8000/api/v1/training/runs/{run_id}/learning-curve?metric=roi_pct&window=10" \
+  -H "X-API-Key: ak_live_..."
+
+# Compare multiple runs
+curl "http://localhost:8000/api/v1/training/compare?run_ids=uuid1,uuid2,uuid3" \
+  -H "X-API-Key: ak_live_..."
+```
+
+### Training Endpoints Overview
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/training/runs` | Register a new training run (called by the Gym wrapper on env creation) |
+| `POST` | `/training/runs/{run_id}/episodes` | Report a completed episode with metrics |
+| `POST` | `/training/runs/{run_id}/complete` | Mark the training run as complete |
+| `GET` | `/training/runs` | List all training runs (filter by `status`) |
+| `GET` | `/training/runs/{run_id}` | Full run detail with learning curve and per-episode data |
+| `GET` | `/training/runs/{run_id}/learning-curve` | Learning curve data points for charting |
+| `GET` | `/training/compare` | Compare multiple runs side-by-side |
+
+The `tradeready-gym` wrapper calls the `POST` endpoints automatically. Use the `GET` endpoints to monitor progress from a dashboard or notebook.

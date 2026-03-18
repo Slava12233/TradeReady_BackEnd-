@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -19,6 +19,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `cleanup.py` | Daily cleanup: expire stale orders (>7d), prune minute snapshots (>7d), archive audit log (>30d) |
 | `backtest_cleanup.py` | Auto-cancel idle backtests (>1h), delete old backtest detail data (>90d) |
 | `battle_snapshots.py` | Capture battle equity snapshots every 5s; auto-complete expired battles every 10s |
+| `strategy_tasks.py` | Strategy test episodes: `run_strategy_episode` (5min limit), `aggregate_test_results` (1min limit) |
 | `__init__.py` | Package docstring (no exports) |
 
 ## Architecture & Patterns

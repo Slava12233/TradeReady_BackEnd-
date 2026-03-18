@@ -153,7 +153,7 @@ async def _lifespan(server: Server) -> AsyncIterator[dict[str, httpx.AsyncClient
 
 
 def create_server() -> tuple[Server, httpx.AsyncClient]:
-    """Instantiate the MCP server and register all 43 tools.
+    """Instantiate the MCP server and register all 58 tools.
 
     The HTTP client is created here (before the lifespan runs) so that it
     can be injected into ``register_tools``.  The same client is also
@@ -176,7 +176,7 @@ def create_server() -> tuple[Server, httpx.AsyncClient]:
     )
 
     register_tools(server, http_client)
-    logger.info("MCP server '%s' v%s ready with 43 tools", _SERVER_NAME, _SERVER_VERSION)
+    logger.info("MCP server '%s' v%s ready with 58 tools", _SERVER_NAME, _SERVER_VERSION)
     return server, http_client
 
 
@@ -189,7 +189,7 @@ async def main() -> None:
     """Run the MCP server over the stdio transport until the client disconnects.
 
     This coroutine:
-    1. Creates the MCP ``Server`` instance and registers all 43 tools.
+    1. Creates the MCP ``Server`` instance and registers all 58 tools.
     2. Opens the stdio transport context manager.
     3. Calls ``server.run()`` with the read/write streams and initialisation
        options, blocking until the session ends or an unrecoverable error

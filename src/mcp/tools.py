@@ -1,13 +1,13 @@
 """MCP tool definitions for the AI Agent Crypto Trading Platform.
 
-Defines all 43 trading tools covering the full trading lifecycle:
+Defines all 58 trading tools covering the full trading lifecycle:
 market data, account management, trading, backtesting, agent management,
-battles, and analytics.
+battles, analytics, strategies, strategy testing, and training observation.
 
 Each tool maps to a REST API endpoint via an ``httpx.AsyncClient`` that
 is injected at registration time by ``server.py``.
 
-Tools (43 total)
+Tools (58 total)
 ----------------
 Market Data (7):
  1.  get_price           — GET /api/v1/market/price/{symbol}
@@ -66,6 +66,27 @@ Battles (6):
 42.  get_battle_results  — GET /api/v1/battles/{id}/results
 43.  get_battle_replay   — GET /api/v1/battles/{id}/replay
 
+Strategy Management (7):
+44.  create_strategy             — POST /api/v1/strategies
+45.  get_strategies              — GET /api/v1/strategies
+46.  get_strategy                — GET /api/v1/strategies/{id}
+47.  create_strategy_version     — POST /api/v1/strategies/{id}/versions
+48.  get_strategy_versions       — GET /api/v1/strategies/{id}/versions
+49.  deploy_strategy             — POST /api/v1/strategies/{id}/deploy
+50.  undeploy_strategy           — POST /api/v1/strategies/{id}/undeploy
+
+Strategy Testing (5):
+51.  run_strategy_test           — POST /api/v1/strategies/{id}/test
+52.  get_test_status             — GET /api/v1/strategies/{id}/tests/{test_id}
+53.  get_test_results            — GET /api/v1/strategies/{id}/tests/{test_id}
+54.  compare_versions            — GET /api/v1/strategies/{id}/compare-versions
+55.  get_strategy_recommendations — GET /api/v1/strategies/{id}/test-results
+
+Training Observation (3):
+56.  get_training_runs           — GET /api/v1/training/runs
+57.  get_training_run_detail     — GET /api/v1/training/runs/{run_id}
+58.  compare_training_runs       — GET /api/v1/training/compare
+
 Usage::
 
     import httpx
@@ -79,6 +100,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -93,7 +115,7 @@ logger = logging.getLogger(__name__)
 # Tool count constant
 # ---------------------------------------------------------------------------
 
-TOOL_COUNT = 43
+TOOL_COUNT = 58
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -937,6 +959,224 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
             "required": ["battle_id"],
         },
     ),
+    # ==================================================================
+    # Strategy Management (7 tools)
+    # ==================================================================
+    types.Tool(
+        name="create_strategy",
+        description="Create a new trading strategy with a definition of pairs, entry/exit conditions, and position sizing.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Strategy name"},
+                "description": {"type": "string", "description": "Strategy description"},
+                "definition": {
+                    "type": "object",
+                    "description": "Strategy definition JSON with pairs, timeframe, entry_conditions, exit_conditions, position_size_pct, max_positions",
+                },
+            },
+            "required": ["name", "definition"],
+        },
+    ),
+    types.Tool(
+        name="get_strategies",
+        description="List all strategies for the current account. Supports filtering by status and pagination.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by status",
+                    "enum": ["draft", "testing", "validated", "deployed", "archived"],
+                },
+                "limit": {"type": "integer", "description": "Max results (default 50)", "default": 50},
+                "offset": {"type": "integer", "description": "Pagination offset", "default": 0},
+            },
+            "required": [],
+        },
+    ),
+    types.Tool(
+        name="get_strategy",
+        description="Get detailed information about a specific strategy, including its current version definition and latest test results.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+            },
+            "required": ["strategy_id"],
+        },
+    ),
+    types.Tool(
+        name="create_strategy_version",
+        description="Create a new version of a strategy with an updated definition. Auto-increments version number.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+                "definition": {"type": "object", "description": "Updated strategy definition JSON"},
+                "change_notes": {"type": "string", "description": "Description of what changed"},
+            },
+            "required": ["strategy_id", "definition"],
+        },
+    ),
+    types.Tool(
+        name="get_strategy_versions",
+        description="List all versions of a strategy with their definitions and change notes.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+            },
+            "required": ["strategy_id"],
+        },
+    ),
+    types.Tool(
+        name="deploy_strategy",
+        description="Deploy a specific version of a strategy for live trading. The version must be tested/validated first.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+                "version": {"type": "integer", "description": "Version number to deploy"},
+            },
+            "required": ["strategy_id", "version"],
+        },
+    ),
+    types.Tool(
+        name="undeploy_strategy",
+        description="Stop live trading for a deployed strategy. Reverts the strategy status back to validated.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+            },
+            "required": ["strategy_id"],
+        },
+    ),
+    # ==================================================================
+    # Strategy Testing (5 tools)
+    # ==================================================================
+    types.Tool(
+        name="run_strategy_test",
+        description=(
+            "Trigger a multi-episode backtest of a strategy version. Each episode runs the strategy "
+            "on a randomized date window. Returns a test run ID for polling progress."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+                "version": {"type": "integer", "description": "Version number to test"},
+                "episodes": {"type": "integer", "description": "Number of test episodes (default 10)", "default": 10},
+                "date_range": {
+                    "type": "object",
+                    "description": "Date range for testing",
+                    "properties": {
+                        "start": {"type": "string", "description": "Start date (ISO 8601)"},
+                        "end": {"type": "string", "description": "End date (ISO 8601)"},
+                    },
+                },
+                "episode_duration_days": {"type": "integer", "description": "Days per episode (default 30)", "default": 30},
+            },
+            "required": ["strategy_id", "version"],
+        },
+    ),
+    types.Tool(
+        name="get_test_status",
+        description="Get the current status and progress of a strategy test run.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+                "test_id": {"type": "string", "description": "UUID of the test run"},
+            },
+            "required": ["strategy_id", "test_id"],
+        },
+    ),
+    types.Tool(
+        name="get_test_results",
+        description=(
+            "Get full test results including aggregated metrics (ROI, Sharpe, drawdown), "
+            "per-pair breakdown, and AI-generated improvement recommendations."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+                "test_id": {"type": "string", "description": "UUID of the test run"},
+            },
+            "required": ["strategy_id", "test_id"],
+        },
+    ),
+    types.Tool(
+        name="compare_versions",
+        description="Compare test results between two strategy versions side-by-side with improvement deltas.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+                "v1": {"type": "integer", "description": "First version number"},
+                "v2": {"type": "integer", "description": "Second version number"},
+            },
+            "required": ["strategy_id", "v1", "v2"],
+        },
+    ),
+    types.Tool(
+        name="get_strategy_recommendations",
+        description="Get AI-generated improvement recommendations from the latest completed test of a strategy.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "description": "UUID of the strategy"},
+            },
+            "required": ["strategy_id"],
+        },
+    ),
+    # ==================================================================
+    # Training Observation (3 tools)
+    # ==================================================================
+    types.Tool(
+        name="get_training_runs",
+        description="List all RL training runs with their metrics, status, and learning curves.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by status",
+                    "enum": ["running", "completed", "failed"],
+                },
+                "limit": {"type": "integer", "description": "Max results (default 20)", "default": 20},
+                "offset": {"type": "integer", "description": "Pagination offset", "default": 0},
+            },
+            "required": [],
+        },
+    ),
+    types.Tool(
+        name="get_training_run_detail",
+        description="Get full detail of a training run including learning curve data, aggregate stats, and episode list.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "string", "description": "UUID of the training run"},
+            },
+            "required": ["run_id"],
+        },
+    ),
+    types.Tool(
+        name="compare_training_runs",
+        description="Compare multiple training runs side-by-side on key metrics like ROI, Sharpe, and reward.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "run_ids": {
+                    "type": "string",
+                    "description": "Comma-separated list of training run UUIDs to compare",
+                },
+            },
+            "required": ["run_ids"],
+        },
+    ),
 ]
 
 
@@ -971,6 +1211,8 @@ async def _call_api(
     """
     response = await client.request(method, path, params=params, json=json)
     response.raise_for_status()
+    if response.status_code == 204 or not response.content:
+        return {}
     return response.json()  # type: ignore[no-any-return]
 
 
@@ -1020,8 +1262,6 @@ def _json_content(
     Returns:
         A list containing one ``TextContent`` with the JSON string.
     """
-    import json
-
     return [types.TextContent(type="text", text=json.dumps(data, indent=2))]
 
 
@@ -1045,7 +1285,7 @@ def _text_content(
 
 
 def register_tools(server: Server, http_client: httpx.AsyncClient) -> None:
-    """Register all 43 trading tools on *server*.
+    """Register all 58 trading tools on *server*.
 
     This function wires the tool list and the call handler to the MCP
     ``Server`` instance.  Call it once during server initialisation after
@@ -1076,7 +1316,7 @@ def register_tools(server: Server, http_client: httpx.AsyncClient) -> None:
         Returns:
             A list of MCP content items (always ``TextContent`` here).
         """
-        logger.debug("MCP tool call: %s  args=%s", name, arguments)
+        logger.debug("MCP tool call: %s", name)  # never log arguments (may contain financial data)
 
         try:
             return await _dispatch(name, arguments, http_client)
@@ -1452,6 +1692,148 @@ async def _dispatch(
         case "get_battle_replay":
             battle_id = args["battle_id"]
             data = await _call_api(client, "GET", f"/api/v1/battles/{battle_id}/replay")
+            return _json_content(data)
+
+        # ------------------------------------------------------------------
+        # Strategy Management (7 tools)
+        # ------------------------------------------------------------------
+        case "create_strategy":
+            body: dict[str, Any] = {
+                "name": args["name"],
+                "definition": args["definition"],
+            }
+            if args.get("description"):
+                body["description"] = args["description"]
+            data = await _call_api(client, "POST", "/api/v1/strategies", json=body)
+            return _json_content(data)
+
+        case "get_strategies":
+            params = {}
+            if args.get("status"):
+                params["status"] = args["status"]
+            if "limit" in args:
+                params["limit"] = int(args["limit"])
+            if "offset" in args:
+                params["offset"] = int(args["offset"])
+            data = await _call_api(client, "GET", "/api/v1/strategies", params=params)
+            return _json_content(data)
+
+        case "get_strategy":
+            strategy_id: str = args["strategy_id"]
+            data = await _call_api(client, "GET", f"/api/v1/strategies/{strategy_id}")
+            return _json_content(data)
+
+        case "create_strategy_version":
+            strategy_id = args["strategy_id"]
+            body = {"definition": args["definition"]}
+            if args.get("change_notes"):
+                body["change_notes"] = args["change_notes"]
+            data = await _call_api(
+                client, "POST", f"/api/v1/strategies/{strategy_id}/versions", json=body
+            )
+            return _json_content(data)
+
+        case "get_strategy_versions":
+            strategy_id = args["strategy_id"]
+            data = await _call_api(client, "GET", f"/api/v1/strategies/{strategy_id}/versions")
+            return _json_content(data)
+
+        case "deploy_strategy":
+            strategy_id = args["strategy_id"]
+            data = await _call_api(
+                client, "POST", f"/api/v1/strategies/{strategy_id}/deploy",
+                json={"version": int(args["version"])},
+            )
+            return _json_content(data)
+
+        case "undeploy_strategy":
+            strategy_id = args["strategy_id"]
+            data = await _call_api(client, "POST", f"/api/v1/strategies/{strategy_id}/undeploy")
+            return _json_content(data)
+
+        # ------------------------------------------------------------------
+        # Strategy Testing (5 tools)
+        # ------------------------------------------------------------------
+        case "run_strategy_test":
+            strategy_id = args["strategy_id"]
+            body = {"version": int(args["version"])}
+            if "episodes" in args:
+                body["episodes"] = int(args["episodes"])
+            if "date_range" in args and args["date_range"]:
+                body["date_range"] = args["date_range"]
+            if "episode_duration_days" in args:
+                body["episode_duration_days"] = int(args["episode_duration_days"])
+            data = await _call_api(
+                client, "POST", f"/api/v1/strategies/{strategy_id}/test", json=body
+            )
+            return _json_content(data)
+
+        case "get_test_status":
+            strategy_id = args["strategy_id"]
+            test_id: str = args["test_id"]
+            data = await _call_api(
+                client, "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
+            )
+            return _json_content(data)
+
+        case "get_test_results":
+            strategy_id = args["strategy_id"]
+            test_id = args["test_id"]
+            data = await _call_api(
+                client, "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
+            )
+            return _json_content(data)
+
+        case "compare_versions":
+            strategy_id = args["strategy_id"]
+            data = await _call_api(
+                client, "GET", f"/api/v1/strategies/{strategy_id}/compare-versions",
+                params={"v1": int(args["v1"]), "v2": int(args["v2"])},
+            )
+            return _json_content(data)
+
+        case "get_strategy_recommendations":
+            strategy_id = args["strategy_id"]
+            data = await _call_api(
+                client, "GET", f"/api/v1/strategies/{strategy_id}/test-results"
+            )
+            recommendations = data.get("recommendations", [])
+            return _json_content({"strategy_id": strategy_id, "recommendations": recommendations})
+
+        # ------------------------------------------------------------------
+        # Training Observation (3 tools)
+        # ------------------------------------------------------------------
+        case "get_training_runs":
+            params = {}
+            if args.get("status"):
+                params["status"] = args["status"]
+            if "limit" in args:
+                params["limit"] = int(args["limit"])
+            if "offset" in args:
+                params["offset"] = int(args["offset"])
+            data = await _call_api(client, "GET", "/api/v1/training/runs", params=params)
+            return _json_content(data)
+
+        case "get_training_run_detail":
+            run_id: str = args["run_id"]
+            data = await _call_api(client, "GET", f"/api/v1/training/runs/{run_id}")
+            return _json_content(data)
+
+        case "compare_training_runs":
+            run_ids_str: str = args["run_ids"]
+            # Validate each UUID to prevent query param injection
+            import uuid as _uuid_mod
+            for rid in run_ids_str.split(","):
+                rid = rid.strip()
+                if rid:
+                    try:
+                        _uuid_mod.UUID(rid)
+                    except ValueError:
+                        return _error_content(ValueError(f"Invalid UUID in run_ids: {rid!r}"))
+            data = await _call_api(
+                client, "GET", "/api/v1/training/compare",
+                params={"run_ids": run_ids_str},
+            )
             return _json_content(data)
 
         case _:

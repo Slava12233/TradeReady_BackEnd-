@@ -1,6 +1,6 @@
 # API Gateway (`src/api/`)
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > HTTP + WebSocket gateway that wires middleware, REST routes, Pydantic schemas, and real-time channels into the FastAPI application.
 
@@ -16,7 +16,7 @@ This module contains everything between the incoming HTTP/WebSocket request and 
 | `middleware/auth.py` | `AuthMiddleware` (Starlette `BaseHTTPMiddleware`), `get_current_account` / `get_current_agent` FastAPI deps, `CurrentAccountDep` / `CurrentAgentDep` aliases |
 | `middleware/logging.py` | `LoggingMiddleware` -- structured request/response logging with correlation `request_id`, latency, account context |
 | `middleware/rate_limit.py` | `RateLimitMiddleware` -- Redis sliding-window rate limiter with 3 tiers (general 600/min, orders 100/min, market_data 1200/min) |
-| `routes/*.py` | 9 REST router modules, each exporting a single `router: APIRouter` |
+| `routes/*.py` | 12 REST router modules, each exporting a single `router: APIRouter` |
 | `schemas/*.py` | Pydantic v2 request/response models, one file per route module |
 | `websocket/manager.py` | `ConnectionManager` -- connection registry, auth, heartbeat, broadcast |
 | `websocket/channels.py` | Channel classes (`TickerChannel`, `CandleChannel`, `OrderChannel`, `PortfolioChannel`, `BattleChannel`) + `resolve_channel_name()` |
@@ -64,6 +64,9 @@ All routers are mounted under `/api/v1/` in `create_app()`. Each route file expo
 | `routes/analytics.py` | `/api/v1/analytics` | API key or JWT |
 | `routes/backtest.py` | `/api/v1/backtest` | API key or JWT |
 | `routes/battles.py` | `/api/v1/battles` | JWT only |
+| `routes/strategies.py` | `/api/v1/strategies` | API key or JWT |
+| `routes/strategy_tests.py` | `/api/v1/strategies` | API key or JWT |
+| `routes/training.py` | `/api/v1/training` | API key or JWT |
 | `routes/waitlist.py` | `/api/v1/waitlist` | Varies |
 
 Additional mounts:

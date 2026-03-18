@@ -1,6 +1,6 @@
 # Alembic Migrations
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-18 -->
 
 > Async Alembic migrations for TimescaleDB/PostgreSQL schema management.
 
@@ -14,7 +14,7 @@ Manages all database schema changes for the AI Agent Crypto Trading Platform. Mi
 |------|---------|
 | `alembic.ini` (project root) | Alembic config: script location, file template, post-write ruff hook |
 | `alembic/env.py` | Async migration runner: `asyncio.run(run_migrations_online())` with `NullPool` |
-| `alembic/versions/` | All migration scripts (sequential `001`..`015` numeric revisions) |
+| `alembic/versions/` | All migration scripts (sequential `001`..`016` numeric revisions) |
 | `src/database/models.py` | SQLAlchemy ORM models (`Base.metadata` used for autogenerate) |
 | `src/config.py` | `get_settings().database_url` provides the connection string |
 
@@ -36,8 +36,9 @@ Manages all database schema changes for the AI Agent Crypto Trading Platform. Mi
 | 013 | `013_add_agent_id_to_backtest_sessions.py` | Nullable `agent_id` FK on `backtest_sessions` |
 | 014 | `014_enforce_backtest_agent_id_not_null.py` | Set `agent_id` NOT NULL on `backtest_sessions` (run after backfill) |
 | 015 | `015_add_historical_battle_support.py` | `battle_mode`, `backtest_config` on `battles`; `backtest_session_id` FK on `battle_participants` |
+| 016 | `016_strategy_and_training_tables.py` | `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes` |
 
-**Current head:** `015`
+**Current head:** `016`
 
 **Note:** Migration `011` (drop legacy account trading columns) is missing from the versions directory but is referenced in the chain. The chain skips from `010` directly to `012` via `down_revision`.
 
@@ -132,3 +133,4 @@ alembic downgrade 010      # Roll back to specific revision
 
 - `2026-03-17` -- Migrations 013-015 added: agent-scoped backtests and historical battle support
 - `2026-03-17` -- Initial CLAUDE.md created
+- `2026-03-18` -- Migration 016 added: strategy and training tables (strategies, strategy_versions, strategy_test_runs, strategy_test_episodes, training_runs, training_episodes)
