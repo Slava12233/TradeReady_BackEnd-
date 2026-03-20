@@ -1,6 +1,6 @@
 # Tests
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-20 -->
 
 > Shared fixtures, factory functions, and conventions for all unit and integration tests.
 
@@ -14,7 +14,7 @@ The `tests/` directory contains all automated tests for the trading platform. Te
 |------|---------|
 | `conftest.py` | Shared fixtures: mock DB session, mock Redis, mock price cache, ORM factories, test settings |
 | `unit/` | 70 unit test files; each tests a single module in isolation with mocks |
-| `integration/` | 24 integration test files (~556 tests); test API endpoints, E2E workflows, WebSocket, backtesting, strategy, and training flows |
+| `integration/` | 24 integration test files (~504 tests); test API endpoints, E2E workflows, WebSocket, backtesting, strategy, and training flows |
 | `__init__.py` | Empty package marker (exists at `tests/`, `tests/unit/`, `tests/integration/`) |
 
 ## Architecture & Patterns
@@ -160,3 +160,4 @@ async def test_repo_get(mock_db_session):
 ## Recent Changes
 
 - `2026-03-17` -- Initial CLAUDE.md created
+- `2026-03-19` -- Synced with codebase: confirmed 70 unit test files (1184 tests), 24 integration test files (504 tests). All file inventories verified.

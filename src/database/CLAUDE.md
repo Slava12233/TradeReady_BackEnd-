@@ -1,6 +1,6 @@
 # Database Layer
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > SQLAlchemy ORM models, async session management, and repository pattern for TimescaleDB/PostgreSQL.
 
@@ -8,17 +8,17 @@
 
 This module defines the entire data layer for the AI Agent Crypto Trading Platform. It contains:
 
-1. **ORM models** (`models.py`) -- all 23 table definitions using SQLAlchemy 2.0 mapped columns (17 original + 6 strategy/training tables)
+1. **ORM models** (`models.py`) -- all 24 table definitions using SQLAlchemy 2.0 mapped columns (18 original + 6 strategy/training tables)
 2. **Session management** (`session.py`) -- async engine, session factory, and raw asyncpg pool as lazy singletons
 3. **Repository classes** (`repositories/`) -- data access layer with one repository per domain entity (covered in `repositories/CLAUDE.md`)
 
-The database is **TimescaleDB** (PostgreSQL extension). Three tables are hypertables partitioned by time: `ticks`, `portfolio_snapshots`, `backtest_snapshots`, and `battle_snapshots`.
+The database is **TimescaleDB** (PostgreSQL extension). Four tables are hypertables partitioned by time: `ticks`, `portfolio_snapshots`, `backtest_snapshots`, and `battle_snapshots`.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `models.py` | All 23 ORM model classes inheriting from shared `Base` |
+| `models.py` | All 24 ORM model classes inheriting from shared `Base` |
 | `session.py` | Async engine, `async_sessionmaker`, raw `asyncpg` pool, `init_db()`/`close_db()` lifecycle |
 | `__init__.py` | Empty (package marker only) |
 | `repositories/` | One repository class per domain entity (has its own CLAUDE.md) |

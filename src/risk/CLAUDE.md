@@ -1,6 +1,6 @@
 # Risk Management
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Enforces trading limits and daily-loss circuit-breaker logic to prevent agents from unrealistic or destructive trading behaviour.
 

@@ -1,6 +1,26 @@
 {
   "version": 1,
   "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "computedHash": "5ad54941f835b59cfdd6e4cd2556c575a9d2a089197b553c65274dd321db5ec3"
+    },
+    "agent-ui": {
+      "source": "inferen-sh/skills",
+      "sourceType": "github",
+      "computedHash": "e3dfd99e9ac5ab83ee4e841a5419224352a16cadc45f4f09202c499ce865515d"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "645b891da1edbae76ab79c7b088d4e73397464f8396edaf773c0e01971ce75d6"
+    },
+    "prompt-engineering-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "b3928f5cd846977a15c15dfd04dd9180ca05639063fe92e8f4dd8afb61173d4a"
+    },
     "skill-creator": {
       "source": "anthropics/skills",
       "sourceType": "github",

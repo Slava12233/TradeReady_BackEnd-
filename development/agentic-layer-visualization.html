@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AiTradingAgent — Agentic Layer Dashboard</title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --bg2: #111827;
+    --bg3: #1a2233;
+    --border: #1e2d45;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --accent: #3b82f6;
+    --accent2: #6366f1;
+    --green: #10b981;
+    --green2: #059669;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --orange: #f97316;
+    --purple: #8b5cf6;
+    --pink: #ec4899;
+    --cyan: #06b6d4;
+    --teal: #14b8a6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                radial-gradient(circle at 70% 50%, rgba(59,130,246,0.06) 0%, transparent 50%);
+    animation: headerPulse 8s ease-in-out infinite;
+  }
+  @keyframes headerPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+  .header-content { position: relative; z-index: 1; max-width: 1600px; margin: 0 auto; }
+  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  .header h1 span { background: linear-gradient(90deg, var(--accent), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header p { color: var(--text2); margin-top: 6px; font-size: 14px; }
+  .stats-bar {
+    display: flex;
+    gap: 24px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .stat-chip {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+  .stat-chip .num { font-size: 22px; font-weight: 700; }
+  .stat-chip.blue .num { color: var(--accent); }
+  .stat-chip.green .num { color: var(--green); }
+  .stat-chip.purple .num { color: var(--purple); }
+  .stat-chip.orange .num { color: var(--orange); }
+  .stat-chip.cyan .num { color: var(--cyan); }
+
+  /* ── Layout ── */
+  .container { max-width: 1600px; margin: 0 auto; padding: 24px 40px 60px; }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text2);
+    border: none;
+    background: none;
+  }
+  .tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .tab.active { color: white; background: var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 32px; }
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .badge {
+    font-size: 11px;
+    background: var(--accent);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  /* ── Agent Cards ── */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+  }
+  .agent-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .agent-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(59,130,246,0.1); }
+  .agent-card .glow {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+  }
+  .agent-card.quality .glow { background: linear-gradient(90deg, var(--green), var(--teal)); }
+  .agent-card.security .glow { background: linear-gradient(90deg, var(--red), var(--orange)); }
+  .agent-card.infra .glow { background: linear-gradient(90deg, var(--yellow), var(--orange)); }
+  .agent-card.dev .glow { background: linear-gradient(90deg, var(--accent), var(--purple)); }
+  .agent-card.research .glow { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+
+  .agent-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .agent-desc { font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 12px; min-height: 36px; }
+  .agent-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .agent-tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag-tool { background: rgba(59,130,246,0.15); color: var(--accent); }
+  .tag-model { background: rgba(139,92,246,0.15); color: var(--purple); }
+  .tag-readonly { background: rgba(16,185,129,0.15); color: var(--green); }
+  .tag-write { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .tag-fix { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  .agent-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text2);
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .agent-stats span b { color: var(--text); }
+
+  /* ── Expanded agent detail ── */
+  .agent-detail-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+  }
+  .agent-detail-overlay.open { display: flex; }
+  .agent-detail {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 700px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  .agent-detail h2 { font-size: 20px; margin-bottom: 4px; }
+  .agent-detail .close-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: var(--text);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+  }
+  .agent-detail .close-btn:hover { background: rgba(255,255,255,0.2); }
+  .detail-section { margin-top: 20px; }
+  .detail-section h3 { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .detail-section ul { list-style: none; padding: 0; }
+  .detail-section ul li {
+    font-size: 13px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .detail-section ul li::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
+
+  /* ── Pipeline Diagram ── */
+  .pipeline-container { margin-bottom: 24px; }
+  .pipeline-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+  }
+  .pipeline-name { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    padding: 8px 0;
+  }
+  .pipeline-node {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    position: relative;
+  }
+  .pipeline-node.quality { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .pipeline-node.security { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .pipeline-node.infra { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+  .pipeline-node.dev { background: rgba(59,130,246,0.15); color: var(--accent); border: 1px solid rgba(59,130,246,0.3); }
+  .pipeline-node.research { background: rgba(139,92,246,0.15); color: var(--purple); border: 1px solid rgba(139,92,246,0.3); }
+  .pipeline-node.action { background: rgba(255,255,255,0.05); color: var(--text2); border: 1px solid var(--border); font-style: italic; font-weight: 400; }
+  .pipeline-arrow {
+    color: var(--text2);
+    font-size: 18px;
+    padding: 0 6px;
+    user-select: none;
+  }
+
+  /* ── CLAUDE.md Tree ── */
+  .tree-container {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .tree-group { margin-bottom: 20px; }
+  .tree-group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .tree-group-title .count { color: var(--accent); font-size: 12px; }
+  .tree-group-title .chevron { transition: transform 0.2s; display: inline-block; }
+  .tree-group-title.collapsed .chevron { transform: rotate(-90deg); }
+  .tree-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 6px; }
+  .tree-items.collapsed { display: none; }
+  .tree-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    transition: background 0.15s;
+  }
+  .tree-item:hover { background: rgba(255,255,255,0.05); }
+  .tree-item .path { color: var(--accent); font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; min-width: 280px; }
+  .tree-item .desc { color: var(--text2); }
+  .tree-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .tree-dot.backend { background: var(--green); }
+  .tree-dot.frontend { background: var(--accent); }
+  .tree-dot.testing { background: var(--yellow); }
+  .tree-dot.infra { background: var(--orange); }
+  .tree-dot.dev { background: var(--purple); }
+  .tree-dot.root { background: var(--pink); }
+
+  /* ── Architecture Diagram ── */
+  .arch-container {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    overflow-x: auto;
+  }
+  .arch-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    align-items: stretch;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .arch-box {
+    padding: 14px 18px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    min-width: 130px;
+    border: 1px solid;
+    position: relative;
+  }
+  .arch-box small { display: block; font-size: 10px; opacity: 0.7; margin-top: 2px; }
+  .arch-box.routes { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.3); color: var(--accent); }
+  .arch-box.schemas { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.3); color: var(--purple); }
+  .arch-box.services { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); color: var(--green); }
+  .arch-box.repos { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: var(--yellow); }
+  .arch-box.models { background: rgba(236,72,153,0.12); border-color: rgba(236,72,153,0.3); color: var(--pink); }
+  .arch-box.external { background: rgba(6,182,212,0.12); border-color: rgba(6,182,212,0.3); color: var(--cyan); }
+  .arch-box.infra { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.3); color: var(--orange); }
+  .arch-box.frontend { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.3); color: #818cf8; }
+  .arch-connector {
+    text-align: center;
+    color: var(--text2);
+    font-size: 20px;
+    margin: 4px 0;
+    letter-spacing: 8px;
+  }
+  .arch-label {
+    font-size: 11px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-align: center;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  /* ── Dependency Map ── */
+  .dep-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .dep-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .dep-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .dep-card .dep-arrow { font-size: 11px; color: var(--text2); padding: 3px 0; font-family: monospace; }
+  .dep-card .dep-arrow span { color: var(--accent); }
+
+  /* ── Heatmap ── */
+  .heatmap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 4px;
+  }
+  .heat-cell {
+    padding: 12px 8px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    transition: transform 0.15s;
+  }
+  .heat-cell:hover { transform: scale(1.05); }
+  .heat-cell .heat-num { font-size: 18px; display: block; margin-bottom: 2px; }
+  .heat-1 { background: rgba(16,185,129,0.1); color: var(--green); }
+  .heat-2 { background: rgba(16,185,129,0.2); color: var(--green); }
+  .heat-3 { background: rgba(245,158,11,0.2); color: var(--yellow); }
+  .heat-4 { background: rgba(245,158,11,0.3); color: var(--yellow); }
+  .heat-5 { background: rgba(239,68,68,0.2); color: var(--orange); }
+  .heat-6 { background: rgba(239,68,68,0.3); color: var(--red); }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; padding-left: 28px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--accent), var(--purple), var(--green));
+    border-radius: 1px;
+  }
+  .timeline-item {
+    position: relative;
+    padding: 12px 0 24px 20px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 16px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.3);
+  }
+  .timeline-date { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .timeline-text { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
+
+  /* ── Utility ── */
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  .glow-text { text-shadow: 0 0 20px rgba(59,130,246,0.3); }
+
+  @media (max-width: 768px) {
+    .container { padding: 16px; }
+    .header { padding: 20px 16px; }
+    .agent-grid { grid-template-columns: 1fr; }
+    .tree-items { grid-template-columns: 1fr; }
+    .pipeline-flow { flex-direction: column; align-items: flex-start; }
+    .pipeline-arrow { transform: rotate(90deg); padding: 2px 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ HEADER ═══════════════ -->
+<div class="header">
+  <div class="header-content">
+    <h1><span>AiTradingAgent</span> — Agentic Development Layer</h1>
+    <p>Real-time overview of 16 sub-agents, 66 CLAUDE.md navigation files, 6 execution pipelines, and the full development architecture</p>
+    <div class="stats-bar">
+      <div class="stat-chip blue"><span class="num">16</span> Sub-Agents</div>
+      <div class="stat-chip green"><span class="num">66</span> CLAUDE.md Files</div>
+      <div class="stat-chip purple"><span class="num">6</span> Pipelines</div>
+      <div class="stat-chip orange"><span class="num">19</span> Backend Modules</div>
+      <div class="stat-chip cyan"><span class="num">27</span> Frontend Modules</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<div class="container">
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('agents')">Agent Fleet</button>
+    <button class="tab" onclick="switchTab('pipelines')">Pipelines</button>
+    <button class="tab" onclick="switchTab('claudemd')">CLAUDE.md Map</button>
+    <button class="tab" onclick="switchTab('architecture')">Architecture</button>
+    <button class="tab" onclick="switchTab('dependencies')">Agent Dependencies</button>
+    <button class="tab" onclick="switchTab('timeline')">Timeline</button>
+  </div>
+
+  <!-- ═══════════ TAB 1: AGENT FLEET ═══════════ -->
+  <div class="tab-content active" id="tab-agents">
+
+    <!-- Quality Gates -->
+    <div class="section">
+      <div class="section-title">Quality Gate Agents <span class="badge">3 agents — every change</span></div>
+      <div class="agent-grid">
+        <div class="agent-card quality" onclick="showAgent('code-reviewer')">
+          <div class="glow"></div>
+          <div class="agent-name">code-reviewer</div>
+          <div class="agent-desc">Reviews code against project standards in CLAUDE.md files. Saves reports to development/code-reviews/</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">5 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">report + write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>5</b> workflow steps</span>
+            <span><b>8</b> rules</span>
+            <span><b>4</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card quality" onclick="showAgent('test-runner')">
+          <div class="glow"></div>
+          <div class="agent-name">test-runner</div>
+          <div class="agent-desc">Maps changed files to tests, runs them, writes missing tests per tests/CLAUDE.md standards</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">run + write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>5</b> workflow steps</span>
+            <span><b>9</b> rules</span>
+            <span><b>4</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card quality" onclick="showAgent('context-manager')">
+          <div class="glow"></div>
+          <div class="agent-name">context-manager</div>
+          <div class="agent-desc">Maintains development/context.md and syncs/creates CLAUDE.md navigation files across all directories</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>8</b> workflow steps</span>
+            <span><b>9</b> rules</span>
+            <span><b>66</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Security -->
+    <div class="section">
+      <div class="section-title">Security Agents <span class="badge" style="background:var(--red)">2 agents — sensitive changes</span></div>
+      <div class="agent-grid">
+        <div class="agent-card security" onclick="showAgent('security-auditor')">
+          <div class="glow"></div>
+          <div class="agent-name">security-auditor</div>
+          <div class="agent-desc">Read-only audit: auth bypasses, injection, secret exposure, agent isolation, rate limits, XSS</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">4 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-readonly">read-only</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>4</b> workflow steps</span>
+            <span><b>9</b> rules</span>
+            <span><b>4</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card security" onclick="showAgent('security-reviewer')">
+          <div class="glow"></div>
+          <div class="agent-name">security-reviewer</div>
+          <div class="agent-desc">Vulnerability detection + remediation. Can fix CRITICAL issues directly. OWASP Top 10, SSRF, injection</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-fix">read + fix</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>4</b> workflow steps</span>
+            <span><b>7</b> rules</span>
+            <span><b>11</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Infrastructure -->
+    <div class="section">
+      <div class="section-title">Infrastructure Agents <span class="badge" style="background:var(--yellow);color:#000">5 agents — deploys, migrations, APIs</span></div>
+      <div class="agent-grid">
+        <div class="agent-card infra" onclick="showAgent('migration-helper')">
+          <div class="glow"></div>
+          <div class="agent-name">migration-helper</div>
+          <div class="agent-desc">Generates/validates Alembic migrations. Checks destructive ops, two-phase NOT NULL, hypertable PKs</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>2</b> workflow steps</span>
+            <span><b>1</b> rules</span>
+            <span><b>4</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card infra" onclick="showAgent('api-sync-checker')">
+          <div class="glow"></div>
+          <div class="agent-name">api-sync-checker</div>
+          <div class="agent-desc">Compares Pydantic schemas vs TypeScript types, verifies api-client.ts routes match backend</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">4 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-readonly">read-only</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>8</b> workflow steps</span>
+            <span><b>9</b> rules</span>
+            <span><b>8</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card infra" onclick="showAgent('deploy-checker')">
+          <div class="glow"></div>
+          <div class="agent-name">deploy-checker</div>
+          <div class="agent-desc">Full A-Z deployment readiness: lint, types, tests, Docker, env vars, security, CI/CD pipeline</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">report + write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>10</b> workflow steps</span>
+            <span><b>8</b> rules</span>
+            <span><b>6</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card infra" onclick="showAgent('doc-updater')">
+          <div class="glow"></div>
+          <div class="agent-name">doc-updater</div>
+          <div class="agent-desc">Syncs docs/skill.md, api_reference.md, CLAUDE.md files, and SDK docs with actual code</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>6</b> workflow steps</span>
+            <span><b>7</b> rules</span>
+            <span><b>3</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card infra" onclick="showAgent('perf-checker')">
+          <div class="glow"></div>
+          <div class="agent-name">perf-checker</div>
+          <div class="agent-desc">Detects N+1 queries, blocking async, missing indexes, unbounded growth, React render issues</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">4 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-readonly">read-only</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>1</b> workflow steps</span>
+            <span><b>3</b> rules</span>
+            <span><b>5</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Development -->
+    <div class="section">
+      <div class="section-title">Development Agents <span class="badge" style="background:var(--accent)">4 agents — building features</span></div>
+      <div class="agent-grid">
+        <div class="agent-card dev" onclick="showAgent('backend-developer')">
+          <div class="glow"></div>
+          <div class="agent-name">backend-developer</div>
+          <div class="agent-desc">Production-quality async Python 3.12+ modules, services, tools, integrations</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>4</b> workflow steps</span>
+            <span><b>7</b> rules</span>
+            <span><b>3</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card dev" onclick="showAgent('frontend-developer')">
+          <div class="glow"></div>
+          <div class="agent-name">frontend-developer</div>
+          <div class="agent-desc">Next.js 16 / React 19 / Tailwind v4 components, hooks, pages, features</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>1</b> workflow steps</span>
+            <span><b>1</b> rules</span>
+            <span><b>4</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card dev" onclick="showAgent('ml-engineer')">
+          <div class="glow"></div>
+          <div class="agent-name">ml-engineer</div>
+          <div class="agent-desc">RL training pipelines, genetic algorithms, regime classifiers, ensemble systems</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>3</b> workflow steps</span>
+            <span><b>8</b> rules</span>
+            <span><b>6</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card dev" onclick="showAgent('e2e-tester')">
+          <div class="glow"></div>
+          <div class="agent-name">e2e-tester</div>
+          <div class="agent-desc">Live E2E scenarios — creates accounts, agents, trades, backtests, battles. Returns credentials</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">6 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-write">write</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>3</b> workflow steps</span>
+            <span><b>10</b> rules</span>
+            <span><b>5</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Research -->
+    <div class="section">
+      <div class="section-title">Research & Planning Agents <span class="badge" style="background:var(--purple)">2 agents — before implementing</span></div>
+      <div class="agent-grid">
+        <div class="agent-card research" onclick="showAgent('planner')">
+          <div class="glow"></div>
+          <div class="agent-name">planner</div>
+          <div class="agent-desc">Detailed phased implementation plans with file paths, risks, dependencies, testing strategies</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">3 tools</span>
+            <span class="agent-tag tag-model" style="background:rgba(236,72,153,0.15);color:var(--pink)">opus</span>
+            <span class="agent-tag tag-readonly">read-only</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>4</b> workflow steps</span>
+            <span><b>6</b> rules</span>
+            <span><b>2</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+        <div class="agent-card research" onclick="showAgent('codebase-researcher')">
+          <div class="glow"></div>
+          <div class="agent-name">codebase-researcher</div>
+          <div class="agent-desc">Investigates codebase to find patterns, trace data flows, locate implementations</div>
+          <div class="agent-meta">
+            <span class="agent-tag tag-tool">4 tools</span>
+            <span class="agent-tag tag-model">sonnet</span>
+            <span class="agent-tag tag-readonly">read-only</span>
+          </div>
+          <div class="agent-stats">
+            <span><b>5</b> workflow steps</span>
+            <span><b>10</b> rules</span>
+            <span><b>2</b> CLAUDE.md refs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TAB 2: PIPELINES ═══════════ -->
+  <div class="tab-content" id="tab-pipelines">
+    <div class="section">
+      <div class="section-title">Agent Execution Pipelines</div>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:20px;">Agents form ordered pipelines. Each pipeline defines which agents run and in what sequence.</p>
+
+      <div class="pipeline-container">
+        <div class="pipeline-card" style="border-left:3px solid var(--green)">
+          <div class="pipeline-name" style="color:var(--green)">1. Standard Post-Change Pipeline (every code change)</div>
+          <div class="pipeline-flow">
+            <div class="pipeline-node action">[make changes]</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">code-reviewer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">test-runner</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">context-manager</div>
+          </div>
+        </div>
+
+        <div class="pipeline-card" style="border-left:3px solid var(--yellow)">
+          <div class="pipeline-name" style="color:var(--yellow)">2. API / Schema Change Pipeline</div>
+          <div class="pipeline-flow">
+            <div class="pipeline-node action">[make changes]</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node infra">api-sync-checker</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node infra">doc-updater</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">code-reviewer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">test-runner</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">context-manager</div>
+          </div>
+        </div>
+
+        <div class="pipeline-card" style="border-left:3px solid var(--red)">
+          <div class="pipeline-name" style="color:var(--red)">3. Security-Sensitive Change Pipeline</div>
+          <div class="pipeline-flow">
+            <div class="pipeline-node action">[make changes]</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node security">security-reviewer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node security">security-auditor</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">code-reviewer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">test-runner</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">context-manager</div>
+          </div>
+        </div>
+
+        <div class="pipeline-card" style="border-left:3px solid var(--cyan)">
+          <div class="pipeline-name" style="color:var(--cyan)">4. Performance-Sensitive Change Pipeline</div>
+          <div class="pipeline-flow">
+            <div class="pipeline-node action">[make changes]</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node infra">perf-checker</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">code-reviewer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">test-runner</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">context-manager</div>
+          </div>
+        </div>
+
+        <div class="pipeline-card" style="border-left:3px solid var(--orange)">
+          <div class="pipeline-name" style="color:var(--orange)">5. Database Migration Pipeline</div>
+          <div class="pipeline-flow">
+            <div class="pipeline-node infra">migration-helper</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node action">[apply migration]</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node infra">deploy-checker</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">context-manager</div>
+          </div>
+        </div>
+
+        <div class="pipeline-card" style="border-left:3px solid var(--purple)">
+          <div class="pipeline-name" style="color:var(--purple)">6. Feature Implementation Pipeline</div>
+          <div class="pipeline-flow">
+            <div class="pipeline-node research">planner</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node research">codebase-researcher</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node dev">backend / frontend / ml-engineer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">code-reviewer</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">test-runner</div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-node quality">context-manager</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline insight -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:8px;">
+        <div class="section-title" style="font-size:14px;">Pipeline Insights</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px;">
+          <div style="background:var(--bg3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:24px;font-weight:700;color:var(--green);">3</div>
+            <div style="font-size:11px;color:var(--text2);">Agents in EVERY pipeline</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:4px;">code-reviewer, test-runner, context-manager</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:24px;font-weight:700;color:var(--accent);">6</div>
+            <div style="font-size:11px;color:var(--text2);">Total pipelines defined</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:24px;font-weight:700;color:var(--purple);">6</div>
+            <div style="font-size:11px;color:var(--text2);">Max agents in one pipeline</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:4px;">Security-Sensitive & API/Schema</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:24px;font-weight:700;color:var(--yellow);">1</div>
+            <div style="font-size:11px;color:var(--text2);">Agent uses Opus model</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:4px;">planner (complex reasoning)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TAB 3: CLAUDE.MD MAP ═══════════ -->
+  <div class="tab-content" id="tab-claudemd">
+    <div class="section">
+      <div class="section-title">CLAUDE.md Navigation File Map <span class="badge">66 files</span></div>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:20px;">Every major directory has a CLAUDE.md file that documents file inventories, public APIs, patterns, and gotchas. Agents read these before doing any work.</p>
+
+      <!-- Heatmap -->
+      <div style="margin-bottom:24px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text2);">CLAUDE.md Distribution by Area</div>
+        <div class="heatmap-grid">
+          <div class="heat-cell heat-6"><span class="heat-num">24</span>Backend (src/)</div>
+          <div class="heat-cell heat-6"><span class="heat-num">27</span>Frontend</div>
+          <div class="heat-cell heat-2"><span class="heat-num">3</span>Tests</div>
+          <div class="heat-cell heat-4"><span class="heat-num">9</span>Agent/Infra</div>
+          <div class="heat-cell heat-1"><span class="heat-num">2</span>Dev/Docs</div>
+          <div class="heat-cell heat-1"><span class="heat-num">1</span>Root</div>
+        </div>
+      </div>
+
+      <div class="tree-container">
+
+        <!-- Root -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Project Root <span class="count">(1)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot root"></div><span class="path">CLAUDE.md</span><span class="desc">Master guidance — agents, architecture, standards</span></div>
+          </div>
+        </div>
+
+        <!-- Backend -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Backend — src/ <span class="count">(24)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/api/CLAUDE.md</span><span class="desc">API gateway, middleware stack, route registry</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/api/routes/CLAUDE.md</span><span class="desc">90+ REST endpoints, auth patterns</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/api/schemas/CLAUDE.md</span><span class="desc">Pydantic v2 validation schemas</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/api/middleware/CLAUDE.md</span><span class="desc">Auth, rate limiting, logging — exec order</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/api/websocket/CLAUDE.md</span><span class="desc">WebSocket channels, protocol, subscriptions</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/accounts/CLAUDE.md</span><span class="desc">Registration, auth, API keys, balances</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/agents/CLAUDE.md</span><span class="desc">Multi-agent CRUD, clone, reset, avatars</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/backtesting/CLAUDE.md</span><span class="desc">Backtest engine, sandbox, time simulation</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/battles/CLAUDE.md</span><span class="desc">Battle system, ranking, replays</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/cache/CLAUDE.md</span><span class="desc">Redis cache, key patterns, pub/sub</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/database/CLAUDE.md</span><span class="desc">ORM models, async sessions, repository</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/database/repositories/CLAUDE.md</span><span class="desc">Repository classes, query patterns</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/exchange/CLAUDE.md</span><span class="desc">CCXT adapter, symbol mapper, 110+ exchanges</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/mcp/CLAUDE.md</span><span class="desc">MCP server, 58 tools, stdio transport</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/metrics/CLAUDE.md</span><span class="desc">Unified metrics calculator, adapters</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/monitoring/CLAUDE.md</span><span class="desc">Prometheus metrics, health checks</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/order_engine/CLAUDE.md</span><span class="desc">Order execution, matching, slippage</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/portfolio/CLAUDE.md</span><span class="desc">Portfolio tracking, PnL, snapshots</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/price_ingestion/CLAUDE.md</span><span class="desc">Exchange WS, tick buffering, flush</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/risk/CLAUDE.md</span><span class="desc">Risk manager, circuit breaker, limits</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/strategies/CLAUDE.md</span><span class="desc">Strategy registry, versioning, testing</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/tasks/CLAUDE.md</span><span class="desc">Celery tasks, beat schedule, cleanup</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/training/CLAUDE.md</span><span class="desc">Training run observation, learning curves</span></div>
+            <div class="tree-item"><div class="tree-dot backend"></div><span class="path">src/utils/CLAUDE.md</span><span class="desc">Exception hierarchy, shared utilities</span></div>
+          </div>
+        </div>
+
+        <!-- Frontend -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Frontend — Frontend/ <span class="count">(27)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/CLAUDE.md</span><span class="desc">Next.js 16, React 19, Tailwind v4 conventions</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/app/CLAUDE.md</span><span class="desc">App Router, layouts, route groups</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/CLAUDE.md</span><span class="desc">130+ components, shadcn/ui patterns</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/agents/CLAUDE.md</span><span class="desc">Agent CRUD UI</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/alerts/CLAUDE.md</span><span class="desc">Price alert management</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/analytics/CLAUDE.md</span><span class="desc">Analytics charts</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/backtest/CLAUDE.md</span><span class="desc">Backtest UI</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/battles/CLAUDE.md</span><span class="desc">Battle UI (planned)</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/coin/CLAUDE.md</span><span class="desc">Coin detail, TradingView</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/dashboard/CLAUDE.md</span><span class="desc">Dashboard, portfolio, equity</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/docs/CLAUDE.md</span><span class="desc">Docs viewer, search</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/landing/CLAUDE.md</span><span class="desc">Landing page sections</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/layout/CLAUDE.md</span><span class="desc">App shell, sidebar, header</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/leaderboard/CLAUDE.md</span><span class="desc">Rankings table, filters</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/market/CLAUDE.md</span><span class="desc">Market table, 600+ pairs</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/settings/CLAUDE.md</span><span class="desc">Settings, API keys, theme</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/setup/CLAUDE.md</span><span class="desc">Onboarding wizard</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/shared/CLAUDE.md</span><span class="desc">16 reusable blocks</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/strategies/CLAUDE.md</span><span class="desc">Strategy management UI</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/trades/CLAUDE.md</span><span class="desc">Trade history, export</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/training/CLAUDE.md</span><span class="desc">Training run observation</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/ui/CLAUDE.md</span><span class="desc">59 shadcn/ui primitives</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/components/wallet/CLAUDE.md</span><span class="desc">Wallet, balance, chart</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/hooks/CLAUDE.md</span><span class="desc">23 hooks, TanStack Query</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/lib/CLAUDE.md</span><span class="desc">API client, utilities</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/stores/CLAUDE.md</span><span class="desc">6 Zustand stores</span></div>
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/styles/CLAUDE.md</span><span class="desc">Chart theme, style utils</span></div>
+          </div>
+        </div>
+
+        <!-- Testing -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Testing — tests/ <span class="count">(3)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot testing"></div><span class="path">tests/CLAUDE.md</span><span class="desc">Test philosophy, conftest, async patterns</span></div>
+            <div class="tree-item"><div class="tree-dot testing"></div><span class="path">tests/unit/CLAUDE.md</span><span class="desc">70 files, 1184 unit tests</span></div>
+            <div class="tree-item"><div class="tree-dot testing"></div><span class="path">tests/integration/CLAUDE.md</span><span class="desc">24 files, 504 integration tests</span></div>
+          </div>
+        </div>
+
+        <!-- Infrastructure -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Infrastructure & Agent <span class="count">(9)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">alembic/CLAUDE.md</span><span class="desc">Migration workflow, naming, inventory</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">sdk/CLAUDE.md</span><span class="desc">Python SDK — sync/async/WS clients</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">scripts/CLAUDE.md</span><span class="desc">Available scripts, dependencies</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">tradeready-gym/CLAUDE.md</span><span class="desc">Gymnasium RL environments</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">agent/CLAUDE.md</span><span class="desc">Platform testing agent (Pydantic AI)</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">agent/models/CLAUDE.md</span><span class="desc">Pydantic output models</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">agent/tools/CLAUDE.md</span><span class="desc">SDK, MCP, REST tool layers</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">agent/prompts/CLAUDE.md</span><span class="desc">System prompts, skill loader</span></div>
+            <div class="tree-item"><div class="tree-dot infra"></div><span class="path">agent/workflows/CLAUDE.md</span><span class="desc">4 E2E workflows</span></div>
+          </div>
+        </div>
+
+        <!-- Development -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Development & Docs <span class="count">(3)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot dev"></div><span class="path">development/CLAUDE.md</span><span class="desc">Planning docs, progress tracking</span></div>
+            <div class="tree-item"><div class="tree-dot dev"></div><span class="path">development/code-reviews/CLAUDE.md</span><span class="desc">Code review reports</span></div>
+            <div class="tree-item"><div class="tree-dot dev"></div><span class="path">docs/CLAUDE.md</span><span class="desc">Documentation inventory</span></div>
+          </div>
+        </div>
+
+        <!-- Remotion -->
+        <div class="tree-group">
+          <div class="tree-group-title" onclick="toggleTree(this)"><span class="chevron">&#9660;</span> Remotion & Other <span class="count">(1)</span></div>
+          <div class="tree-items">
+            <div class="tree-item"><div class="tree-dot frontend"></div><span class="path">Frontend/src/remotion/CLAUDE.md</span><span class="desc">Remotion video compositions</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TAB 4: ARCHITECTURE ═══════════ -->
+  <div class="tab-content" id="tab-architecture">
+    <div class="section">
+      <div class="section-title">Platform Architecture — Dependency Flow</div>
+      <div class="arch-container">
+
+        <div class="arch-label">Frontend Layer</div>
+        <div class="arch-row">
+          <div class="arch-box frontend">Next.js 16<small>App Router</small></div>
+          <div class="arch-box frontend">React 19<small>130+ components</small></div>
+          <div class="arch-box frontend">TanStack Query<small>23 hooks</small></div>
+          <div class="arch-box frontend">Zustand<small>6 stores</small></div>
+          <div class="arch-box frontend">Tailwind v4<small>59 shadcn/ui</small></div>
+        </div>
+        <div class="arch-connector">&darr; &darr; &darr;</div>
+
+        <div class="arch-label">API Gateway</div>
+        <div class="arch-row">
+          <div class="arch-box routes">REST Routes<small>90+ endpoints</small></div>
+          <div class="arch-box routes">WebSocket<small>5 channels</small></div>
+          <div class="arch-box schemas">Pydantic Schemas<small>Request/Response</small></div>
+          <div class="arch-box routes">MCP Server<small>58 tools</small></div>
+        </div>
+        <div class="arch-connector">&darr; &darr; &darr;</div>
+
+        <div class="arch-label">Middleware Stack (execution order &rarr;)</div>
+        <div class="arch-row">
+          <div class="arch-box services" style="font-size:11px;">RateLimit &rarr; Auth &rarr; Logging &rarr; Handler</div>
+        </div>
+        <div class="arch-connector">&darr; &darr; &darr;</div>
+
+        <div class="arch-label">Service Layer</div>
+        <div class="arch-row">
+          <div class="arch-box services">Accounts<small>Auth, API Keys</small></div>
+          <div class="arch-box services">Agents<small>Multi-Agent</small></div>
+          <div class="arch-box services">Order Engine<small>Market/Limit/Stop</small></div>
+          <div class="arch-box services">Portfolio<small>PnL, Sharpe</small></div>
+          <div class="arch-box services">Risk<small>Circuit Breaker</small></div>
+        </div>
+        <div class="arch-row">
+          <div class="arch-box services">Backtesting<small>Historical Replay</small></div>
+          <div class="arch-box services">Battles<small>Agent vs Agent</small></div>
+          <div class="arch-box services">Strategies<small>CRUD, Deploy</small></div>
+          <div class="arch-box services">Training<small>RL Observation</small></div>
+          <div class="arch-box services">Metrics<small>Unified Calc</small></div>
+        </div>
+        <div class="arch-connector">&darr; &darr; &darr;</div>
+
+        <div class="arch-label">Repository Layer</div>
+        <div class="arch-row">
+          <div class="arch-box repos">Repositories<small>Async CRUD, typed queries</small></div>
+          <div class="arch-box repos">Models<small>SQLAlchemy ORM</small></div>
+        </div>
+        <div class="arch-connector">&darr; &darr; &darr;</div>
+
+        <div class="arch-label">Data & External</div>
+        <div class="arch-row">
+          <div class="arch-box external">TimescaleDB<small>Ticks, candles, trades</small></div>
+          <div class="arch-box external">Redis<small>Prices, pub/sub, rate limits</small></div>
+          <div class="arch-box external">CCXT<small>110+ exchanges</small></div>
+          <div class="arch-box external">Celery<small>Background tasks</small></div>
+          <div class="arch-box external">Prometheus<small>Metrics, health</small></div>
+        </div>
+
+        <div class="arch-connector" style="margin-top:24px;">&darr; &darr;</div>
+        <div class="arch-label">Agentic Development Layer (meta)</div>
+        <div class="arch-row">
+          <div class="arch-box infra">16 Sub-Agents<small>.claude/agents/</small></div>
+          <div class="arch-box infra">66 CLAUDE.md<small>Navigation files</small></div>
+          <div class="arch-box infra">6 Pipelines<small>Execution flows</small></div>
+          <div class="arch-box infra">context.md<small>Rolling dev log</small></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dependency Direction -->
+    <div class="section" style="margin-top:24px;">
+      <div class="section-title">Strict Dependency Direction</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;font-size:14px;">
+          <div style="padding:10px 20px;border-radius:8px;background:rgba(59,130,246,0.15);color:var(--accent);border:1px solid rgba(59,130,246,0.3);font-weight:600;">Routes</div>
+          <span style="color:var(--text2);font-size:20px;">&rarr;</span>
+          <div style="padding:10px 20px;border-radius:8px;background:rgba(139,92,246,0.15);color:var(--purple);border:1px solid rgba(139,92,246,0.3);font-weight:600;">Schemas + Services</div>
+          <span style="color:var(--text2);font-size:20px;">&rarr;</span>
+          <div style="padding:10px 20px;border-radius:8px;background:rgba(245,158,11,0.15);color:var(--yellow);border:1px solid rgba(245,158,11,0.3);font-weight:600;">Repos + Cache + External</div>
+          <span style="color:var(--text2);font-size:20px;">&rarr;</span>
+          <div style="padding:10px 20px;border-radius:8px;background:rgba(236,72,153,0.15);color:var(--pink);border:1px solid rgba(236,72,153,0.3);font-weight:600;">Models + Session</div>
+        </div>
+        <p style="text-align:center;color:var(--red);font-size:12px;margin-top:12px;font-weight:600;">Never import upward in this chain</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TAB 5: AGENT DEPENDENCIES ═══════════ -->
+  <div class="tab-content" id="tab-dependencies">
+    <div class="section">
+      <div class="section-title">Agent &rarr; CLAUDE.md Dependencies</div>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:20px;">Which CLAUDE.md files each agent reads before starting work. More references = broader context awareness.</p>
+      <div class="dep-grid">
+        <div class="dep-card">
+          <h4 style="color:var(--green);">code-reviewer</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>*/CLAUDE.md</span> (per changed dir)</div>
+          <div class="dep-arrow"><span>tests/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/CLAUDE.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--green);">test-runner</h4>
+          <div class="dep-arrow"><span>tests/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>tests/unit/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>tests/integration/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>*/CLAUDE.md</span> (tested module)</div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--green);">context-manager</h4>
+          <div class="dep-arrow"><span>development/context.md</span></div>
+          <div class="dep-arrow"><span>ALL 66 CLAUDE.md</span> files (sync)</div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--red);">security-auditor</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>src/api/middleware/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/accounts/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/risk/CLAUDE.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--red);">security-reviewer</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>src/accounts/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/api/middleware/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/api/routes/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/api/schemas/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/agents/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/database/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/api/websocket/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/risk/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/utils/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/CLAUDE.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--yellow);">api-sync-checker</h4>
+          <div class="dep-arrow"><span>src/api/schemas/*.py</span></div>
+          <div class="dep-arrow"><span>src/api/routes/*.py</span></div>
+          <div class="dep-arrow"><span>Frontend/src/lib/types.ts</span></div>
+          <div class="dep-arrow"><span>Frontend/src/lib/api-client.ts</span></div>
+          <div class="dep-arrow"><span>Frontend/src/hooks/*.ts</span></div>
+          <div class="dep-arrow"><span>src/api/websocket/</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--yellow);">deploy-checker</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>development/context.md</span></div>
+          <div class="dep-arrow"><span>alembic/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/database/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>.github/workflows/</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--yellow);">migration-helper</h4>
+          <div class="dep-arrow"><span>alembic/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/database/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>alembic/env.py</span></div>
+          <div class="dep-arrow"><span>alembic/versions/*.py</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--yellow);">doc-updater</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>docs/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/api/routes/CLAUDE.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--yellow);">perf-checker</h4>
+          <div class="dep-arrow"><span>src/database/models.py</span></div>
+          <div class="dep-arrow"><span>src/backtesting/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/src/components/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/src/hooks/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/src/stores/CLAUDE.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--accent);">backend-developer</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>*/CLAUDE.md</span> (module)</div>
+          <div class="dep-arrow"><span>development/context.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--accent);">frontend-developer</h4>
+          <div class="dep-arrow"><span>Frontend/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/src/app/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>Frontend/src/components/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>*/CLAUDE.md</span> (target module)</div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--accent);">ml-engineer</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>tradeready-gym/</span></div>
+          <div class="dep-arrow"><span>src/strategies/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/backtesting/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>src/battles/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>agent/</span> directory</div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--accent);">e2e-tester</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root)</div>
+          <div class="dep-arrow"><span>development/context.md</span></div>
+          <div class="dep-arrow"><span>src/api/routes/CLAUDE.md</span></div>
+          <div class="dep-arrow"><span>scripts/e2e_*.py</span></div>
+          <div class="dep-arrow"><span>scripts/CLAUDE.md</span></div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--purple);">planner</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root — mandatory)</div>
+          <div class="dep-arrow"><span>*/CLAUDE.md</span> (affected modules)</div>
+        </div>
+        <div class="dep-card">
+          <h4 style="color:var(--purple);">codebase-researcher</h4>
+          <div class="dep-arrow"><span>CLAUDE.md</span> (root — mandatory)</div>
+          <div class="dep-arrow"><span>ALL module CLAUDE.md</span> (contextual)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool Permission Matrix -->
+    <div class="section" style="margin-top:24px;">
+      <div class="section-title">Tool Permission Matrix</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;background:var(--bg2);border-radius:12px;overflow:hidden;">
+          <thead>
+            <tr style="background:var(--bg3);">
+              <th style="padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);">Agent</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Read</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Write</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Edit</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Grep</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Glob</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Bash</th>
+              <th style="padding:12px 8px;text-align:center;border-bottom:1px solid var(--border);">Model</th>
+            </tr>
+          </thead>
+          <tbody id="tool-matrix-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TAB 6: TIMELINE ═══════════ -->
+  <div class="tab-content" id="tab-timeline">
+    <div class="section">
+      <div class="section-title">Development Timeline</div>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-20</div>
+          <div class="timeline-text"><b>Agentic Layer updated:</b> CLAUDE.md agents section restructured — 5 categories, capability matrix, 6 pipelines, config reference, improvement checklist. Agent count corrected: 12 &rarr; 16.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-20</div>
+          <div class="timeline-text"><b>TradeReady Platform Testing Agent V1 complete.</b> agent/ package: Pydantic AI + OpenRouter, 4 workflows (smoke/trading/backtest/strategy), 3 integration layers (SDK/MCP/REST), 117 unit tests passing, CLI entry point.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-19</div>
+          <div class="timeline-text"><b>Docs site complete</b> — all 8 phases. Fumadocs infrastructure, 50 MDX pages, 7 custom components, Cmd+K search, MD downloads, Docs REST API, landing integration. 81 pages, zero errors.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-18</div>
+          <div class="timeline-text"><b>Strategy phases STR-1 through STR-5 complete.</b> MCP expanded to 58 tools. Gymnasium RL package (tradeready-gym) built — 7 envs, 4 rewards, 3 wrappers.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-17</div>
+          <div class="timeline-text"><b>Agentic layer complete:</b> 36 CLAUDE.md files, 12 sub-agents. Full navigation system across backend, frontend, tests, infrastructure.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-15</div>
+          <div class="timeline-text"><b>Documentation overhaul.</b> API reference, guides, architecture docs restructured.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-14</div>
+          <div class="timeline-text"><b>Market data gap-fill.</b> Historical candle backfill for missing periods.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-12</div>
+          <div class="timeline-text"><b>Unified metrics, integration work.</b> Shared calculator for backtests & battles.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-11</div>
+          <div class="timeline-text"><b>Multi-agent system + Battle system complete.</b> Agent vs agent competitions, rankings, live + historical modes, 20 endpoints.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">2026-03-09</div>
+          <div class="timeline-text"><b>Backtesting engine complete.</b> Historical replay, in-memory sandbox, look-ahead prevention.</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">Pre-2026-03</div>
+          <div class="timeline-text"><b>Core platform built:</b> Price ingestion, order engine, accounts, portfolio, risk management, API gateway, monitoring — all production-ready.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════ AGENT DETAIL OVERLAY ═══════════ -->
+<div class="agent-detail-overlay" id="agent-overlay" onclick="if(event.target===this)closeAgent()">
+  <div class="agent-detail" id="agent-detail-content">
+    <button class="close-btn" onclick="closeAgent()">&times;</button>
+    <div id="agent-detail-body"></div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ──
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Tree toggle ──
+function toggleTree(el) {
+  el.classList.toggle('collapsed');
+  el.nextElementSibling.classList.toggle('collapsed');
+}
+
+// ── Agent detail data ──
+const agentData = {
+  'code-reviewer': {
+    category: 'Quality Gate',
+    color: '#10b981',
+    tools: ['Read', 'Write', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'report + write',
+    steps: 5,
+    rules: 8,
+    claudeRefs: ['Root CLAUDE.md', 'Module-specific CLAUDE.md (per changed dir)', 'tests/CLAUDE.md', 'Frontend/CLAUDE.md'],
+    topRules: [
+      'Always read relevant CLAUDE.md files first — never review without understanding documented patterns',
+      'Be specific — cite file paths with line numbers, quote problematic code, show the fix',
+      'Check dependency direction: Routes → Schemas + Services → Repos → Models',
+      'Flag missing agent scoping (agent_id filtering)',
+      'Verify test coverage for changed code'
+    ],
+    description: 'Reviews every code change against project standards documented in CLAUDE.md files. Produces structured reports saved to development/code-reviews/.'
+  },
+  'test-runner': {
+    category: 'Quality Gate',
+    color: '#10b981',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'run + write',
+    steps: 5,
+    rules: 9,
+    claudeRefs: ['tests/CLAUDE.md', 'tests/unit/CLAUDE.md', 'tests/integration/CLAUDE.md', 'Module CLAUDE.md (for tested module)'],
+    topRules: [
+      'Run the most specific tests first — don\'t run the entire suite when 3 files changed',
+      'If tests fail, analyze why — read the failing test and source code',
+      'Write missing tests following project conventions in tests/CLAUDE.md',
+      'asyncio_mode = "auto" — no @pytest.mark.asyncio needed',
+      'Patch get_settings() BEFORE cached instance is created'
+    ],
+    description: 'Maps changed files to relevant tests, runs them, reports results, and writes new tests for uncovered code.'
+  },
+  'context-manager': {
+    category: 'Quality Gate',
+    color: '#10b981',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 8,
+    rules: 9,
+    claudeRefs: ['development/context.md', 'All 66 CLAUDE.md files (sync targets)'],
+    topRules: [
+      'Summarize, don\'t duplicate — git log has the full diff; track intent and context',
+      'Be concise — one line per change, one paragraph per decision',
+      'Create CLAUDE.md for any new directory that doesn\'t have one',
+      'Update file inventories and test counts in affected CLAUDE.md files',
+      'Convert relative dates to absolute dates'
+    ],
+    description: 'Bridge between conversations. Maintains development/context.md as rolling log and keeps all 66 CLAUDE.md files in sync with actual code.'
+  },
+  'security-auditor': {
+    category: 'Security',
+    color: '#ef4444',
+    tools: ['Read', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'read-only',
+    steps: 4,
+    rules: 9,
+    claudeRefs: ['Root CLAUDE.md', 'src/api/middleware/CLAUDE.md', 'src/accounts/CLAUDE.md', 'src/risk/CLAUDE.md'],
+    topRules: [
+      'Read-only — never modify code, only report findings',
+      'Always load context first — read relevant CLAUDE.md files',
+      'Check agent isolation — every query must filter by agent_id',
+      'Verify secrets are via env vars, never hardcoded',
+      'Severity: CRITICAL → HIGH → MEDIUM → LOW'
+    ],
+    description: 'Read-only security audit for auth bypasses, injection risks, secret exposure, agent isolation violations, rate limits, and XSS.'
+  },
+  'security-reviewer': {
+    category: 'Security',
+    color: '#ef4444',
+    tools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
+    model: 'sonnet',
+    mode: 'read + fix',
+    steps: 4,
+    rules: 7,
+    claudeRefs: ['Root CLAUDE.md', 'src/accounts/CLAUDE.md', 'src/api/middleware/CLAUDE.md', 'src/api/routes/CLAUDE.md', 'src/api/schemas/CLAUDE.md', 'src/agents/CLAUDE.md', 'src/database/CLAUDE.md', 'src/api/websocket/CLAUDE.md', 'src/risk/CLAUDE.md', 'src/utils/CLAUDE.md', 'Frontend/CLAUDE.md'],
+    topRules: [
+      'Always read CLAUDE.md files first — understand documented security patterns',
+      'Be specific — cite file paths with line numbers, quote vulnerable code, show the fix',
+      'Can fix CRITICAL issues directly (has Write + Edit tools)',
+      'OWASP Top 10 checklist on every review',
+      'Check for secret exposure in logs, error messages, responses'
+    ],
+    description: 'Vulnerability detection AND remediation. Unlike security-auditor, can directly fix CRITICAL issues. Covers OWASP Top 10, SSRF, injection, unsafe crypto.'
+  },
+  'migration-helper': {
+    category: 'Infrastructure',
+    color: '#f59e0b',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 2,
+    rules: 1,
+    claudeRefs: ['alembic/CLAUDE.md', 'src/database/CLAUDE.md', 'alembic/env.py', 'alembic/versions/*.py'],
+    topRules: [
+      'Follow exact file structure of existing migrations',
+      'Two-phase NOT NULL: add nullable → backfill → set NOT NULL',
+      'Never DROP columns without explicit approval',
+      'Hypertable PKs must include time column',
+      'Always provide downgrade path'
+    ],
+    description: 'Database migration specialist. Generates and validates Alembic migrations with safety checks for destructive operations, TimescaleDB constraints.'
+  },
+  'api-sync-checker': {
+    category: 'Infrastructure',
+    color: '#f59e0b',
+    tools: ['Read', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'read-only',
+    steps: 8,
+    rules: 9,
+    claudeRefs: ['src/api/schemas/*.py', 'src/api/routes/*.py', 'Frontend/src/lib/types.ts', 'Frontend/src/lib/api-client.ts', 'Frontend/src/hooks/*.ts', 'src/api/websocket/'],
+    topRules: [
+      'NEVER modify any file — read-only agent',
+      'Read actual source files, not just CLAUDE.md summaries',
+      'Check Pydantic field types match TypeScript types (Decimal→string, datetime→ISO string)',
+      'Verify X-Agent-Id header injection in all relevant frontend hooks',
+      'Report every discrepancy with exact file:line references'
+    ],
+    description: 'Compares Python backend schemas vs TypeScript frontend types. Verifies URL paths, HTTP methods, request/response shapes, and WebSocket messages match.'
+  },
+  'deploy-checker': {
+    category: 'Infrastructure',
+    color: '#f59e0b',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'report + write',
+    steps: 10,
+    rules: 8,
+    claudeRefs: ['CLAUDE.md', 'development/context.md', 'alembic/CLAUDE.md', 'src/database/CLAUDE.md', '.github/workflows/'],
+    topRules: [
+      'Run every phase — never skip even if early phases fail',
+      'Be specific — cite file paths with line numbers',
+      '10 phases: lint, types, tests, migrations, Docker, env vars, security, API health, frontend build, CI/CD',
+      'Report gate: PASS / FAIL with severity breakdown',
+      'Check both backend AND frontend'
+    ],
+    description: 'Complete A-Z deployment readiness check. 10-phase validation covering lint, types, tests, migrations, Docker, env vars, security, and CI/CD pipeline.'
+  },
+  'doc-updater': {
+    category: 'Infrastructure',
+    color: '#f59e0b',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 6,
+    rules: 7,
+    claudeRefs: ['CLAUDE.md', 'docs/CLAUDE.md', 'src/api/routes/CLAUDE.md'],
+    topRules: [
+      'Never guess — if you can\'t determine exact signature from code, flag for human review',
+      'Match existing style — each doc has its own conventions',
+      'Update docs/skill.md, api_reference.md, and module CLAUDE.md files',
+      'Conservative: only update what you\'re confident about'
+    ],
+    description: 'Keeps all documentation in sync with code changes. Updates API reference, skill docs, module CLAUDE.md files, and SDK documentation.'
+  },
+  'perf-checker': {
+    category: 'Infrastructure',
+    color: '#f59e0b',
+    tools: ['Read', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'read-only',
+    steps: 1,
+    rules: 3,
+    claudeRefs: ['src/database/models.py', 'src/backtesting/CLAUDE.md', 'Frontend/src/components/CLAUDE.md', 'Frontend/src/hooks/CLAUDE.md', 'Frontend/src/stores/CLAUDE.md'],
+    topRules: [
+      'Read-only — never modify any file',
+      'Be specific — include file paths and line numbers',
+      'Severity: CRITICAL (outage/OOM) → HIGH → MEDIUM → LOW'
+    ],
+    description: 'Performance regression detector for both backend and frontend. Finds N+1 queries, blocking async, missing indexes, React render issues, bundle bloat.'
+  },
+  'backend-developer': {
+    category: 'Development',
+    color: '#3b82f6',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 4,
+    rules: 7,
+    claudeRefs: ['Root CLAUDE.md', 'Module CLAUDE.md', 'development/context.md'],
+    topRules: [
+      'Never write code without reading existing patterns first',
+      'Always use async for I/O operations',
+      'Decimal for all money/prices — never float',
+      'Custom exceptions from src/utils/exceptions.py',
+      'Google-style docstrings on every public class/function'
+    ],
+    description: 'Production-quality Python 3.12+ backend developer. Writes async modules, services, tools, and integrations following all project conventions.'
+  },
+  'frontend-developer': {
+    category: 'Development',
+    color: '#3b82f6',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 1,
+    rules: 1,
+    claudeRefs: ['Frontend/CLAUDE.md', 'Frontend/src/app/CLAUDE.md', 'Frontend/src/components/CLAUDE.md', 'Module-specific CLAUDE.md'],
+    topRules: [
+      'Context Loading — ALWAYS read Frontend/CLAUDE.md hierarchy before writing code',
+      'Follow 3-tier component organization (ui → shared → feature)',
+      'TanStack Query for server state, Zustand for client state',
+      'Tailwind v4 — no @apply, use CSS variables'
+    ],
+    description: 'Full-stack frontend agent for Next.js 16 / React 19 / Tailwind v4. Implements components, hooks, pages following project conventions.'
+  },
+  'ml-engineer': {
+    category: 'Development',
+    color: '#3b82f6',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 3,
+    rules: 8,
+    claudeRefs: ['Root CLAUDE.md', 'tradeready-gym/', 'src/strategies/CLAUDE.md', 'src/backtesting/CLAUDE.md', 'src/battles/CLAUDE.md', 'agent/ directory'],
+    topRules: [
+      'Never use float for money — always Decimal',
+      'Always split train/validation/test — never evaluate on training data',
+      'Integrate with existing platform infrastructure',
+      'Gymnasium-compatible environments from tradeready-gym/'
+    ],
+    description: 'ML engineer for RL training pipelines, genetic algorithms, regime classifiers. Integrates with tradeready-gym environments and platform backtesting.'
+  },
+  'e2e-tester': {
+    category: 'Development',
+    color: '#3b82f6',
+    tools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'write',
+    steps: 3,
+    rules: 10,
+    claudeRefs: ['CLAUDE.md', 'development/context.md', 'src/api/routes/CLAUDE.md', 'scripts/e2e_*.py', 'scripts/CLAUDE.md'],
+    topRules: [
+      'Always output credentials — the whole point is UI verification',
+      'Never hardcode secrets — use env vars or generate test credentials',
+      'Create realistic data visible in the frontend UI',
+      'Test full lifecycle: account → agent → trade → backtest → battle'
+    ],
+    description: 'Live E2E tester that creates real accounts, agents, trades, backtests, and battles against the running platform. Returns login credentials.'
+  },
+  'planner': {
+    category: 'Research & Planning',
+    color: '#8b5cf6',
+    tools: ['Read', 'Grep', 'Glob'],
+    model: 'opus',
+    mode: 'read-only',
+    steps: 4,
+    rules: 6,
+    claudeRefs: ['Root CLAUDE.md (mandatory)', 'Module CLAUDE.md (affected components)'],
+    topRules: [
+      'Always read CLAUDE.md files first — never plan without understanding documented patterns',
+      'List consulted CLAUDE.md files — every plan must include which files you read',
+      'Phased implementation with explicit dependencies between phases',
+      'Include risk assessment and testing strategy for each phase',
+      'Only agent using Opus model (for complex reasoning)'
+    ],
+    description: 'Expert planning specialist. Creates detailed, phased implementation plans with file paths, risks, dependencies, and testing strategies. Uses Opus for deeper reasoning.'
+  },
+  'codebase-researcher': {
+    category: 'Research & Planning',
+    color: '#8b5cf6',
+    tools: ['Read', 'Grep', 'Glob', 'Bash'],
+    model: 'sonnet',
+    mode: 'read-only',
+    steps: 5,
+    rules: 10,
+    claudeRefs: ['Root CLAUDE.md (mandatory first step)', 'All module CLAUDE.md files (contextual)'],
+    topRules: [
+      'Always start with CLAUDE.md files — primary navigation system',
+      'Read-only — never modify any file',
+      'Trace data flows end-to-end when asked',
+      'Report findings with exact file:line references',
+      'Use CLAUDE.md Index to locate relevant modules quickly'
+    ],
+    description: 'Deep codebase investigator. Answers questions, finds patterns, traces data flows, locates implementations. Uses CLAUDE.md hierarchy as primary navigation.'
+  }
+};
+
+// ── Show/close agent detail ──
+function showAgent(name) {
+  const a = agentData[name];
+  if (!a) return;
+  const toolIcons = a.tools.map(t => `<span class="agent-tag tag-tool">${t}</span>`).join(' ');
+  const refs = a.claudeRefs.map(r => `<li>${r}</li>`).join('');
+  const rules = a.topRules.map(r => `<li>${r}</li>`).join('');
+
+  document.getElementById('agent-detail-body').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+      <div style="width:12px;height:12px;border-radius:4px;background:${a.color};"></div>
+      <span style="font-size:11px;color:${a.color};text-transform:uppercase;letter-spacing:1px;font-weight:600;">${a.category}</span>
+    </div>
+    <h2>${name}</h2>
+    <p style="color:var(--text2);font-size:13px;margin-top:6px;line-height:1.6;">${a.description}</p>
+
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+      ${toolIcons}
+      <span class="agent-tag tag-model">${a.model}</span>
+      <span class="agent-tag ${a.mode.includes('read-only') ? 'tag-readonly' : a.mode.includes('fix') ? 'tag-fix' : 'tag-write'}">${a.mode}</span>
+    </div>
+
+    <div style="display:flex;gap:24px;margin-top:16px;font-size:12px;color:var(--text2);">
+      <span><b style="color:var(--text)">${a.steps}</b> workflow steps</span>
+      <span><b style="color:var(--text)">${a.rules}</b> rules</span>
+      <span><b style="color:var(--text)">${a.claudeRefs.length}</b> CLAUDE.md refs</span>
+    </div>
+
+    <div class="detail-section">
+      <h3>CLAUDE.md References (reads before working)</h3>
+      <ul>${refs}</ul>
+    </div>
+    <div class="detail-section">
+      <h3>Key Rules</h3>
+      <ul>${rules}</ul>
+    </div>
+  `;
+  document.getElementById('agent-overlay').classList.add('open');
+}
+
+function closeAgent() {
+  document.getElementById('agent-overlay').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAgent(); });
+
+// ── Tool permission matrix ──
+const matrixData = [
+  { name: 'planner', tools: ['Read','','','Grep','Glob',''], model: 'opus', color: '#8b5cf6' },
+  { name: 'codebase-researcher', tools: ['Read','','','Grep','Glob','Bash'], model: 'sonnet', color: '#8b5cf6' },
+  { name: 'api-sync-checker', tools: ['Read','','','Grep','Glob','Bash'], model: 'sonnet', color: '#f59e0b' },
+  { name: 'security-auditor', tools: ['Read','','','Grep','Glob','Bash'], model: 'sonnet', color: '#ef4444' },
+  { name: 'perf-checker', tools: ['Read','','','Grep','Glob','Bash'], model: 'sonnet', color: '#f59e0b' },
+  { name: 'code-reviewer', tools: ['Read','Write','','Grep','Glob','Bash'], model: 'sonnet', color: '#10b981' },
+  { name: 'test-runner', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#10b981' },
+  { name: 'context-manager', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#10b981' },
+  { name: 'security-reviewer', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#ef4444' },
+  { name: 'migration-helper', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#f59e0b' },
+  { name: 'deploy-checker', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#f59e0b' },
+  { name: 'doc-updater', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#f59e0b' },
+  { name: 'backend-developer', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#3b82f6' },
+  { name: 'frontend-developer', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#3b82f6' },
+  { name: 'ml-engineer', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#3b82f6' },
+  { name: 'e2e-tester', tools: ['Read','Write','Edit','Grep','Glob','Bash'], model: 'sonnet', color: '#3b82f6' },
+];
+
+const tbody = document.getElementById('tool-matrix-body');
+matrixData.forEach(row => {
+  const check = (v) => v ? '<span style="color:#10b981;font-size:16px;">&#10003;</span>' : '<span style="color:#333;">&#8212;</span>';
+  const tr = document.createElement('tr');
+  tr.style.borderBottom = '1px solid var(--border)';
+  tr.innerHTML = `
+    <td style="padding:10px 16px;font-weight:600;color:${row.color};font-size:12px;">${row.name}</td>
+    ${row.tools.map(t => `<td style="padding:10px 8px;text-align:center;">${check(t)}</td>`).join('')}
+    <td style="padding:10px 8px;text-align:center;font-size:11px;color:${row.model==='opus'?'var(--pink)':'var(--text2)'};font-weight:${row.model==='opus'?'700':'400'}">${row.model}</td>
+  `;
+  tbody.appendChild(tr);
+});
+</script>
+</body>
+</html>

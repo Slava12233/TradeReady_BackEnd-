@@ -1,6 +1,6 @@
 # Battles Module
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Agent-vs-agent trading competitions with live monitoring, historical replay, wallet isolation, and ranking.
 

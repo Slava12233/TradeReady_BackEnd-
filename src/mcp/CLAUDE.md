@@ -1,6 +1,6 @@
 # MCP Server
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Exposes 58 trading tools over MCP stdio transport so AI agents (Claude Desktop, cline, etc.) can discover and invoke trading operations against the platform REST API.
 
@@ -133,7 +133,7 @@ Constant for the total number of tools. Useful for tests and documentation.
 | 40 | `start_battle` | POST | `/api/v1/battles/{id}/start` | `battle_id` |
 | 41 | `get_battle_live` | GET | `/api/v1/battles/{id}/live` | `battle_id` |
 | 42 | `get_battle_results` | GET | `/api/v1/battles/{id}/results` | `battle_id` |
-| 58 | `get_battle_replay` | GET | `/api/v1/battles/{id}/replay` | `battle_id` |
+| 43 | `get_battle_replay` | GET | `/api/v1/battles/{id}/replay` | `battle_id` |
 
 #### Strategy Management (7 tools)
 

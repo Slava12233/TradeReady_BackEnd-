@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-20 (Docker agent profile, [ml]/[all] extras, checksum security, 901 tests) -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -62,6 +62,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
 | `Frontend/src/components/battles/CLAUDE.md` | Battle UI components (planned, not yet built) |
 | `Frontend/src/components/coin/CLAUDE.md` | Coin detail — TradingView chart, order book, stats |
+| `Frontend/src/components/docs/CLAUDE.md` | Documentation components — docs viewer, search |
 | `Frontend/src/components/dashboard/CLAUDE.md` | Dashboard — portfolio, equity chart, positions, orders |
 | `Frontend/src/components/landing/CLAUDE.md` | Landing page sections — hero, features, CTA |
 | `Frontend/src/components/layout/CLAUDE.md` | App shell — sidebar, header, agent switcher, WS provider |
@@ -73,7 +74,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `Frontend/src/components/strategies/CLAUDE.md` | Strategy management UI — list, detail, version history, deploy controls |
 | `Frontend/src/components/trades/CLAUDE.md` | Trade history — table, filters, export, detail modal |
 | `Frontend/src/components/training/CLAUDE.md` | Training run observation UI — run list, episode tracking, learning curves |
-| `Frontend/src/components/ui/CLAUDE.md` | ~59 shadcn/ui primitives + custom visual effects |
+| `Frontend/src/components/ui/CLAUDE.md` | 59 shadcn/ui primitives + custom visual effects |
 | `Frontend/src/components/wallet/CLAUDE.md` | Wallet — balance card, asset list, distribution chart |
 | `Frontend/src/hooks/CLAUDE.md` | Hook inventory (23 hooks), TanStack Query patterns |
 | `Frontend/src/lib/CLAUDE.md` | API client, utilities, constants, chart config |
@@ -87,45 +88,182 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 |------|-------------|
 | `alembic/CLAUDE.md` | Migration workflow, async env, naming convention, inventory |
 | `sdk/CLAUDE.md` | Python SDK — sync/async clients, WebSocket client |
+| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows, 3 tool integrations; sub-files in `agent/models/`, `agent/tools/`, `agent/prompts/`, `agent/workflows/`, `agent/tests/`, `agent/strategies/` |
+| `agent/strategies/CLAUDE.md` | 5-strategy agent trading system — PPO RL, genetic algorithm, market regime detection, risk overlay, ensemble combiner; file inventory, CLI commands, dependencies |
+| `agent/strategies/rl/CLAUDE.md` | PPO RL strategy — `RLConfig`, `train()`, `ModelEvaluator`, `PPODeployBridge`; CLI commands, SB3 gotchas |
+| `agent/strategies/evolutionary/CLAUDE.md` | Genetic algorithm strategy — `StrategyGenome` (12 params), `Population`, `BattleRunner`; GA operators, fitness formula, CLI |
+| `agent/strategies/regime/CLAUDE.md` | Market regime detection — `RegimeClassifier` (XGBoost/RF), `RegimeSwitcher` (cooldown+confidence), 4 pre-built strategy dicts |
+| `agent/strategies/risk/CLAUDE.md` | Risk management overlay — `RiskAgent`, `VetoPipeline` (6 gates), `DynamicSizer`, `RiskMiddleware` async entry point |
+| `agent/strategies/ensemble/CLAUDE.md` | Ensemble combiner — `MetaLearner` (weighted voting), `EnsembleRunner` (6-stage pipeline), weight optimiser CLI |
 | `scripts/CLAUDE.md` | Available scripts, when to run each, dependencies |
 | `docs/CLAUDE.md` | Documentation inventory, audience for each doc |
 | `development/CLAUDE.md` | Development planning docs, progress tracking, archived phase plans |
 | `development/code-reviews/CLAUDE.md` | Code review reports from code-reviewer agent |
+| `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 4 rewards, 3 wrappers) for agent training |
 
 ---
 
 ## Sub-Agents (`.claude/agents/`)
 
-Custom agents that can be delegated to for specialized tasks:
+<!-- last-updated: 2026-03-20 -->
 
-| Agent | Purpose | When to Use |
-|-------|---------|-------------|
-| `code-reviewer` | Reviews code against all project standards by reading relevant CLAUDE.md files | After every code change |
-| `test-runner` | Maps changed files to tests, runs them, writes missing tests | After every code change (after code-reviewer) |
-| `migration-helper` | Generates and validates Alembic migrations for safety (destructive ops, two-phase NOT NULL, rollback paths) | Before creating or running any migration |
-| `api-sync-checker` | Compares Pydantic schemas vs TypeScript types, verifies frontend/backend route sync | After changing API routes, schemas, or frontend API code |
-| `doc-updater` | Updates docs/skill.md, api_reference.md, module CLAUDE.md files when code changes | After API, schema, or module changes |
-| `security-auditor` | Audits for auth bypasses, injection risks, secret exposure, agent isolation violations | After security-sensitive changes |
-| `perf-checker` | Detects N+1 queries, blocking async calls, missing indexes, unbounded growth | After changes to DB queries, async code, or hot paths |
-| `context-manager` | Maintains a rolling summary of all development activity — changes, decisions, bugs, learnings, WIP | After every significant change (proactively) |
-| `deploy-checker` | Comprehensive A-Z backend deployment readiness checker — lint, types, tests, migrations, Docker, env vars, security, GitHub Actions pipeline validation | Before deploying to production or merging to main |
-| `codebase-researcher` | Researches the codebase to answer questions, find patterns, trace data flows, and explain how things work. Uses CLAUDE.md hierarchy as primary navigation | When you need to understand how something works, find implementations, or trace data flows before making changes |
-| `planner` | Expert planning specialist for complex features and refactoring. Creates detailed, phased implementation plans with file paths, risks, and testing strategies | PROACTIVELY when users request feature implementation, architectural changes, or complex refactoring |
-| `security-reviewer` | Security vulnerability detection and remediation. Flags secrets, SSRF, injection, agent isolation violations, OWASP Top 10. Can fix CRITICAL issues directly | PROACTIVELY after writing code that handles user input, auth, API endpoints, or sensitive data |
-| `e2e-tester` | Runs live E2E scenarios against the running platform — creates accounts, agents, trades, backtests, battles. All data visible in the UI. Returns login credentials | When you need to populate realistic data for UI testing, validate the full stack end-to-end, or demo the platform |
-| `frontend-developer` | Full-stack frontend development agent — implements components, hooks, pages, and features in Next.js 16 / React 19 / Tailwind v4. Reads CLAUDE.md hierarchy for navigation | When implementing frontend features, components, pages, or UI changes |
+16 specialized agents that can be delegated to for specific tasks. Organized by role category.
+
+### Agent Inventory
+
+#### Quality Gate Agents (run after every change)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `code-reviewer` | Reviews code against project standards documented in CLAUDE.md files. Saves reports to `development/code-reviews/` | Read, Write, Grep, Glob, Bash | sonnet | report + write | **After every code change** (step 1 of post-change pipeline) |
+| `test-runner` | Maps changed files → relevant tests, runs them, writes missing tests per `tests/CLAUDE.md` standards | Read, Write, Edit, Grep, Glob, Bash | sonnet | run + write | **After every code change** (step 2, after code-reviewer) |
+| `context-manager` | Maintains `development/context.md` and syncs/creates CLAUDE.md navigation files across all directories | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | **After every task completes** (mandatory final step) |
+
+#### Security Agents (run for auth, input handling, sensitive changes)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `security-auditor` | Read-only audit for auth bypasses, injection risks, secret exposure, agent isolation violations, missing rate limits, XSS | Read, Grep, Glob, Bash | sonnet | read-only | After any security-sensitive change (auth, middleware, agent scoping) |
+| `security-reviewer` | Vulnerability detection AND remediation. Can fix CRITICAL issues directly. OWASP Top 10, secrets, SSRF, injection, unsafe crypto | Read, Write, Edit, Bash, Grep, Glob | sonnet | read + fix | **PROACTIVELY** after writing code that handles user input, auth, API endpoints, or sensitive data |
+
+> **Key difference:** `security-auditor` is read-only and reports findings. `security-reviewer` can also fix CRITICAL vulnerabilities directly. Use auditor for routine checks, reviewer when you suspect real issues.
+
+#### Infrastructure Agents (run before deploys, migrations, API changes)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `migration-helper` | Generates and validates Alembic migrations. Checks destructive ops, two-phase NOT NULL, hypertable PK rules, rollback paths | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | **Before** creating or running any migration |
+| `api-sync-checker` | Compares Pydantic schemas vs TypeScript types, verifies `api-client.ts` routes match backend endpoints, checks WebSocket message shapes | Read, Grep, Glob, Bash | sonnet | read-only | After changing API routes, schemas, or frontend API code |
+| `deploy-checker` | Full A-Z deployment readiness: lint, types, tests, migrations, Docker builds, env vars, security, API health, frontend build, GitHub Actions CI/CD | Read, Write, Edit, Grep, Glob, Bash | sonnet | report + write | Before deploying to production or merging to `main` |
+| `doc-updater` | Syncs `docs/skill.md`, `docs/api_reference.md`, module CLAUDE.md files, and SDK docs with actual code | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | After API, schema, or module changes |
+| `perf-checker` | Detects N+1 queries, blocking async calls, missing indexes, unbounded growth, React render issues, bundle bloat | Read, Grep, Glob, Bash | sonnet | read-only | After changes to DB queries, async code, caching, hot paths, or frontend components |
+
+#### Development Agents (run when building features)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `backend-developer` | Writes production-quality async Python 3.12+ modules, services, tools, integrations following project conventions | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When creating new Python packages, implementing business logic, or building integrations |
+| `frontend-developer` | Implements Next.js 16 / React 19 / Tailwind v4 components, hooks, pages, and features per `Frontend/CLAUDE.md` | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When implementing frontend features, components, pages, or UI changes |
+| `ml-engineer` | RL training pipelines, genetic algorithms, regime classifiers, ensemble systems. Integrates with `tradeready-gym/` environments | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When implementing Gymnasium RL agents, evolutionary optimization, or ML classifiers |
+| `e2e-tester` | Runs live E2E scenarios against the running platform — creates accounts, agents, trades, backtests, battles. Returns credentials for UI verification | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When you need to populate realistic data, validate the full stack, or demo the platform |
+
+#### Research & Planning Agents (run before implementing)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `planner` | Creates detailed, phased implementation plans with file paths, risks, dependencies, and testing strategies | Read, Grep, Glob | **opus** | read-only | **PROACTIVELY** when users request feature implementation, architectural changes, or complex refactoring |
+| `codebase-researcher` | Investigates the codebase to answer questions, find patterns, trace data flows, locate implementations | Read, Grep, Glob, Bash | sonnet | read-only | When you need to understand how something works before making changes |
+
+### Agent Pipelines (Execution Order)
+
+Agents are not independent — they form pipelines that must be followed in order:
+
+#### Standard Post-Change Pipeline (every code change)
+```
+code-reviewer → test-runner → context-manager
+     │               │              │
+  report          run tests     update context.md
+  violations      fix gaps      sync CLAUDE.md files
+```
+
+#### API/Schema Change Pipeline
+```
+[make changes] → api-sync-checker → doc-updater → code-reviewer → test-runner → context-manager
+```
+
+#### Security-Sensitive Change Pipeline
+```
+[make changes] → security-reviewer (fix CRITICALs) → security-auditor (verify) → code-reviewer → test-runner → context-manager
+```
+
+#### Performance-Sensitive Change Pipeline
+```
+[make changes] → perf-checker → code-reviewer → test-runner → context-manager
+```
+
+#### Database Migration Pipeline
+```
+migration-helper (validate/generate) → [apply migration] → deploy-checker → context-manager
+```
+
+#### Feature Implementation Pipeline
+```
+planner → codebase-researcher → backend-developer / frontend-developer / ml-engineer → code-reviewer → test-runner → context-manager
+```
 
 ### Mandatory Agent Rules
 
-- **After ANY code change**, delegate to `code-reviewer` then `test-runner` in sequence. Do not skip either step.
-- **Before ANY migration**, delegate to `migration-helper` to validate or generate the migration safely.
-- **After API/schema changes**, delegate to `api-sync-checker` to verify frontend/backend are in sync, then `doc-updater` to update documentation.
-- **For security-sensitive changes** (auth, middleware, agent scoping, input handling), delegate to `security-auditor`.
-- **For performance-sensitive changes** (DB queries, async code, caching, ingestion), delegate to `perf-checker`.
-- If the `test-runner` agent identifies missing test coverage, it will write new tests following `tests/CLAUDE.md` standards.
-- If tests fail, fix the code (or tests if behavior intentionally changed), then re-run via `test-runner` until all pass.
-- **After every significant change**, delegate to `context-manager` to log what changed, why, and any decisions/learnings. This keeps `development/context.md` fresh so future conversations have full context.
-- **Keep agents up to date**: When the project evolves — new modules, new test patterns, new conventions, renamed files — update the relevant `.claude/agents/*.md` files. Agents are only as useful as the instructions they contain.
+1. **After ANY code change**, run the standard pipeline: `code-reviewer` → `test-runner` → `context-manager`. Never skip.
+2. **Before ANY migration**, delegate to `migration-helper` to validate or generate the migration safely.
+3. **After API/schema changes**, delegate to `api-sync-checker` then `doc-updater` before the standard pipeline.
+4. **For security-sensitive changes** (auth, middleware, agent scoping, input handling), run the security pipeline.
+5. **For performance-sensitive changes** (DB queries, async code, caching, ingestion), run `perf-checker` before the standard pipeline.
+6. If `test-runner` identifies missing coverage, it writes new tests following `tests/CLAUDE.md` standards.
+7. If tests fail, fix the code (or tests if behavior intentionally changed), then re-run via `test-runner` until all pass.
+8. **`context-manager` is ALWAYS the final step** of every task. It updates `development/context.md` and syncs all CLAUDE.md files. Not optional.
+
+### Agent Configuration Reference
+
+All agents use YAML frontmatter with these fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Lowercase with hyphens (e.g., `code-reviewer`) |
+| `description` | yes | When to delegate — include "Use proactively" for auto-trigger |
+| `tools` | yes | Allowlist: `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` |
+| `model` | no | `sonnet` (default), `opus` (for planning), `haiku` (for fast tasks) |
+
+Advanced fields available but not yet used:
+- `memory` — `project` / `user` / `local` — enables cross-session learning
+- `effort` — `low` / `medium` / `high` / `max` — controls reasoning depth
+- `isolation` — `worktree` — runs in isolated git worktree copy
+- `maxTurns` — limits agentic turns before stopping
+- `hooks` — `PreToolUse` / `PostToolUse` / `Stop` lifecycle hooks for conditional validation
+
+### Keeping Agents Up to Date
+
+Agents are only as effective as their instructions. When the project evolves:
+- **New modules/patterns**: Update relevant agent `.md` files with new context loading paths
+- **Renamed files**: Update file paths referenced in agent workflows
+- **New conventions**: Add rules to agents that enforce them
+- **Test count changes**: Update `test-runner` and module CLAUDE.md test inventories
+- **Track changes**: When you modify an agent, note what changed and why in `development/context.md`
+
+### Agent Improvement Checklist
+
+When reviewing or improving an agent, verify:
+- [ ] Description clearly states when to delegate (includes trigger phrases)
+- [ ] Tools are minimal — only what the agent actually needs (read-only agents should NOT have Write/Edit)
+- [ ] Context loading section lists specific CLAUDE.md files to read first
+- [ ] Workflow has numbered steps with concrete actions
+- [ ] Output format is specified (report structure, file paths, severity ratings)
+- [ ] Rules section has hard constraints and non-negotiable practices
+- [ ] Model choice matches complexity (opus for planning, sonnet for most tasks)
+- [ ] Advanced features applied where beneficial (memory, effort, isolation)
+
+---
+
+## Skills (`.claude/skills/`)
+
+Reusable slash-command workflows invoked with `/skill-name`:
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| `commit` | `/commit` | Smart commit: stages, generates conventional message (`type(scope): desc`), runs ruff check, commits |
+| `review-changes` | `/review-changes` | Full post-change pipeline: detects pipeline type, runs agents in order (code-reviewer → test-runner → context-manager + extras) |
+| `run-checks` | `/run-checks` | Quick quality gate: ruff + mypy + pytest on changed files only. Fast feedback, no agent delegation |
+| `sync-context` | `/sync-context` | Scan all CLAUDE.md files, fix stale inventories, create missing ones, update development/context.md |
+| `plan-to-tasks` | `/plan-to-tasks <file>` | Read a plan file, discover agents, match tasks to agents, create task files in `development/tasks/` |
+
+## Configuration (`.claude/settings.json`)
+
+Shared team configuration (committed to git). Defines:
+- **Permissions**: Pattern-based allow/deny rules for all tools (Bash, Read, Edit, etc.)
+- **Env vars**: `PYTHONPATH=.`, `PYTHONDONTWRITEBYTECODE=1`
+- **Hooks**: PostToolUse reminder after Write/Edit to run the quality pipeline
+- **Denied**: Destructive operations (`rm -rf /`, `git push --force`, `DROP TABLE`)
+
+Personal overrides go in `.claude/settings.local.json` (gitignored).
 
 ---
 
@@ -160,6 +298,9 @@ Original planning docs are archived in `development/` for reference. These are *
 # Start all services (requires Docker)
 docker compose up -d
 
+# Start the platform testing agent (opt-in profile; reads agent/.env)
+docker compose --profile agent up agent
+
 # API server (local dev, no Docker)
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -176,6 +317,14 @@ celery -A src.tasks.celery_app worker --loglevel=info
 
 # Celery beat (scheduler)
 celery -A src.tasks.celery_app beat --loglevel=info
+
+# Platform Testing Agent (autonomous E2E tester — requires agent/.env)
+python -m agent.main smoke               # 10-step connectivity validation (no LLM)
+python -m agent.main trade               # Full trading lifecycle with LLM
+python -m agent.main backtest            # 7-day MA-crossover backtest with LLM analysis
+python -m agent.main strategy            # Strategy create → test → improve → compare cycle
+python -m agent.main all                 # Run all four workflows; writes platform-validation-*.json
+python -m agent.main trade --model openrouter:anthropic/claude-opus-4-5  # Override model
 ```
 
 Access points: API `http://localhost:8000`, Swagger docs `http://localhost:8000/docs`, Prometheus metrics `http://localhost:8000/metrics`, Grafana `http://localhost:3000`, Prometheus `http://localhost:9090`, WebSocket `ws://localhost:8000/ws/v1?api_key=...`
@@ -408,3 +557,6 @@ pnpm dlx shadcn@latest add <component-name>  # Add shadcn/ui component
 | `TICK_BUFFER_MAX_SIZE` | Max ticks buffered before forced flush (default 5000) |
 | `NEXT_PUBLIC_API_BASE_URL` | Frontend: backend REST API base URL |
 | `NEXT_PUBLIC_WS_URL` | Frontend: backend WebSocket URL |
+| `OPENROUTER_API_KEY` | Testing agent: OpenRouter API key (required; stored in `agent/.env`) |
+| `AGENT_MODEL` | Testing agent: primary LLM model ID (default `openrouter:anthropic/claude-sonnet-4-5`) |
+| `AGENT_CHEAP_MODEL` | Testing agent: cheap model for low-stakes tasks (default `openrouter:google/gemini-2.0-flash-001`) |

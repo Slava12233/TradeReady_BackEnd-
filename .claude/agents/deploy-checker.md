@@ -3,6 +3,7 @@ name: deploy-checker
 description: "Comprehensive deployment readiness checker for backend AND frontend. Validates lint, types, tests, migrations, Docker builds, env vars, security, API health, frontend build, and GitHub Actions CI/CD pipeline before deploying to production."
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
+effort: high
 ---
 
 # Deployment Readiness Agent

@@ -1,6 +1,6 @@
 # Training Module
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Training run observation — tracking, aggregation, and learning curves for RL/Gym training.
 

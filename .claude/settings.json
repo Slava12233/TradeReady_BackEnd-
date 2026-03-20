@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "permissions": {
+    "allow": [
+      "Read(.)",
+      "Edit(.)",
+      "Write(.)",
+      "Glob(.)",
+      "Grep(.)",
+      "WebSearch",
+
+      "Bash(python -m pytest *)",
+      "Bash(pytest *)",
+      "Bash(ruff check *)",
+      "Bash(ruff format *)",
+      "Bash(mypy *)",
+
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(cd *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+
+      "Bash(python -c *)",
+      "Bash(python -m *)",
+      "Bash(pip install *)",
+      "Bash(pip list *)",
+
+      "Bash(pnpm build *)",
+      "Bash(pnpm dev *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm dlx *)",
+      "Bash(npx tsc *)",
+
+      "Bash(docker compose *)",
+      "Bash(docker exec *)",
+      "Bash(docker cp *)",
+      "Bash(docker port *)",
+      "Bash(docker restart *)",
+      "Bash(docker logs *)",
+      "Bash(docker ps *)",
+
+      "Bash(curl -s *)",
+      "Bash(curl -X *)",
+
+      "Bash(alembic *)",
+
+      "Bash(celery *)",
+
+      "Bash(sleep *)",
+
+      "mcp__ide__getDiagnostics",
+      "mcp__ide__executeCode"
+    ],
+
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(docker system prune *)",
+      "Bash(DROP TABLE *)",
+      "Bash(DROP DATABASE *)"
+    ]
+  },
+
+  "env": {
+    "PYTHONPATH": ".",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'File modified — remember to run code-reviewer + test-runner pipeline'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

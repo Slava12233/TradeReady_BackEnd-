@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -79,6 +79,8 @@ All tasks follow the same pattern: a sync Celery task function calls `asyncio.ru
 | `cleanup_old_data` | 110s | 120s |
 | `capture_battle_snapshots` | 10s | 15s |
 | `check_battle_completion` | 30s | 45s |
+| `run_strategy_episode` | 300s | 360s |
+| `aggregate_test_results` | 60s | 90s |
 
 ## Public API / Interfaces
 

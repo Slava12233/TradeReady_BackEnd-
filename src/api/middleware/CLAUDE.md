@@ -1,6 +1,6 @@
 # API Middleware
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-20 -->
 
 > Authentication, rate limiting, and structured request logging middleware for the FastAPI/Starlette API layer.
 
@@ -40,12 +40,14 @@ This means **LoggingMiddleware runs first** (outermost), then **AuthMiddleware**
 
 ### Rate Limiting
 
-Three tiers (first prefix match wins):
+Five tiers (first prefix match wins):
 
 | Prefix | Group | Limit |
 |--------|-------|-------|
 | `/api/v1/trade/` | `orders` | 100 req/min |
 | `/api/v1/market/` | `market_data` | 1200 req/min |
+| `/api/v1/backtest/` | `backtest` | 6000 req/min |
+| `/api/v1/training/` | `training` | 3000 req/min |
 | `/api/v1/` (everything else) | `general` | 600 req/min |
 
 - Redis key pattern: `rate_limit:{api_key}:{group}:{minute_bucket}`
@@ -128,4 +130,5 @@ All three are registered via `app.add_middleware(ClassName)` in `src/main.py`. T
 
 ## Recent Changes
 
+- `2026-03-20` — Added `backtest` (6000/min) and `training` (3000/min) rate limit tiers; rate tier count increased from 3 to 5.
 - `2026-03-17` — Initial CLAUDE.md created

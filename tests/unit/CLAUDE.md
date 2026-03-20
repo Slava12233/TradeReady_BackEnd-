@@ -1,6 +1,6 @@
 # Unit Tests
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-20 -->
 
 > 1184 unit tests across 70 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
 
@@ -40,7 +40,7 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_health.py` | 10 | Health check endpoint — DB/Redis/Binance status, degraded mode |
 | `test_historical_battle_engine.py` | 26 | `HistoricalBattleEngine` — shared clock, per-agent sandboxes, step, batch, order, complete |
 | `test_logging_middleware.py` | 10 | `LoggingMiddleware` — request/response logging, sensitive header redaction |
-| `test_mcp_tools.py` | 142 | MCP server tools — all 43 original trading tools over stdio transport |
+| `test_mcp_tools.py` | 138 | MCP server tools — all 43 original trading tools over stdio transport |
 | `test_mcp_strategy_tools.py` | 21 | MCP strategy/training tools — 15 new tools (strategy management, testing, training observation) |
 | `test_indicator_engine.py` | 26 | `IndicatorEngine` — RSI, MACD, SMA, EMA, Bollinger, ADX, ATR against known values |
 | `test_strategy_service.py` | 16 | `StrategyService` — create, get, list, update, archive, versions, deploy/undeploy |
@@ -183,3 +183,5 @@ pytest tests/unit/ --cov=src --cov-report=html                  # with coverage
 - `2026-03-17` — Initial CLAUDE.md created
 - `2026-03-18` — Added `test_symbol_mapper.py` (30 tests). Updated `test_price_ingestion_service.py` to patch `_create_tick_source` instead of removed module-level `BinanceWebSocketClient` import.
 - `2026-03-18` — Removed duplicate inventory rows. Verified 70 files on disk match 70 entries in the table.
+- `2026-03-19` — Synced test count: 1194 → 1184 (actual grep count of `def test_` / `async def test_` functions). 70 files confirmed.
+- `2026-03-20` — Verified: still 70 test files on disk. No new unit test files added this session.

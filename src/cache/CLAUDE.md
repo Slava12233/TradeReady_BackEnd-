@@ -1,6 +1,6 @@
 # Cache Layer
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Redis-backed price store, ticker aggregation, and async connection management for sub-millisecond price lookups.
 

@@ -1,6 +1,6 @@
 # Alembic Migrations
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Async Alembic migrations for TimescaleDB/PostgreSQL schema management.
 
@@ -55,7 +55,7 @@ The environment uses an async-first pattern:
 
 ### Revision ID Convention
 
-Revisions use zero-padded sequential integers (`001`, `002`, ..., `015`) rather than Alembic's default random hex hashes. The `down_revision` chain is strictly linear (no branches).
+Revisions use zero-padded sequential integers (`001`, `002`, ..., `016`) rather than Alembic's default random hex hashes. The `down_revision` chain is strictly linear (no branches).
 
 ### File Naming
 
@@ -94,8 +94,8 @@ alembic revision -m "description of change"
 ```
 
 After generating, you must:
-1. Set `revision` to the next sequential number (e.g., `"016"`)
-2. Set `down_revision` to the current head (e.g., `"015"`)
+1. Set `revision` to the next sequential number (e.g., `"017"`)
+2. Set `down_revision` to the current head (e.g., `"016"`)
 3. Write both `upgrade()` and `downgrade()` functions
 4. Run `ruff check` on the generated file (post-write hook handles formatting)
 
@@ -134,3 +134,4 @@ alembic downgrade 010      # Roll back to specific revision
 - `2026-03-17` -- Migrations 013-015 added: agent-scoped backtests and historical battle support
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Migration 016 added: strategy and training tables (strategies, strategy_versions, strategy_test_runs, strategy_test_episodes, training_runs, training_episodes)
+- `2026-03-19` -- Synced with codebase: confirmed 15 numbered migration files (001-016, no 011), head at 016. All inventory entries match files on disk.

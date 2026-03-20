@@ -57,6 +57,17 @@ _PERIOD_DAYS: dict[str, int] = {
 #: so that e.g. ``"BUSD"`` is matched before ``"USD"``.
 _KNOWN_QUOTES: tuple[str, ...] = ("USDT", "BUSD", "USDC", "TUSD", "BTC", "ETH", "BNB", "DAI", "PAX")
 
+#: Human-readable candle interval labels and their equivalent durations in seconds.
+#: Used by :func:`parse_interval` to accept both ``"1h"`` and ``3600`` forms.
+_INTERVAL_LABEL_SECONDS: dict[str, int] = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+    "4h": 14400,
+    "1d": 86400,
+}
+
 
 # ---------------------------------------------------------------------------
 # Public helpers
@@ -247,6 +258,80 @@ def symbol_to_base_quote(symbol: str) -> tuple[str, str]:
     # Fallback: split at midpoint.
     mid = len(symbol) // 2
     return symbol[:mid], symbol[mid:]
+
+
+def parse_interval(interval: str | int) -> int:
+    """Convert a candle interval to its duration in seconds.
+
+    Accepts either a human-readable interval string (``"1m"``, ``"5m"``,
+    ``"1h"``, ``"1d"``) or an integer / integer-string representing seconds
+    directly (e.g. ``3600`` or ``"3600"``).  This allows API endpoints to
+    accept both formats interchangeably.
+
+    Supported string labels and their second equivalents:
+
+    * ``"1m"``  → 60
+    * ``"5m"``  → 300
+    * ``"15m"`` → 900
+    * ``"1h"``  → 3600
+    * ``"4h"``  → 14400
+    * ``"1d"``  → 86400
+
+    Args:
+        interval: Interval as a human-readable string (e.g. ``"1h"``) or as
+                  an integer number of seconds (e.g. ``3600``).  Numeric
+                  strings (e.g. ``"3600"``) are coerced to ``int``.
+
+    Returns:
+        Duration in seconds as a plain :class:`int`.
+
+    Raises:
+        :exc:`~src.utils.exceptions.InputValidationError`: If *interval* is
+            not a recognised label and cannot be parsed as a positive integer.
+
+    Example::
+
+        assert parse_interval("1h")   == 3600
+        assert parse_interval(3600)   == 3600
+        assert parse_interval("3600") == 3600
+        assert parse_interval("5m")   == 300
+    """
+    if isinstance(interval, int):
+        if interval <= 0:
+            from src.utils.exceptions import InputValidationError  # noqa: PLC0415
+
+            raise InputValidationError(
+                f"interval must be a positive integer, got {interval!r}",
+                field="interval",
+            )
+        return interval
+
+    # str path: try the human-readable label table first.
+    label = str(interval).strip()
+    if label in _INTERVAL_LABEL_SECONDS:
+        return _INTERVAL_LABEL_SECONDS[label]
+
+    # Fall back to parsing as a plain integer (e.g. "3600").
+    try:
+        seconds = int(label)
+    except ValueError as exc:
+        from src.utils.exceptions import InputValidationError  # noqa: PLC0415
+
+        supported = list(_INTERVAL_LABEL_SECONDS)
+        raise InputValidationError(
+            f"Unrecognised interval {interval!r}. "
+            f"Use one of {supported} or a positive integer number of seconds.",
+            field="interval",
+        ) from exc
+
+    if seconds <= 0:
+        from src.utils.exceptions import InputValidationError  # noqa: PLC0415
+
+        raise InputValidationError(
+            f"interval must be a positive integer, got {seconds!r}",
+            field="interval",
+        )
+    return seconds
 
 
 def clamp(value: Decimal, lo: Decimal, hi: Decimal) -> Decimal:

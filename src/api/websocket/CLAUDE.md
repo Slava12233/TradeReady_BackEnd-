@@ -1,6 +1,6 @@
 # WebSocket Server
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Real-time bidirectional communication layer: connection lifecycle, channel-based pub/sub, and Redis-to-WebSocket bridging for live price ticks, order updates, portfolio snapshots, and battle events.
 

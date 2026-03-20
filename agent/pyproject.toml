@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradeready-test-agent"
+version = "0.1.0"
+description = "Autonomous AI agent for end-to-end testing of the AiTradingAgent platform"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "AiTradingAgent", email = "dev@agentexchange.io" }]
+keywords = ["crypto", "trading", "ai", "agents", "testing", "pydantic-ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic-ai-slim[openrouter]>=0.2",
+    "agentexchange",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+    "structlog>=24.0",
+    "pydantic-settings>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+ml = [
+    "stable-baselines3[extra]>=2.3",
+    "torch>=2.2",
+    "xgboost>=2.0",
+    "scikit-learn>=1.4",
+    "joblib>=1.3",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "tradeready-gym",
+]
+all = [
+    "tradeready-test-agent[dev,ml]",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "ANN"]
+ignore = ["ANN101", "ANN102"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

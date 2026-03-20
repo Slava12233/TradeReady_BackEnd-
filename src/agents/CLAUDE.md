@@ -1,6 +1,6 @@
 # Agents Module
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Multi-agent creation, lifecycle management, and deterministic avatar generation for the trading platform.
 

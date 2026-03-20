@@ -1,6 +1,6 @@
 # Monitoring
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Health checks and Prometheus metrics exposure for platform infrastructure observability.
 

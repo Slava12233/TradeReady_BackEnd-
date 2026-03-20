@@ -408,11 +408,20 @@ async def backtest_candles(
     session_id: str,
     symbol: str,
     engine: BacktestEngineDep,
-    interval: int = Query(default=60, description="Interval in seconds"),
+    interval: str = Query(default="60", description="Interval as a label ('1m','5m','1h','1d') or seconds ('3600')"),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> dict[str, Any]:
-    """Get candles up to the current virtual time."""
-    candles = await engine.get_candles(session_id, symbol, interval, limit)
+    """Get candles up to the current virtual time.
+
+    The ``interval`` parameter accepts both human-readable labels
+    (``"1m"``, ``"5m"``, ``"1h"``, ``"1d"``) and plain-integer second values
+    (``"60"``, ``"3600"``).  This allows gym environments and strategy scripts
+    that use string timeframes to call this endpoint without a 422 error.
+    """
+    from src.utils.helpers import parse_interval  # noqa: PLC0415
+
+    interval_seconds = parse_interval(interval)
+    candles = await engine.get_candles(session_id, symbol, interval_seconds, limit)
     return {
         "symbol": symbol,
         "interval": interval,

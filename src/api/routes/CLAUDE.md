@@ -1,6 +1,6 @@
 # API Routes
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-20 -->
 
 > FastAPI route modules implementing all REST endpoints for the AI Agent Crypto Trading Platform.
 
@@ -89,7 +89,7 @@ For agent- and battle-scoped endpoints, routes manually verify `resource.account
 | `PUT` | `/account/risk-profile` | 200 | Update risk limits (agent or account) |
 | `POST` | `/account/reset` | 200 | Destructive reset to starting balance (requires `confirm: true`) |
 
-### agents.py — 13 endpoints
+### agents.py — 14 endpoints
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
@@ -141,7 +141,7 @@ For agent- and battle-scoped endpoints, routes manually verify `resource.account
 | `GET` | `/analytics/portfolio/history` | 200 | Equity snapshots for charting (1m/1h/1d intervals) |
 | `GET` | `/analytics/leaderboard` | 200 | Cross-account rankings by ROI (top 50, max 200 scanned) |
 
-### backtest.py — 24 endpoints
+### backtest.py — 27 endpoints
 
 **Lifecycle:**
 
@@ -293,4 +293,5 @@ Follow the pattern in `backtest.py`: call `engine._get_active(session_id)` to ge
 
 ## Recent Changes
 
+- `2026-03-20` — `backtest.py` `/backtest/create` interval parameter now accepts string shorthand (`"1h"`, `"5m"`) in addition to raw seconds integers, via `parse_interval()` from `src/utils/helpers.py`.
 - `2026-03-17` — Initial CLAUDE.md created

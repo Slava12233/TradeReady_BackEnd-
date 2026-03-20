@@ -1,6 +1,6 @@
 # AgentExchange Python SDK
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Universal Python client library for the AgentExchange AI crypto trading platform -- sync, async, and WebSocket.
 
@@ -13,8 +13,8 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 | File | Purpose |
 |------|---------|
 | `agentexchange/__init__.py` | Package root; re-exports all 3 clients, 13 models, 9 exceptions; defines `__version__` |
-| `agentexchange/client.py` | `AgentExchangeClient` -- synchronous REST client (httpx, 35 methods) |
-| `agentexchange/async_client.py` | `AsyncAgentExchangeClient` -- async REST client (httpx async, 35 methods) |
+| `agentexchange/client.py` | `AgentExchangeClient` -- synchronous REST client (httpx, 37 methods) |
+| `agentexchange/async_client.py` | `AsyncAgentExchangeClient` -- async REST client (httpx async, 37 methods) |
 | `agentexchange/ws_client.py` | `AgentExchangeWS` -- WebSocket client (websockets lib, decorator-based subscriptions) |
 | `agentexchange/models.py` | 13 frozen dataclasses: `Price`, `Ticker`, `Candle`, `Balance`, `Position`, `Portfolio`, `PnL`, `Order`, `Trade`, `Performance`, `Snapshot`, `LeaderboardEntry`, `AccountInfo` |
 | `agentexchange/exceptions.py` | Exception hierarchy (10 classes) + `raise_for_response()` factory |
@@ -26,10 +26,10 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 
 ### Client Design
 
-Both REST clients (`AgentExchangeClient` and `AsyncAgentExchangeClient`) share an identical public API surface of 35 methods organized into 7 groups:
+Both REST clients (`AgentExchangeClient` and `AsyncAgentExchangeClient`) share an identical public API surface of 37 methods organized into 7 groups:
 
 - **Market data** (6): `get_price`, `get_all_prices`, `get_candles`, `get_ticker`, `get_recent_trades`, `get_orderbook`
-- **Trading** (8): `place_market_order`, `place_limit_order`, `place_stop_loss`, `place_take_profit`, `get_order`, `get_open_orders`, `cancel_order`, `cancel_all_orders`, `get_trade_history`
+- **Trading** (9): `place_market_order`, `place_limit_order`, `place_stop_loss`, `place_take_profit`, `get_order`, `get_open_orders`, `cancel_order`, `cancel_all_orders`, `get_trade_history`
 - **Account** (6): `get_account_info`, `get_balance`, `get_positions`, `get_portfolio`, `get_pnl`, `reset_account`
 - **Analytics** (3): `get_performance`, `get_portfolio_history`, `get_leaderboard`
 - **Strategies** (6): `create_strategy`, `get_strategies`, `get_strategy`, `create_version`, `deploy_strategy`, `undeploy_strategy`
@@ -180,3 +180,4 @@ cd sdk && ruff check . && mypy agentexchange/
 
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Fixed model count: 12 -> 13 frozen dataclasses (AccountInfo was undercounted)
+- `2026-03-19` -- Synced with codebase: confirmed 6 Python files and all documented items exist. No changes needed.

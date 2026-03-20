@@ -1,6 +1,6 @@
 # Strategies Module
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Strategy registry — CRUD, versioning, testing, and deployment for trading strategies.
 

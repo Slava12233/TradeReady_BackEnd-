@@ -1,6 +1,6 @@
 # Price Ingestion
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Streams real-time trade ticks from any exchange (via CCXT or legacy Binance WebSocket), caches prices in Redis, and bulk-flushes tick history to TimescaleDB.
 

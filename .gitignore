@@ -72,6 +72,9 @@ dmypy.json
 *~
 .DS_Store
 
+# ─── Claude Code (personal settings — shared settings.json IS committed) ──
+.claude/settings.local.json
+
 # ─── Logs ────────────────────────────────────────────────────────────────────
 *.log
 logs/
@@ -86,3 +89,18 @@ prometheus_data/
 grafana_data/
 
 Frontend/
+claude-code-starter-kit/
+
+# ─── Agent reports (generated output, not source) ────────────────────────────
+agent/reports/
+
+# ─── ML model artefacts (trained weights — generated output, not source) ─────
+agent/strategies/*/models/*.joblib
+agent/strategies/*/models/*.pkl
+agent/strategies/*/models/*.pt
+agent/strategies/*/models/*.pth
+agent/strategies/*/models/*.zip
+agent/strategies/*/models/logs/
+agent/strategies/*/models/checkpoint/
+agent/strategies/*/models/best_model/
+agent/strategies/rl/results/*.json

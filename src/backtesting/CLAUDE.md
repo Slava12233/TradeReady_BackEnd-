@@ -1,6 +1,6 @@
 # Backtesting Engine
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Historical market data replay engine that lets AI agents test trading strategies against real Binance price data in an isolated, in-memory sandbox.
 

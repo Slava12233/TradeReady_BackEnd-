@@ -27,12 +27,24 @@ Backtesting tables:
 - ``BacktestTrade``       — simulated trade fills within a backtest
 - ``BacktestSnapshot``    — periodic equity snapshots during backtest (hypertable)
 
+Agent ecosystem tables:
+- ``AgentSession``        — conversation sessions per agent
+- ``AgentMessage``        — chat history per session
+- ``AgentDecision``       — trade decisions with reasoning
+- ``AgentJournal``        — trading journal entries
+- ``AgentLearning``       — extracted knowledge / memory
+- ``AgentFeedback``       — platform improvement ideas
+- ``AgentPermission``     — per-agent capability map (unique per agent)
+- ``AgentBudget``         — daily/weekly trade limits (unique per agent)
+- ``AgentPerformance``    — rolling strategy stats by period
+- ``AgentObservation``    — market snapshots at decision points (TimescaleDB hypertable)
+
 All models inherit from the shared ``Base`` declarative base.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -46,6 +58,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Interval,
     Numeric,
     Text,
     UniqueConstraint,

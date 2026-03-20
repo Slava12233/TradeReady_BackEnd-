@@ -1,6 +1,6 @@
 # API Gateway (`src/api/`)
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-20 -->
 
 > HTTP + WebSocket gateway that wires middleware, REST routes, Pydantic schemas, and real-time channels into the FastAPI application.
 
@@ -15,7 +15,7 @@ This module contains everything between the incoming HTTP/WebSocket request and 
 | `__init__.py` | Package marker (no logic) |
 | `middleware/auth.py` | `AuthMiddleware` (Starlette `BaseHTTPMiddleware`), `get_current_account` / `get_current_agent` FastAPI deps, `CurrentAccountDep` / `CurrentAgentDep` aliases |
 | `middleware/logging.py` | `LoggingMiddleware` -- structured request/response logging with correlation `request_id`, latency, account context |
-| `middleware/rate_limit.py` | `RateLimitMiddleware` -- Redis sliding-window rate limiter with 3 tiers (general 600/min, orders 100/min, market_data 1200/min) |
+| `middleware/rate_limit.py` | `RateLimitMiddleware` -- Redis sliding-window rate limiter with 5 tiers (general 600/min, orders 100/min, market_data 1200/min, backtest 6000/min, training 3000/min) |
 | `routes/*.py` | 12 REST router modules, each exporting a single `router: APIRouter` |
 | `schemas/*.py` | Pydantic v2 request/response models, one file per route module |
 | `websocket/manager.py` | `ConnectionManager` -- connection registry, auth, heartbeat, broadcast |
@@ -159,4 +159,5 @@ Add the exact path to `_PUBLIC_PATHS` or a prefix to `_PUBLIC_PREFIXES` in `midd
 
 ## Recent Changes
 
+- `2026-03-20` -- Rate limit tiers expanded from 3 to 5: added `backtest` (6000/min) and `training` (3000/min) tiers before the general 600/min fallback.
 - `2026-03-17` -- Initial CLAUDE.md created

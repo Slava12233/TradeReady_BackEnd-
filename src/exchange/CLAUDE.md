@@ -2,7 +2,7 @@
 
 > CCXT-powered multi-exchange connectivity — the adapter pattern that lets TradeReady talk to 110+ exchanges through one interface.
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-19 -->
 
 ## What This Module Does
 

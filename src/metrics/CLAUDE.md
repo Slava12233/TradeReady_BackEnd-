@@ -1,6 +1,6 @@
 # Unified Metrics
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Single source of truth for all performance metrics across backtesting and battles, ensuring consistent and comparable results.
 

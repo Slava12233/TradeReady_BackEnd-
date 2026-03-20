@@ -1632,4 +1632,143 @@ curl "http://localhost:8000/api/v1/training/compare?run_ids=uuid1,uuid2,uuid3" \
 | `GET` | `/training/runs/{run_id}/learning-curve` | Learning curve data points for charting |
 | `GET` | `/training/compare` | Compare multiple runs side-by-side |
 
+---
+
+## Agent Strategy System (`agent/strategies/`)
+
+The `agent/strategies/` package provides five complementary trading strategy implementations that sit above the platform API. They consume the platform's backtest, battle, strategy registry, and training endpoints to optimise, evaluate, and deploy strategies.
+
+### 1. PPO Reinforcement Learning (`agent/strategies/rl/`)
+
+Trains a Stable-Baselines3 PPO agent on the `TradeReady-Portfolio-v0` Gymnasium environment. All training data comes from the platform's backtest API — no external data feeds needed.
+
+```bash
+# Validate data coverage before training
+python -m agent.strategies.rl.data_prep --assets BTCUSDT ETHUSDT
+
+# Train (500K timesteps, Sharpe reward, 4 parallel envs)
+python -m agent.strategies.rl.train --timesteps 500000 --reward sharpe
+
+# Evaluate trained models on held-out test split
+python -m agent.strategies.rl.evaluate --model-dir agent/strategies/rl/models/
+
+# Deploy against an existing backtest session
+python -m agent.strategies.rl.deploy \
+    --model agent/strategies/rl/models/ppo_seed42.zip \
+    --mode backtest --session-id <uuid>
+
+# Full pipeline: multiple seeds + auto-evaluate
+python -m agent.strategies.rl.runner --seeds 42,123,456 --timesteps 500000
+```
+
+Key config fields (override via `RL_` env vars or `agent/.env`):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `RL_PLATFORM_API_KEY` | required | Your `ak_live_...` key |
+| `RL_REWARD_TYPE` | `sharpe` | One of: `pnl`, `sharpe`, `sortino`, `drawdown` |
+| `RL_TOTAL_TIMESTEPS` | `500000` | Training budget |
+| `RL_N_ENVS` | `4` | Parallel environments |
+| `RL_ENV_SYMBOLS` | `BTCUSDT,ETHUSDT,SOLUSDT` | Portfolio assets |
+
+### 2. Genetic Algorithm (`agent/strategies/evolutionary/`)
+
+Evolves strategy parameters (RSI thresholds, MACD periods, stop-loss %, etc.) using the platform's historical battle system as the fitness function.
+
+Fitness formula: `fitness = sharpe_ratio - 0.5 × max_drawdown_pct`
+
+```bash
+# Run evolution (30 generations, population 12)
+python -m agent.strategies.evolutionary.evolve \
+    --generations 30 --pop-size 12
+
+# Analyse results
+python -m agent.strategies.evolutionary.analyze \
+    --log-path agent/strategies/evolutionary/results/evolution_log.json
+```
+
+Key config fields (override via `EVO_` env vars):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `EVO_PLATFORM_API_KEY` | required | Your `ak_live_...` key |
+| `EVO_GENERATIONS` | `30` | Number of evolution cycles |
+| `EVO_POPULATION_SIZE` | `12` | Genomes per generation |
+
+### 3. Market Regime Detection (`agent/strategies/regime/`)
+
+Classifies market conditions into four regimes and activates the appropriate pre-built strategy for each. XGBoost is used when available; sklearn RandomForest is the fallback.
+
+| Regime | Detection rule | Strategy |
+|--------|---------------|----------|
+| `TRENDING` | ADX > 25 | MACD crossover + ADX > 25 entry |
+| `MEAN_REVERTING` | (default) | RSI oversold + Bollinger lower-band entry |
+| `HIGH_VOLATILITY` | ATR/close > 2× median | Tight 1% stop-loss, small 3% position |
+| `LOW_VOLATILITY` | ATR/close < 0.5× median | Bollinger squeeze breakout, 10% position |
+
+```bash
+# Train the regime classifier
+python -m agent.strategies.regime.classifier \
+    --train --data-url http://localhost:8000
+
+# Validate: regime-adaptive vs static MACD vs buy-and-hold (12 months)
+python -m agent.strategies.regime.validate \
+    --base-url http://localhost:8000 --months 12
+```
+
+### 4. Risk Management Overlay (`agent/strategies/risk/`)
+
+Portfolio-level risk checks applied to every trade signal before execution. These complement (not replace) the platform's built-in per-order risk manager.
+
+| Gate | Outcome | Condition |
+|------|---------|-----------|
+| Risk verdict HALT | VETOED | Daily PnL loss exceeds threshold |
+| Low signal confidence | VETOED | `signal.confidence < 0.5` |
+| Max portfolio exposure | RESIZED | Exceeds configured exposure cap |
+| Same-sector concentration | VETOED | ≥ 2 existing positions in same sector |
+| Recent drawdown > 3% | RESIZED | Position halved |
+
+The `RiskMiddleware` class wires this pipeline into any strategy's trading loop automatically. It never raises — errors appear in `ExecutionDecision.error`.
+
+```python
+from agent.strategies.risk.middleware import RiskMiddleware
+from agent.config import AgentConfig
+
+middleware = RiskMiddleware(config=AgentConfig())
+decision = await middleware.process_signal(trade_signal)
+if decision.executed:
+    print(f"Order placed: {decision.order_id}")
+```
+
+### 5. Ensemble Combiner (`agent/strategies/ensemble/`)
+
+Combines signals from RL, EVOLVED, and REGIME sources into a single `ConsensusSignal` using weighted voting.
+
+```bash
+# Optimise ensemble source weights (runs 12 backtest configurations)
+python -m agent.strategies.ensemble.optimize_weights \
+    --base-url http://localhost:8000
+
+# Run full ensemble pipeline in backtest mode
+python -m agent.strategies.ensemble.run \
+    --mode backtest
+
+# Validate ensemble vs each strategy alone (3 time periods)
+python -m agent.strategies.ensemble.validate \
+    --base-url http://localhost:8000 --periods 3
+```
+
+Voting logic: for each symbol, `score(action) = Σ signal.confidence × weight[source]`. If `combined_confidence < threshold` (default 0.5) → override to HOLD.
+
+Key config fields (override via `ENSEMBLE_` env vars):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `ENSEMBLE_PLATFORM_API_KEY` | required | Your `ak_live_...` key |
+| `ENSEMBLE_CONFIDENCE_THRESHOLD` | `0.5` | Minimum combined confidence to act |
+| `ENSEMBLE_ENABLE_RISK_OVERLAY` | `true` | Run `RiskMiddleware` on every signal |
+| `ENSEMBLE_ENABLE_RL` | `true` | Include RL signals |
+| `ENSEMBLE_ENABLE_EVOLVED` | `true` | Include evolutionary signals |
+| `ENSEMBLE_ENABLE_REGIME` | `true` | Include regime signals |
+
 The `tradeready-gym` wrapper calls the `POST` endpoints automatically. Use the `GET` endpoints to monitor progress from a dashboard or notebook.

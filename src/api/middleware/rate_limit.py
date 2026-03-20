@@ -57,7 +57,9 @@ _WINDOW_SECONDS: Final[int] = 60  # all tiers share a 1-minute window
 # Entries are evaluated in order; the *first* match wins.
 _TIERS: Final[tuple[tuple[str, str, int], ...]] = (
     ("/api/v1/trade/", "orders", 100),
+    ("/api/v1/backtest/", "backtest", 6000),
     ("/api/v1/market/", "market_data", 1200),
+    ("/api/v1/training/", "training", 3000),
     ("/api/v1/", "general", 600),
 )
 

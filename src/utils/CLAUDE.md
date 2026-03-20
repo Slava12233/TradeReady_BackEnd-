@@ -1,6 +1,6 @@
 # Utils Module
 
-<!-- last-updated: 2026-03-18 -->
+<!-- last-updated: 2026-03-20 -->
 
 > Shared exception hierarchy and utility functions used across the entire platform.
 
@@ -17,7 +17,7 @@ Provides two core pieces of infrastructure that every other module depends on:
 | File | Purpose |
 |------|---------|
 | `exceptions.py` | Exception hierarchy: base `TradingPlatformError` + all domain subclasses |
-| `helpers.py` | Shared utility functions: `utc_now`, `parse_period`, `paginate`, `format_decimal`, `symbol_to_base_quote`, `clamp` |
+| `helpers.py` | Shared utility functions: `utc_now`, `parse_period`, `paginate`, `format_decimal`, `symbol_to_base_quote`, `clamp`, `parse_interval` |
 | `__init__.py` | Empty (no re-exports; consumers import from submodules directly) |
 
 ## Architecture & Patterns
@@ -146,6 +146,7 @@ TradingPlatformError (500)
 | `format_decimal(value, places=8)` | `(Decimal, int) -> str` | String with `ROUND_HALF_UP`, e.g. `"1.23456789"` |
 | `symbol_to_base_quote(symbol)` | `(str) -> tuple[str, str]` | `("BTC", "USDT")` from `"BTCUSDT"` |
 | `clamp(value, lo, hi)` | `(Decimal, Decimal, Decimal) -> Decimal` | Value clamped to `[lo, hi]` |
+| `parse_interval(interval)` | `(str \| int) -> int` | Normalise a candle interval to seconds; accepts `"1h"`, `"5m"`, `3600`, `"3600"`; raises `InputValidationError` on unknown strings |
 
 ## Dependencies
 
@@ -180,5 +181,6 @@ TradingPlatformError (500)
 
 ## Recent Changes
 
+- `2026-03-20` -- Added `parse_interval()` to `helpers.py`; normalises backtest interval parameter to seconds, accepting both string shorthand (`"1h"`, `"5m"`) and integer/string-integer forms. Used by `src/api/routes/backtest.py`.
 - `2026-03-18` -- Added StrategyNotFoundError, StrategyInvalidStateError, TrainingRunNotFoundError to exception hierarchy and public API table
 - `2026-03-17` -- Initial CLAUDE.md created

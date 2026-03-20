@@ -1,6 +1,6 @@
 # Portfolio Module
 
-<!-- last-updated: 2026-03-17 -->
+<!-- last-updated: 2026-03-19 -->
 
 > Real-time portfolio valuation, PnL calculation, performance metrics, and periodic snapshot capture for AI trading agents.
 

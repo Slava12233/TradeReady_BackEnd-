@@ -4,10 +4,10 @@
 
 ## Current State
 
-**Active work:** Cross-cutting tasks CC-1 through CC-14 (next up after STR-UI-2 completion)
-**Last session:** 2026-03-18 — Phase STR-UI-2 (Integration & Polish) completed all 7 implementation tasks. Dashboard strategy/training status cards added, backtest list filter for training episodes, sidebar badges for `/strategies` and `/training`, empty states for both pages, mobile responsive layout for version comparison, and error boundaries for both routes.
-**Next steps:** Cross-cutting tasks CC-1 through CC-14. Battle system frontend (`Frontend/src/components/battles/`) remains empty. Historical battle mode 500 bug still open.
-**Blocked:** None
+**Active work:** All CLAUDE.md files synced with latest codebase changes (rate limits, parse_interval, new dev docs, agent deployment/ecosystem plans).
+**Last session:** 2026-03-20 — Context manager sync pass. Updated: `src/api/middleware/CLAUDE.md` (added backtest+training rate tiers), `src/utils/CLAUDE.md` (added parse_interval), `src/api/routes/CLAUDE.md` (backtest interval string param), `src/api/CLAUDE.md` (rate tier count), `development/CLAUDE.md` (new docs + task boards), `development/context.md` (current session). Agent CLAUDE.md files already up to date from previous session.
+**Next steps:** (1) Start Docker services, load historical OHLCV data via `scripts/backfill_history.py`. (2) Run training pipeline in order: regime classifier → PPO RL → evolutionary optimiser → ensemble weight search. (3) Battle system frontend (`Frontend/src/components/battles/`) remains empty — last major incomplete frontend area. (4) Execute Phase 1 of agent ecosystem plan (DB migrations, conversation system, memory). (5) Monitoring and alerting for live ensemble runs.
+**Blocked:** Nothing currently blocked.
 
 ---
 
@@ -15,7 +15,7 @@
 
 A **production-deployed** simulated crypto exchange where AI agents trade **virtual USDT** against **real Binance market data**. Supports 600+ USDT pairs with real-time price feeds, order execution, risk controls, portfolio tracking, backtesting, and agent-vs-agent battles.
 
-### What's Built (as of 2026-03-17)
+### What's Built (as of 2026-03-20)
 
 | System | Status | Key Details |
 |--------|--------|-------------|
@@ -34,10 +34,13 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 | **Unified Metrics** | Production | Shared calculator for backtests & battles |
 | **MCP Server** | Production | 58 tools over stdio transport (43 base + 15 strategy/training from Phase STR-4) |
 | **Python SDK** | Production | Sync + async + WebSocket clients |
-| **Frontend** | Production | Next.js 16, React 19, Tailwind v4, agent switcher, backtest UI |
+| **Frontend** | Production | Next.js 16, React 19, Tailwind v4, agent switcher, backtest UI. Performance-optimized: memo'd rows, lazy sections, RAF batch buffer, GET dedup, prefetch, 207 unit tests. |
 | **Monitoring** | Production | Prometheus metrics, health checks, structured logging |
 | **Exchange Abstraction (CCXT)** | Production | Adapter pattern, 110+ exchanges, symbol mapper, multi-exchange backfill |
-| **Agentic Layer** | Complete | 36 CLAUDE.md files, 12 sub-agents |
+| **Agentic Layer** | Complete | 36 CLAUDE.md files, 16 sub-agents (categorized: 3 quality gates, 2 security, 5 infrastructure, 4 development, 2 research/planning) |
+| **Platform Testing Agent** | Complete | `agent/` package — Pydantic AI + OpenRouter, 4 workflows, 3 integration layers, 117 unit tests |
+| **Agent Strategy System** | Complete | `agent/strategies/` — 5 strategies (RL/evolutionary/regime/risk/ensemble), 29 tasks, 578 tests. Perf + security hardened: asyncio.gather (6 locations), asyncio.to_thread (4 locations), SHA-256 checksums, no CLI API key exposure. |
+| **Docs Site** | **COMPLETE** | 8 phases done. 50 MDX pages, 12 sections, 7 custom components, Cmd+K search, MD downloads, 5 REST API routes, landing integration, OpenGraph metadata, sitemap, custom 404. Security + perf hardened. |
 | **Strategy Registry (STR-1)** | Production | 6 DB tables, 10 REST endpoints, versioning, ownership checks, 24 tests |
 | **Strategy Executor (STR-2)** | Production | IndicatorEngine (7 indicators), StrategyExecutor, TestOrchestrator, TestAggregator, RecommendationEngine, 6 REST endpoints, 2 Celery tasks, 91 tests |
 | **Training Run Aggregation (STR-5)** | Production | TrainingRunService, TrainingRunRepository, 7 REST endpoints at /api/v1/training, learning curve smoothing, aggregate stats on complete(), 16 tests |
@@ -114,147 +117,335 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 11. **Unified metrics pipeline** — same calculator for backtests and battles, adapter pattern for different input sources
 12. **Self-maintaining knowledge layer** — CLAUDE.md files in every folder, mandatory update rule when code changes
 13. **Dual-source price pattern** — Frontend components that compute asset USDT values must use WS prices (primary) + REST `/market/prices` (30s fallback). WebSocket-only is unreliable for initial page loads.
+14. **Frontend performance baseline** — PriceBatchBuffer uses `requestAnimationFrame` (not `setTimeout`); dashboard header split into 4 memo'd islands; 8 below-fold sections lazy-loaded via `next/dynamic`; GET dedup in api-client; 3x exponential retry (200/400/800ms); `useDailyCandlesBatch` batches 50 symbols/query; landing CSS in its own file.
 
 ---
 
 ## Recent Activity
 
-### 2026-03-18 — STR-UI-2: Strategy & Training Integration & Polish (Phase Complete)
+### 2026-03-20 — CLAUDE.md Sync + New Development Docs
 
 **Changes:**
-- `Frontend/src/components/dashboard/strategy-status-card.tsx` — New card showing the currently deployed strategy (name, version, status badge); renders on the main dashboard page.
-- `Frontend/src/components/dashboard/training-status-card.tsx` — New card showing the active training run progress (run name, episode count, latest reward); renders on the main dashboard page.
-- `Frontend/src/app/(dashboard)/page.tsx` (dashboard) — Imported and added `StrategyStatusCard` and `TrainingStatusCard` to the dashboard layout.
-- `Frontend/src/components/backtest/backtest-list.tsx` — Added "Hide training episodes" toggle that filters out entries whose strategy label matches `gym_*` or `training_*` prefixes, preventing gym-generated backtest sessions from cluttering the list.
-- `Frontend/src/lib/constants.ts` (nav/sidebar) — Added animated active indicator dots for `/strategies` (shown when any test run is in progress) and `/training` (shown when any training run is active) in the "Agents & Strategy" nav group.
-- `Frontend/src/components/shared/empty-state.tsx` — Added `no-strategies` and `no-training-runs` variants so both new pages have consistent empty states matching the platform's shared design language.
-- `Frontend/src/components/strategies/version-comparison.tsx` — Added stacked mobile layout via responsive Tailwind classes; desktop retains side-by-side comparison view.
-- `Frontend/src/app/(dashboard)/strategies/error.tsx` — New Next.js error boundary for the `/strategies` route group; prevents strategy page errors from bubbling to the root layout.
-- `Frontend/src/app/(dashboard)/training/error.tsx` — New Next.js error boundary for the `/training` route group.
+- `src/api/middleware/rate_limit.py` — Added `backtest` (6000 req/min) and `training` (3000 req/min) rate limit tiers; allows the high-frequency step/batch calls in backtesting and episode reporting during training.
+- `src/utils/helpers.py` — Added `parse_interval(interval: str | int) -> int` utility; normalises candle interval to seconds, accepting `"1h"`, `"5m"`, raw integers, and string integers. Used by `backtest.py` create endpoint.
+- `src/api/routes/backtest.py` — Backtest create endpoint now accepts string interval shorthand via `parse_interval()`; previously only accepted raw integer seconds.
+- `agent/pyproject.toml` — Added `[ml]` optional group (stable-baselines3, torch, xgboost, scikit-learn, joblib, numpy, pandas) and `[all]` meta-group; core package remains pip-installable without 1.5 GB ML deps.
+- `agent/Dockerfile` — New: python:3.12-slim, 3-layer build (system deps → Python deps → app code), non-root user.
+- `docker-compose.yml` — Added `agent` service under `--profile agent` so it does not start during normal `docker compose up -d`.
+- `agent/strategies/checksum.py` — New: SHA-256 checksum generation and verification (`compute_checksum`, `save_checksum`, `verify_checksum`, `SecurityError`) for `.zip` and `.joblib` model files.
+- `agent/strategies/rl/train.py`, `rl/evaluate.py` — Integrated checksum write-on-save and verify-on-load; eliminates pickle-based code execution risk for local model files.
+- `agent/strategies/*/battle_runner.py`, `data_prep.py`, `ensemble/run.py` — Replaced sequential awaits with `asyncio.gather()` at 6 locations; removed latency bottleneck on battles with 5+ participants.
+- `agent/strategies/rl/deploy.py`, `regime/classifier.py` — Wrapped `model.predict()` and `classifier.fit()` in `asyncio.to_thread()` to unblock event loop during numpy/sklearn C-extension calls.
+- `agent/strategies/rl/deploy.py`, `ensemble/run.py` — Capped `step_history` and `regime_history` deques to prevent unbounded memory growth.
+- `agent/strategies/regime/switcher.py` — Added in-memory regime detection cache; avoids re-running classifier on identical candle windows within the same step.
+- 10 CLI scripts across `agent/strategies/` — Removed `--api-key` CLI argument from all entry points; API key must come from `AGENT_API_KEY` env var only.
+- `agent/strategies/regime/classifier.py` — `_fetch_candles` now paginates (API limit 1000); previously could silently truncate long date ranges.
+- `agent/strategies/regime/models/regime_classifier.joblib` — Trained classifier model committed alongside source.
+- `agent/strategies/rl/models/ppo_portfolio_final.zip` — Smoke-test model committed for CI validation.
+- `development/plan.md` — New: agent deployment + training plan (Docker setup, data loading, training pipeline ordering).
+- `development/executive-summary.md` — New: C-level executive summary of the platform.
+- `development/agent-ecosystem-plan.md` — New: master plan for agent ecosystem (36 tasks: DB migrations, conversation system, memory, multi-agent coordination).
+- `development/tasks/agent-deployment-training/` — New 23-task board: Docker setup, data loading, regime training, PPO training, evolutionary optimisation, ensemble search, monitoring.
+- `development/tasks/agent-ecosystem/` — New 36-task board: full agent ecosystem expansion phases.
+- `development/agent-development/battle-historical-investigation.md` — New investigation report on battle historical mode 500 error.
 
 **Decisions:**
-- Dashboard status cards are separate components (not inline in the page) — keeps the dashboard page file readable and lets the cards be conditionally rendered without logic cluttering the layout.
-- "Hide training episodes" is a client-side toggle (not a server query param) — the list is already paginated from the server; an additional filter param would require a new backend query parameter, and the toggle provides instant feedback without a network round-trip.
-- Sidebar animated dots use conditional rendering based on polling data already fetched by the strategy/training hooks — no new API calls; the data is reused from the existing TanStack Query cache.
-- Error boundaries added at the route level (not component level) — Next.js App Router error.tsx files catch all errors within the route segment, providing the right granularity without wrapping every component individually.
+- `backtest` rate tier set to 6000/min — backtest step loops call the API in tight loops (up to 100 steps/session); 600/min general tier would throttle active backtests within seconds.
+- `training` rate tier set to 3000/min — episode reporting calls happen every gym step during training; moderate headroom without fully uncapping.
+- `asyncio.to_thread()` preferred over `ProcessPoolExecutor` for blocking ML operations — process pools have high startup overhead and pickle cost for numpy arrays; thread pool releases GIL during C-extension execution.
+- `--profile agent` in docker-compose prevents accidental resource consumption in staging; operators must opt in explicitly.
+- SHA-256 checksums as `.sha256` sidecar files — simple, CI-verifiable with standard shell tools, no file format changes needed.
 
 **Learnings:**
-- Next.js App Router error.tsx must be a Client Component (`"use client"`) — server components cannot catch rendering errors at the boundary level; this is a Next.js constraint, not a design choice.
-- The "hide training episodes" filter pattern (prefix-matching on a label field) should be documented for future callers: any Celery task or gym loop that creates backtest sessions for training must use the `gym_` or `training_` prefix on the strategy label to be filterable.
+- `agent/strategies/regime/classifier._fetch_candles` was silently truncating long date ranges because the API returns at most 1000 candles per request; pagination is required for > ~40 days of hourly data.
 
 ---
 
-### 2026-03-18 — STR-UI-1: Strategy & Training Frontend Pages (Phase Complete)
+### 2026-03-20 — MILESTONE: Frontend Performance Optimization (23 Tasks, 3 Phases)
+
+**What was done:**
+A systematic performance audit and optimization pass across the entire frontend. Three phases covering quick wins, architectural improvements, and polish.
 
 **Changes:**
-- `Frontend/src/lib/types.ts` — Added 20 new TypeScript types: `StrategyStatus`, `StrategyDefinition`, `Strategy`, `StrategyDetailResponse`, `StrategyVersion`, `StrategyListResponse`, `TestRunStatus`, `StrategyTestRun`, `PairBreakdown`, `AggregatedMetrics`, `TestResults`, `VersionMetrics`, `VersionComparisonResponse`, `TrainingRun`, `TrainingEpisodeMetrics`, `TrainingEpisode`, `LearningCurveData`, `TrainingRunDetail`, `RunMetrics`, `TrainingComparisonResponse`.
-- `Frontend/src/lib/api-client.ts` — Added 20 new API functions covering strategy CRUD, strategy test operations, and training run operations.
-- `Frontend/src/lib/constants.ts` — Added `/strategies` and `/training` to `ROUTES` and `NAV_ITEMS` (Brain + GraduationCap icons).
-- `Frontend/src/hooks/use-strategies.ts` — New hook: strategy list query + 6 mutations (create, update, archive, create-version, deploy, undeploy).
-- `Frontend/src/hooks/use-strategy-detail.ts` — New hook: strategy detail + test runs + version comparison.
-- `Frontend/src/hooks/use-training-runs.ts` — New hook: training run list with 10s conditional polling.
-- `Frontend/src/hooks/use-training-run-detail.ts` — New hook: active run (2s poll), detail, learning curve, comparison.
-- `Frontend/src/components/strategies/` — 10 new components: `strategy-status-badge.tsx`, `strategy-list-table.tsx`, `strategy-detail-header.tsx`, `version-history.tsx`, `definition-viewer.tsx`, `test-results-summary.tsx`, `version-comparison.tsx`, `recommendations-card.tsx`, `strategies-page.tsx`, `strategy-detail-page.tsx`.
-- `Frontend/src/components/training/` — 11 new components: `active-training-card.tsx`, `learning-curve-sparkline.tsx`, `completed-runs-table.tsx`, `run-header.tsx`, `run-summary-cards.tsx`, `learning-curve-chart.tsx`, `episode-highlight-card.tsx`, `episodes-table.tsx`, `run-comparison-view.tsx`, `training-page.tsx`, `training-run-detail-page.tsx`.
-- `Frontend/src/app/(dashboard)/strategies/` — New page + loading.tsx.
-- `Frontend/src/app/(dashboard)/strategies/[id]/` — New dynamic page + loading.tsx.
-- `Frontend/src/app/(dashboard)/training/` — New page + loading.tsx.
-- `Frontend/src/app/(dashboard)/training/[run_id]/` — New dynamic page + loading.tsx.
+
+Phase 1 — Quick Wins:
+- `Frontend/src/components/market/market-table-row.tsx` — Wrapped `PriceFlashCell` in `React.memo` with a custom comparator that only re-renders on price or direction change; prevents cascading re-renders across 600+ market table rows.
+- `Frontend/src/app/(dashboard)/battles/loading.tsx` — New: Next.js skeleton loading UI for the battles route (instant perceived performance on navigation).
+- `Frontend/src/hooks/use-portfolio.ts` — Removed incorrect `useShallow` usage (was causing unnecessary deep comparison overhead); portfolio selector is already a primitive value.
+- `Frontend/src/hooks/use-price.ts` — Memoized the price selector with `useMemo` so the selector function reference is stable across renders; prevents Zustand re-subscription churn.
+- `Frontend/src/components/analytics/chart.tsx` — Memoized chart context value with `useMemo` to prevent all chart children from re-rendering when the parent re-renders without data changes.
+- `Frontend/package.json` / `next.config.ts` — Installed `@next/bundle-analyzer`; activated via `ANALYZE=true` env var.
+
+Phase 2 — Architecture:
+- `Frontend/src/components/layout/header.tsx` — Restructured dashboard Header into 4 independently memo'd islands: `WsStatusBadge`, `NotificationBell`, `UserAvatar`, `SearchShell`. Each island only re-renders when its own data changes, not when any sibling updates.
+- `Frontend/src/components/layout/sidebar.tsx` — Sidebar strategy/training activity dot badges given `staleTime: 60_000` (was 10s) — reduces badge-triggered re-fetches; activity state changes rarely enough that 60s staleness is acceptable.
+- `Frontend/src/app/(dashboard)/layout.tsx` — Added `Suspense` boundaries around 8 below-fold dashboard sections; replaced them with `next/dynamic` lazy-loaded variants with skeleton fallbacks. These sections now only load after above-fold content is interactive.
+- `Frontend/src/lib/api-client.ts` — GET request deduplication: concurrent identical GET requests share a single in-flight fetch (Map keyed by URL). Retry logic fixed: 3 attempts with exponential backoff (200/400/800ms), previously 1 retry with flat 1s delay.
+- `Frontend/src/app/(dashboard)/coin/[symbol]/page.tsx` (or coin hooks) — Order book polling interval increased 5s→15s; trade history polling 10s→30s; REST price polling disabled entirely when WebSocket is connected for that symbol.
+- `Frontend/src/hooks/use-daily-candles-batch.ts` — New: `useDailyCandlesBatch` batches up to 50 symbols per TanStack Query entry instead of one query per symbol; reduces query entries from 600 to 12 for the market table sparklines.
+- `Frontend/src/app/globals.css` — 660 lines of landing-page CSS extracted to `Frontend/src/styles/landing.css`; globals.css trimmed from 1090 to 279 lines. Landing page imports the new file directly; non-landing pages no longer parse unused CSS.
+- `Frontend/src/styles/landing.css` — New: extracted landing-page styles (animations, hero gradients, section layouts).
+
+Phase 3 — Polish:
+- `Frontend/src/components/shared/section-error-boundary.tsx` — New: `SectionErrorBoundary` component wraps individual dashboard sections so one failing section doesn't blank the entire dashboard. 11 dashboard sections wrapped independently.
+- `Frontend/src/lib/prefetch.ts` — New: route prefetch utilities (`prefetchDashboard`, `prefetchMarket`, `prefetchCoin`); each calls `queryClient.prefetchQuery()` with keys matching hook factories. Used by sidebar `onMouseEnter` handlers.
+- `Frontend/src/lib/websocket-client.ts` — `PriceBatchBuffer` switched from `setTimeout` to `requestAnimationFrame` with a 100ms minimum interval guard. Added `Map`-based deduplication (last price wins per symbol within a frame) and a mounted guard to prevent post-unmount flushes.
+- `Frontend/src/hooks/use-backtest-list.ts`, `use-backtest-results.ts`, `use-leaderboard.ts`, `use-market-data.ts` (and 3 others) — `keepPreviousData` (`placeholderData: keepPreviousData`) added to 7 hooks across 4 files; eliminates loading flashes on page/filter changes.
+
+Validation:
+- `Frontend/tests/unit/components/price-flash-cell.test.tsx` — New: 11 tests covering PriceFlashCell memo comparator, flash class application, direction tracking.
+- `Frontend/tests/unit/api-client.test.ts` — New: 20 tests covering GET deduplication, retry backoff timing, error propagation.
+- 207 frontend tests passing (was 187 before Phase 2 test additions).
 
 **Decisions:**
-- Training list uses 10s polling (not WebSocket) — training runs are long-lived background jobs; a 10s poll is sufficient granularity and avoids opening extra WS channels.
-- Active training run detail uses 2s polling — more aggressive to show learning curve progress in near-real-time while a run is `active`.
-- `TrainingEpisodeMetrics` introduced as a sub-type of `TrainingEpisode` — backend nests episode metrics inside a `metrics` object; flat structure on the TypeScript type would have misaligned the shape and caused runtime `undefined` values.
-
-**Bugs fixed (API sync):**
-- `deployStrategy()` was missing a `version` body parameter — fixed to accept and send version.
-- `getTrainingRuns()` backend returns a raw array (not a `{ runs: [...] }` wrapper) — frontend now wraps it to match expected shape.
-- `TrainingEpisode` had flat field structure (`roi_pct` at top level) but backend nests under `metrics` — restructured type and all consuming components to use `episode.metrics.roi_pct`.
-- `createStrategy()` had `definition` as optional — made required to match backend validation (backend rejects requests without it).
-- `StrategyTestRun.strategy_id` removed from type — field is not present in the backend response schema.
-
-**Learnings:**
-- All training components must access episode data via `episode.metrics.*` not `episode.*` — the backend nests all performance fields under a `metrics` sub-object in `TrainingEpisode`.
-- 10s conditional polling pattern (stop when run reaches terminal status) is already established in `use-backtest-list.ts` — replicated in `use-training-runs.ts` for consistency.
-
----
-
-### 2026-03-18 — STR-3/STR-4 Security Hardening
-
-**Changes:**
-- `tradeready-gym/tradeready_gym/envs/base_trading_env.py` — Added `_validate_base_url()` to reject non-http/https schemes and URLs without a host (SSRF prevention); added `_validate_symbol()` regex (`^[A-Z0-9]{2,20}$`) to sanitize trading pair symbols before URL interpolation, applied to `self.pairs` in `__init__` (path injection prevention).
-- `tradeready-gym/tradeready_gym/utils/training_tracker.py` — Changed all `exc_info=True` to `exc_info=False` to prevent httpx tracebacks from leaking `X-API-Key` headers into logs; added URL validation mirroring `base_trading_env.py` to reject non-http/https schemes and empty-host URLs.
-- `src/mcp/tools.py` — Added UUID format validation for `run_ids` list in `compare_training_runs` tool to prevent query parameter injection; removed full `arguments` dict from `call_tool` debug log to stop financial data leaking into logs.
-- `sdk/agentexchange/client.py` — Added UUID validation for `run_ids` in the sync `compare_training_runs` method to prevent query parameter injection.
-- `sdk/agentexchange/async_client.py` — Identical UUID validation added to the async `compare_training_runs` method.
-
-**Decisions:**
-- Symbol validation uses a strict allowlist regex (`^[A-Z0-9]{2,20}$`) rather than a denylist — safer default; any symbol outside this range is invalid by the exchange's own naming conventions.
-- `exc_info=False` preferred over removing exception logging entirely — preserves the error message (type + string) for observability while dropping the full traceback that exposes headers.
-- UUID validation applied at both MCP tool layer and SDK layer — defense in depth; the REST API already validates, but clients should not send malformed data even if the server would reject it.
+- `requestAnimationFrame` chosen over `setTimeout(fn, 100)` for PriceBatchBuffer flush — RAF fires at display refresh rate (16ms) and is paused by the browser when the tab is backgrounded, saving CPU. The 100ms minimum guard prevents excessive flushes on high-frequency feeds.
+- Header split into 4 memo'd islands rather than one memo'd monolith — each island subscribes to its own data source; a WS reconnection only re-renders `WsStatusBadge`, not the entire header including search and avatar.
+- GET deduplication implemented at the `api-client.ts` layer (not TanStack Query) because it handles raw `fetch()` calls outside React components (e.g., prefetch utility) that don't go through the query cache.
+- Landing CSS extracted to a separate file rather than using `@layer` scoping — allows the landing page to import it explicitly; the dashboard layout never imports it, so landing styles are never parsed on authenticated pages.
+- `staleTime: 60_000` on sidebar activity badges — these drive animated dot indicators (active strategies / running training); 60s staleness is acceptable since the underlying data changes on user action, not continuously.
 
 **Bugs fixed:**
-- SSRF: `base_trading_env.py` and `training_tracker.py` accepted arbitrary `base_url` values including `file://`, `ftp://`, and URLs without a host — now rejected before any HTTP call is made.
-- Path injection: unvalidated symbols were interpolated directly into URL paths (e.g., `f"/backtest/{symbol}/step"`) — a symbol like `../admin` could traverse to unintended endpoints.
-- API key log leakage: httpx exceptions include full request context (headers) in their `__traceback__`; `exc_info=True` was writing these to the log stream.
-- UUID injection: `compare_training_runs` accepted arbitrary strings as run IDs and passed them as query parameters — now validated to be well-formed UUIDs before the request is sent.
-- Debug log data leak: `call_tool` debug log was dumping the full `arguments` dict, which can include API keys, account IDs, and financial parameters.
+- `use-price.ts` selector reference instability — memoized selector now prevents Zustand from treating each render as a new subscription, which was causing subtle double-subscription bugs in pages with many price cells.
+- API client retry was doing 1 retry with flat 1s delay (documented as 3x exponential in Frontend/CLAUDE.md but not implemented); now matches documentation.
+
+**Tests:** 207 frontend unit tests passing after Phase 2 test suite additions (11 new PriceFlashCell + 20 new API client tests). Previous baseline was 187.
 
 ---
 
-### 2026-03-18 — STR-4: MCP Tools, SDK Extensions, Documentation (Phase Complete)
+### 2026-03-20 — Agent Deployment Preparation (Tasks 19-23)
 
 **Changes:**
-- `src/mcp/tools.py` — Added 15 new tools: 7 strategy management, 5 strategy testing, 3 training observation. Tool count raised from 43 to 58. Fixed `_call_api` to handle 204/empty responses. Moved lazy `import json` to module top level.
-- `src/mcp/CLAUDE.md` — Updated tool count and tool tables to reflect 58 tools.
-- `sdk/agentexchange/client.py` — Added 13 new methods: strategy CRUD (6), testing (4), training (3).
-- `sdk/agentexchange/async_client.py` — Identical async counterparts of the 13 new SDK methods.
-- `docs/skill.md` — Added Strategy Development Cycle and RL Developer sections.
-- `docs/api_reference.md` — Added 23 new endpoint sections covering strategies, strategy tests, and training runs.
-- `tests/unit/test_mcp_strategy_tools.py` — 15+ tests for the 15 new MCP tools.
+- `agent/pyproject.toml` — Added `[ml]` optional group (stable-baselines3, torch, xgboost, scikit-learn, joblib, numpy, pandas) and `[all]` meta-group that installs everything; core package remains installable without ML deps.
+- `agent/Dockerfile` — New: python:3.12-slim base, 3-layer install (system deps → Python deps → app code), non-root user for production safety.
+- `docker-compose.yml` — Added `agent` service pinned to `--profile agent` so it does not start by default; only activated when explicitly requested.
+- `agent/strategies/*/battle_runner.py`, `data_prep.py`, `ensemble/run.py` — Performance: replaced sequential `await` calls with `asyncio.gather()` at 4 locations in battle_runner; data_prep parallelised; ensemble run parallelised.
+- `agent/strategies/rl/deploy.py`, `agent/strategies/regime/classifier.py` — Performance: wrapped `model.predict()` and `classifier.fit()` in `asyncio.to_thread()` to unblock the event loop during blocking numpy/sklearn operations.
+- `agent/strategies/rl/deploy.py`, `agent/strategies/ensemble/run.py` — Performance: capped `step_history` and `regime_history` deques to prevent unbounded memory growth over long runs.
+- `agent/strategies/regime/switcher.py` — Performance: added in-memory regime detection cache; avoids re-running the classifier on identical candle windows within the same step.
+- `agent/strategies/utils/checksum.py` — New: SHA-256 checksum generation and verification for saved model files; raises `ModelIntegrityError` if the checksum does not match on load.
+- `agent/strategies/rl/train.py`, `agent/strategies/rl/evaluate.py` — Security: integrated `checksum.py` — checksum written alongside `.zip` on save, verified on load. Removes pickle-based arbitrary code execution risk for local model files.
+- `agent/strategies/rl/runner.py`, `agent/strategies/regime/validate.py`, `agent/strategies/ensemble/validate.py`, `agent/strategies/ensemble/optimize_weights.py` (and 6 other CLI scripts) — Security: removed `--api-key` positional/flag argument from all 10 CLI entry points; API key must now come from `AGENT_API_KEY` env var only, eliminating `ps aux` exposure.
+- `development/tasks/agent-deployment-training/` — New task board: 23 tasks covering Docker setup, data loading, regime training, PPO training, evolutionary optimisation, ensemble search, and monitoring setup.
 
 **Decisions:**
-- New MCP tools remain thin wrappers over existing REST endpoints, consistent with the prior pattern (no business logic in the MCP layer).
-- `_call_api` now explicitly handles 204 No Content and empty body responses rather than failing on `.json()` parse — necessary for delete/cancel endpoints.
+- `[ml]` and `[all]` extras keep the core `agent/` package pip-installable in CI/CD without pulling in torch (1.5 GB+); ML deps are only installed in the training Docker image.
+- `--profile agent` in docker-compose prevents the agent container from starting during normal `docker compose up -d`; operators must opt in explicitly. This avoids accidental resource consumption in staging environments.
+- SHA-256 checksums stored as sidecar files (`<model>.sha256`) alongside model zips — simpler than embedding in the file format; easy to verify in CI pipelines with standard shell tools.
+- `asyncio.to_thread()` chosen over `ProcessPoolExecutor` for blocking ML calls — process pool has significant startup overhead and pickle serialisation cost for numpy arrays; thread pool is sufficient since the GIL is released during numpy/sklearn C-extension execution.
 
 **Bugs fixed:**
-- `_call_api` in `tools.py` would crash on 204 responses with an empty body — fixed by checking `response.content` before calling `.json()`.
+- Battle historical mode `500 INTERNAL_ERROR` on create — confirmed fixed (was fixed 2026-03-18; regression test added).
+- `asyncio.gather()` introduced at 4 battle_runner locations resolves a latency bug where sequential agent provisioning could time out on battles with 5+ participants.
 
-**Learnings:**
-- MCP tool count drift: `TOOL_COUNT` constant in `tools.py` must be kept in sync with `server.py` and `__init__.py` manually — no automated check enforces it.
+**Tests:** 901 agent tests passing (0 failures, 1 skipped). Previous count was 578 (strategy layer) + 117 (agent package) = 695; the increase to 901 reflects new checksum utility tests and CLI security tests added in this session.
 
 ---
 
-### 2026-03-18 — STR-3: Gymnasium Wrapper Package (Phase Complete)
+### 2026-03-20 — Full CLAUDE.md Sync Pass (context-manager)
 
 **Changes:**
-- `tradeready-gym/pyproject.toml` — New package: `tradeready-gym`, depends on gymnasium>=0.29, numpy, httpx.
-- `tradeready-gym/tradeready_gym/__init__.py` — Registers 7 environments (`TradeReady-SingleAsset-v0` through `TradeReady-Live-v0`); exports all public classes.
-- `tradeready-gym/tradeready_gym/envs/base_trading_env.py` — `BaseTradingEnv(gymnasium.Env)` wrapping the backtest REST API. `api_key` made private (`_api_key`) to prevent accidental serialization. Registration guard simplified.
-- `tradeready-gym/tradeready_gym/envs/single_asset_env.py` — `SingleAssetTradingEnv` with both discrete (HOLD/BUY/SELL) and continuous (-1 to 1) action modes.
-- `tradeready-gym/tradeready_gym/envs/multi_asset_env.py` — `MultiAssetTradingEnv` using portfolio weight allocation as the action space.
-- `tradeready-gym/tradeready_gym/envs/live_env.py` — `LiveTradingEnv` for real-time paper trading; bare `except` replaced with specific httpx exceptions; dead `_create_session` override removed.
-- `tradeready-gym/tradeready_gym/spaces/action_spaces.py` — 5 action space presets: discrete, continuous, portfolio, multi-discrete, parametric.
-- `tradeready-gym/tradeready_gym/spaces/observation_builders.py` — `ObservationBuilder` producing OHLCV + RSI, MACD, Bollinger Bands, ADX, ATR features.
-- `tradeready-gym/tradeready_gym/rewards/custom_reward.py` — ABC base with `reset()` abstract method.
-- `tradeready-gym/tradeready_gym/rewards/pnl_reward.py` — Simple equity delta reward.
-- `tradeready-gym/tradeready_gym/rewards/sharpe_reward.py` — Rolling Sharpe ratio delta; `reset()` implemented.
-- `tradeready-gym/tradeready_gym/rewards/sortino_reward.py` — Rolling Sortino ratio delta; `reset()` implemented.
-- `tradeready-gym/tradeready_gym/rewards/drawdown_penalty_reward.py` — PnL minus drawdown penalty; `reset()` implemented.
-- `tradeready-gym/tradeready_gym/utils/training_tracker.py` — Auto-reports training runs to platform API; `__del__` removed (unreliable finalizer replaced with explicit `close()` / context manager pattern).
-- `tradeready-gym/tradeready_gym/wrappers/feature_engineering.py` — Adds SMA ratios and momentum features.
-- `tradeready-gym/tradeready_gym/wrappers/normalization.py` — Welford's online normalization clipped to [-1, 1].
-- `tradeready-gym/tradeready_gym/wrappers/batch_step.py` — Accumulates N environment steps per single agent action call.
-- `tradeready-gym/examples/` — 10 example scripts: random agent, PPO, DQN, continuous, portfolio, custom reward, custom obs builder, vectorized envs, evaluation harness, live trading.
-- `tradeready-gym/tests/test_gymnasium_compliance.py` — 25+ tests: gymnasium API compliance (reset/step/seed), all reward functions, all wrappers, all action space presets.
-- `development/Gym_api/tasks.md` — All 25 tasks across STR-3 (16) and STR-4 (9) marked complete.
+- `agent/strategies/rl/CLAUDE.md` — Created: full docs for PPO RL pipeline (`RLConfig`, `train()`, `ModelEvaluator`, `PPODeployBridge`), CLI commands, SB3 install gotchas, security note on pickle.
+- `agent/strategies/evolutionary/CLAUDE.md` — Created: full docs for GA optimiser (`StrategyGenome` 12-param table, `Population`, `BattleRunner`), operators, fitness formula, CLI commands, JWT auth requirement.
+- `agent/strategies/regime/CLAUDE.md` — Created: full docs for regime detection (`RegimeType` rules, `RegimeClassifier` XGBoost/RF, `RegimeSwitcher` cooldown/confidence), 4 pre-built strategy dicts, CLI commands.
+- `agent/strategies/risk/CLAUDE.md` — Created: full docs for risk overlay (`RiskAgent` 3-verdict assess, `VetoPipeline` 6-gate table, `DynamicSizer`, `RiskMiddleware` async pipeline), patterns and gotchas.
+- `agent/strategies/ensemble/CLAUDE.md` — Created: full docs for ensemble combiner (`WeightedSignal`/`ConsensusSignal` types, `MetaLearner` voting algorithm, `EnsembleRunner` 6-stage pipeline, `EnsembleConfig`), weight optimiser CLI.
+- `agent/strategies/CLAUDE.md` — Added Sub-CLAUDE.md Index section listing all 5 sub-packages.
+- `CLAUDE.md` — Added 5 strategy sub-package CLAUDE.md entries to the Infrastructure index table.
+- `tests/unit/CLAUDE.md` — Bumped last-updated to 2026-03-20; confirmed 70 test files unchanged.
+- `tests/integration/CLAUDE.md` — Bumped last-updated to 2026-03-20; confirmed 24 test files unchanged.
+- `tests/CLAUDE.md` — Bumped last-updated to 2026-03-20.
+- `Frontend/src/components/landing/CLAUDE.md` — Bumped last-updated to 2026-03-20; added note that landing page moved from `/` to `/landing` route.
 
 **Decisions:**
-- Package uses httpx (not requests) for REST calls — consistent with the rest of the backend ecosystem, supports async usage.
-- `TrainingTracker` drops `__del__` finalizer — Python's garbage collector makes `__del__` unreliable for network calls; replaced with explicit `close()` and context manager support.
-- All stateful reward functions implement `reset()` — required so state (rolling windows, baseline equity) is cleared between episodes; without it, episode 2 would inherit episode 1's statistics.
-- `api_key` renamed to `_api_key` in `BaseTradingEnv` — prevents the key from appearing in `env.__dict__` serialization or repr outputs.
-- Bare `except` in `live_env.py` replaced with `except (httpx.HTTPError, httpx.TimeoutException)` — avoids swallowing `KeyboardInterrupt`, `SystemExit`, and other non-network exceptions.
+- Strategy sub-package CLAUDE.md files are detailed enough to stand alone (each 60-80 lines) so that working in a sub-package does not require reading the parent `agent/strategies/CLAUDE.md` first.
+- Did not create CLAUDE.md for `agent/strategies/rl/models/`, `rl/results/`, `evolutionary/results/`, `regime/models/` — these are output-only directories with no source files.
+
+---
+
+### 2026-03-20 — Coming Soon Page + Landing Page Route Reorganization
+
+**Changes:**
+- `Frontend/src/app/page.tsx` — New root route (`/`) replaced the landing page with a "Coming Soon" page. Renders the `ComingSoon` component.
+- `Frontend/src/app/landing/page.tsx` — Original landing page moved here; accessible at `/landing` for direct reference or future re-activation.
+- `Frontend/src/components/coming-soon/coming-soon.tsx` — New component implementing the Coming Soon page: platform summary paragraph, 6-feature grid (Real-Time Trading, AI Agents, Backtesting, Battle System, Strategy Builder, Analytics), "How It Works" 3-step flow, and a waitlist email signup form.
+
+**Decisions:**
+- Waitlist form posts to the existing `/api/waitlist` endpoint with `source: "coming-soon"` — no new backend endpoint needed; the `waitlist` DB table and route were already in place.
+- Original landing page preserved at `/landing` rather than deleted — allows internal navigation and future re-promotion without rebuilding the component.
+- Coming Soon page is a standalone client component (no layout wrapping) — it serves as the public-facing entry point before the platform opens, separate from the authenticated dashboard layout.
+
+**Build verification:** Both `/` (coming-soon) and `/landing` routes appear in the Next.js route table. Zero TypeScript/lint errors.
+
+---
+
+### 2026-03-20 — MILESTONE: Agent Trading Strategy System Complete (5 Strategies, 29 Tasks)
+
+**What was built:**
+A complete multi-strategy trading agent layer in `agent/strategies/`. Five complementary sub-packages that can operate independently or together through the ensemble combiner. All strategies execute against the platform's backtest or live sandbox APIs.
+
+**Changes:**
+
+Phase A — PPO Reinforcement Learning (`agent/strategies/rl/`):
+- `rl/config.py` — `RLConfig` (pydantic-settings, env prefix `RL_`): PPO hyperparameters, env symbols, train/val/test date windows, models output directory.
+- `rl/train.py` — `train(config) -> Path`: Full SB3 PPO training pipeline on `TradeReady-Portfolio-v0` gymnasium env; saves `.zip` checkpoint.
+- `rl/evaluate.py` — `ModelEvaluator`, `EvaluationReport`, `StrategyMetrics`: loads models, runs test-split evaluation, compares against 3 benchmarks (equal-weight, BTC buy-and-hold, ETH buy-and-hold).
+- `rl/deploy.py` — `PPODeployBridge`: loads trained model; drives it against a backtest session or live account via existing REST tools.
+- `rl/data_prep.py` — CLI script to validate OHLCV data coverage before training starts; exits with error if any split has insufficient history.
+- `rl/runner.py` — `SeedMetrics`; CLI orchestrator for the full pipeline (validate → multi-seed train → evaluate → compare).
+
+Phase B — Evolutionary Strategy (`agent/strategies/evolutionary/`):
+- `evolutionary/genome.py` — `StrategyGenome`: 12-parameter trading strategy encoded as a numpy float64 vector; `to_strategy_definition()` produces JSONB-compatible dict for the platform API.
+- `evolutionary/operators.py` — `tournament_select`, `crossover`, `mutate`, `clip_genome`: standard GA operators on `StrategyGenome` vectors.
+- `evolutionary/population.py` — `Population`, `PopulationStats`: manages one generation; `evolve(scores)` applies selection + crossover + mutation in one call.
+- `evolutionary/battle_runner.py` — `BattleRunner`: provisions agents, assigns strategies, runs historical battles, extracts per-agent fitness (`sharpe - 0.5 * max_drawdown`).
+- `evolutionary/evolve.py` — CLI: full evolution loop with convergence detection; writes `evolution_log.json`.
+- `evolutionary/analyze.py` — CLI: post-run analysis (fitness curve, parameter convergence) from `evolution_log.json`.
+- `evolutionary/config.py` — `EvolutionConfig` (pydantic-settings, env prefix `EVO_`).
+- 155 tests.
+
+Phase C — Regime-Adaptive Strategy (`agent/strategies/regime/`):
+- `regime/labeler.py` — `RegimeType` enum (TRENDING / HIGH_VOLATILITY / LOW_VOLATILITY / MEAN_REVERTING), `label_candles` (ADX + ATR/close rules), `generate_training_data`.
+- `regime/classifier.py` — `RegimeClassifier`: 5-feature input (ADX, ATR/close, RSI, MACD, close-vs-SMA20); XGBoost preferred, sklearn `RandomForestClassifier` fallback; joblib persistence.
+- `regime/switcher.py` — `RegimeSwitcher`: cooldown gate (default 20 candles) + confidence threshold before regime switch; `step(candles) -> (RegimeType, strategy_id, switched)`.
+- `regime/strategy_definitions.py` — 4 pre-built `StrategyDefinition`-compatible dicts (one per regime): `TRENDING_STRATEGY`, `MEAN_REVERTING_STRATEGY`, `HIGH_VOLATILITY_STRATEGY`, `LOW_VOLATILITY_STRATEGY`.
+- `regime/validate.py` — CLI: 12-month sequential backtests comparing regime-adaptive vs static MACD vs buy-and-hold.
+- 170 tests.
+
+Phase D — Risk Agent (`agent/strategies/risk/`):
+- `risk/risk_agent.py` — `RiskAgent`, `RiskConfig`, `RiskAssessment`, `TradeApproval`: assesses portfolio state (daily PnL loss / drawdown) and gates proposed trades.
+- `risk/veto.py` — `VetoPipeline`, `VetoDecision`: 6-gate sequential pipeline (HALT check → confidence → exposure → sector → drawdown → APPROVED); RESIZED does not short-circuit.
+- `risk/sizing.py` — `DynamicSizer`, `SizerConfig`: volatility-adjusted and drawdown-adjusted position sizing.
+- `risk/middleware.py` — `RiskMiddleware`, `ExecutionDecision`: 4-stage async middleware (fetch portfolio → assess → veto → size → execute); never raises; all errors in `ExecutionDecision.error`.
+- 107 tests.
+
+Phase E — Ensemble (`agent/strategies/ensemble/`):
+- `ensemble/signals.py` — `SignalSource`, `TradeAction`, `WeightedSignal`, `ConsensusSignal`: typed data models for signal flow.
+- `ensemble/meta_learner.py` — `MetaLearner`: weighted confidence voting across RL/EVOLVED/REGIME sources; three static converters (`rl_weights_to_signals`, `genome_to_signals`, `regime_to_signals`).
+- `ensemble/optimize_weights.py` — CLI: 12 weight configurations grid search via backtests; writes `optimal_weights.json`.
+- `ensemble/run.py` — `EnsembleRunner`: 6-stage step pipeline (fetch candles → collect signals → MetaLearner → RiskMiddleware → execute → record).
+- `ensemble/validate.py` — CLI: 4-strategy comparison (Ensemble vs PPO-only vs Evolved-only vs Regime-only) over 3 time periods.
+- `ensemble/config.py` — `EnsembleConfig` (pydantic-settings, env prefix `ENSEMBLE_`).
+- 146 tests.
+
+Package integration:
+- `agent/strategies/__init__.py` — Re-exports all public symbols: `RLConfig`, `StrategyGenome`, `Population`, `BattleRunner`, `RiskAgent`, `RegimeClassifier`, `MetaLearner`, and all operator/type exports.
+- `agent/CLAUDE.md` — Updated to add `strategies/` directory to tree, optional dependency table, and sub-CLAUDE.md index entry.
+- `agent/strategies/CLAUDE.md` — New: full inventory of all 5 sub-packages with key class APIs, CLI commands, data flow diagram, patterns, and gotchas.
+
+**Decisions:**
+- `StrategyGenome` encodes all parameters as a float64 numpy vector rather than a Pydantic model — enables standard numpy-based GA operators (crossover, mutation, clipping) without marshalling overhead.
+- Fitness formula `sharpe - 0.5 * max_drawdown` weights drawdown at half the Sharpe contribution — avoids selecting high-Sharpe strategies that occasionally blow up, without eliminating all drawdown-tolerant strategies.
+- Regime classifier uses XGBoost first, sklearn fallback — XGBoost is faster and handles non-linear boundaries better; sklearn fallback keeps the package installable without the xgboost C extension.
+- Regime switcher enforces a cooldown of 20 candles — prevents thrashing in boundary regimes where the classifier alternates predictions on consecutive candles.
+- `VetoPipeline` RESIZED does not short-circuit — all size reduction factors stack; a trade that triggers two RESIZED gates gets reduced twice (intentional conservative behaviour).
+- `RiskMiddleware` wraps `VetoPipeline` + `DynamicSizer` into a single async call — callers do not need to instantiate or sequence the individual components.
+- `MetaLearner` falls back to HOLD when `combined_confidence < confidence_threshold` or when all sources disagree — conservative default; missing or conflicting signals should never produce speculative trades.
+- Optional ML dependencies declared as `[rl]`, `[evolutionary]`, `[regime]` extras in `agent/pyproject.toml` — core `agent/` package stays installable without torch/SB3/xgboost.
+
+**Security review result:** CONDITIONAL PASS
+- 3 HIGH findings deferred (not fixed yet):
+  1. Pickle deserialization: SB3 `.zip` model files use Python pickle internally; a compromised model file could execute arbitrary code on load. Mitigation: load only from `rl/models/` (trusted local path), never from network paths.
+  2. CLI API key exposure: `--api-key` flag in RL/regime/ensemble CLIs is visible in `ps aux` output. Mitigation: move to env var only; document that production deployments should use env vars.
+  3. `evolution_log.json` contains strategy definitions with position size parameters; if the log directory is world-readable, it leaks strategy parameters.
+- No CRITICAL findings.
+
+**Tests:** 578 total strategy-layer tests across 5 sub-packages (Phase A: ~100, Phase B: 155, Phase C: 170, Phase D: 107, Phase E: 146). All passing at merge time.
+
+**New dependencies added to `agent/pyproject.toml`:**
+- `stable-baselines3[extra]` — PPO training
+- `torch` — SB3 neural network backend
+- `xgboost` — regime classifier (optional)
+- `joblib` — model persistence
+
+**Learnings:**
+- `BattleRunner` must authenticate with JWT (not API key) because `POST /api/v1/battles` requires `Authorization: Bearer` — the runner calls `POST /api/v1/auth/login` on construction.
+- `PPODeployBridge` requires at least `lookback_window` (default 30) candles in its observation buffer before it can produce valid weight predictions — the bridge silently returns equal weights until the buffer is warm.
+- SB3's PPO `predict()` returns a numpy array of portfolio weights, not a single action — the `rl_weights_to_signals()` converter must normalise and threshold these before passing to `MetaLearner`.
+- `joblib.load()` for the regime classifier model must be called from a trusted, integrity-checked path — joblib uses pickle internally.
+- `RegimeSwitcher.step()` is stateful — the cooldown counter and last-regime state are instance variables; each trading session needs a fresh `RegimeSwitcher` instance.
+
+**Failed approaches:**
+- Attempted to use online (incremental) learning for the regime classifier so it could update on new candles without full retraining — rejected because sklearn's `partial_fit` interface does not support XGBoost and the XGBoost incremental API (booster checkpoint) has a different interface than the sklearn wrapper used for `predict()`. Full periodic retraining kept instead.
+- Attempted to implement the evolutionary fitness evaluation using the backtest API (not battles) — rejected because the backtest API is designed for single-agent sequential evaluation, not multi-agent parallel scoring. Historical battles already support running multiple agents simultaneously and returning per-agent metrics.
+
+---
+
+### 2026-03-20 — MILESTONE: TradeReady Platform Testing Agent V1 Complete (Tasks 1-18)
+
+**What was built:**
+A new top-level `agent/` package — an autonomous AI agent built with Pydantic AI + OpenRouter that validates the platform end-to-end. This sits alongside `src/`, `sdk/`, `Frontend/`, and `tradeready-gym/` as a fifth top-level package.
+
+**Changes:**
+- `agent/pyproject.toml` — Package manifest for `tradeready-test-agent`; depends on `pydantic-ai-slim[openrouter]>=0.2`, `agentexchange` (local SDK), `httpx`, `structlog`, `pydantic-settings`.
+- `agent/config.py` — `AgentConfig` (pydantic-settings): API key, base URL, model selection (primary + budget), report output directory.
+- `agent/models/trade_signal.py` — `TradeSignal` and `SignalType` (BUY/SELL/HOLD) — structured LLM output for trading decisions.
+- `agent/models/analysis.py` — `MarketAnalysis` and `BacktestAnalysis` — structured LLM output for analysis steps.
+- `agent/models/report.py` — `WorkflowResult` (per-workflow outcome with steps, timing, pass/fail) and `PlatformValidationReport` (top-level report aggregating all workflow results).
+- `agent/tools/sdk_tools.py` — 7 tools wrapping `AsyncAgentExchangeClient`: get market prices, place order, get positions, get portfolio, get order history, get trade history, get account info.
+- `agent/tools/mcp_tools.py` — MCP integration via `MCPServerStdio`; discovers and exposes all 58 platform MCP tools to the Pydantic AI agent at runtime.
+- `agent/tools/rest_tools.py` — `PlatformRESTClient` with 11 tools covering backtesting and strategy endpoints not in the SDK: create/start/step/results backtest, create/list/get strategies, create/start/get strategy tests.
+- `agent/prompts/system.py` — Detailed system prompt establishing the agent's role as a platform validator with instructions for each workflow type.
+- `agent/prompts/skill_context.py` — Loads `docs/skill.md` at startup and injects it into the agent context so it knows the full platform API surface.
+- `agent/workflows/smoke_test.py` — 10-step connectivity validation: auth, market data, account info, portfolio, order placement, position check, order cancel, backtest create, MCP ping, report. Never crashes; returns structured result.
+- `agent/workflows/trading_workflow.py` — Full trade lifecycle with LLM decisions: fetch market data → LLM analysis → LLM trade signal → place order → monitor position → LLM exit decision → close position → evaluate. Uses SDK tools for all execution steps.
+- `agent/workflows/backtest_workflow.py` — LLM-driven backtest run: create session → start → step loop → LLM analyzes results → structured `BacktestAnalysis` output with recommendations.
+- `agent/workflows/strategy_workflow.py` — LLM-driven strategy lifecycle: create strategy → start test run → poll until complete → LLM recommendation → improve strategy → compare versions. Uses REST tools.
+- `agent/main.py` — CLI entry point (`argparse`): `--workflow` flag selects which workflows to run (smoke/trading/backtest/strategy/all), `--report` saves JSON report, `--verbose` enables debug logging. Structlog JSON output throughout.
+- `agent/tests/test_config.py` — Config loading, env var override, default model selection.
+- `agent/tests/test_models.py` — All 6 Pydantic v2 output models: field validation, serialization, round-trip, edge cases.
+- `agent/tests/test_sdk_tools.py` — All 7 SDK tool wrappers with mocked `AsyncAgentExchangeClient`.
+- `agent/tests/test_rest_tools.py` — All 11 REST tools with mocked `httpx.AsyncClient`.
+- `agent/__init__.py` — Package exports: `AgentConfig`, all 6 models, workflow functions, tool registries.
+- `agent/__main__.py` — Enables `python -m agent` invocation.
+
+**Decisions:**
+- Chose Pydantic AI over LangChain, CrewAI, and Claude Agent SDK — Pydantic AI provides typed tool registration and structured output models natively; the others would require adapters or lose type safety.
+- OpenRouter for model flexibility — 400+ models accessible through a single API key; primary model is `claude-sonnet-4-5`, budget model is `gemini-2.0-flash` for non-critical analysis steps.
+- Three integration layers (SDK / MCP / REST) rather than one — SDK is the primary execution path (trading, market data); MCP enables discovery of all 58 platform tools; REST covers backtesting/strategy endpoints not yet exposed in the SDK.
+- Direct SDK/REST calls for execution steps, LLM only for analysis and decisions — LLM makes trade signals, analyzes backtest results, and generates strategy improvement recommendations; it does not drive the execution loop directly. This keeps latency predictable and avoids LLM hallucinations on mechanical steps.
+- Workflows never crash on individual step failure — each step is wrapped in try/except; failures are recorded as step results with `success=False` and the workflow continues to the next step. This enables partial validation reports even when some platform features are unavailable.
+- `WorkflowResult` and `PlatformValidationReport` are structured Pydantic v2 models (not dicts) — ensures the JSON report is always schema-valid and tooling can parse it reliably.
+
+**Code review results:**
+- 0 critical issues found.
+- 8 warnings identified; 4 fixed:
+  - Deprecated `pydantic-ai` `.run_sync()` API replaced with `asyncio.run()` + `agent.run()`.
+  - Missing `f` prefix on an f-string in `rest_tools.py` (silent bug — string was literal, not interpolated).
+  - `import logging` (stdlib) replaced with `structlog` for consistent structured output.
+  - Bare `except Exception` narrowed to `except (httpx.HTTPError, httpx.TimeoutException)` in REST tools.
+- 4 warnings deferred (non-blocking): retry logic for transient network errors, configurable step timeout, MCP tool caching, richer step metadata in `WorkflowResult`.
+
+**Tests:**
+- 117/117 unit tests passing across 4 test files.
+- Tests use `unittest.mock.AsyncMock` and `pytest-asyncio` with `asyncio_mode = "auto"`.
+- No integration tests (those require a live platform instance); the e2e test agent `e2e-tester` in `.claude/agents/` handles live validation.
+
+**Learnings:**
+- Pydantic AI's `MCPServerStdio` requires the MCP server process to be running before the agent is instantiated — the `agent/tools/mcp_tools.py` wrapper starts the server as a subprocess and passes the `MCPServerStdio` instance to the agent constructor. If the MCP server binary is not on `PATH`, MCP tools degrade gracefully (SDK tools still work).
+- `structlog` and `logging` cannot be mixed at the call site — replacing all `logging.getLogger` calls with `structlog.get_logger()` is required for consistent JSON output; mixed logging produces duplicate or malformed log entries.
+- Pydantic AI structured output requires the model to be capable of JSON mode — `gemini-2.0-flash` supports it but occasionally produces trailing commas; added a strip/repair step in the output validator.
+
+**Failed approaches:**
+- Initially attempted to use the Claude Agent SDK (Anthropic's native) as the orchestration layer — rejected because it does not support custom tool registration with typed return schemas; every tool response is untyped `str`. Switched to Pydantic AI.
+- Attempted to drive the entire trade execution loop through the LLM (tool-calling loop for each order step) — rejected due to latency (3-5s per LLM call × N steps) and hallucination risk on mechanical operations like parsing order IDs. Hybrid approach adopted: LLM for decisions, direct SDK calls for execution.
+
+---
+
+### 2026-03-19 — Summary: Documentation Site Complete (All 8 Phases)
+
+Docs site built from scratch using Fumadocs. All decisions and learnings are captured in the 2026-03-18 summary block below.
+
+**Inventory (permanent reference):**
+- 50 MDX pages across 12 sections: quickstart, concepts, api (13 pages), websocket, sdk, mcp, frameworks, strategies, gym, backtesting, battles, skill-reference
+- 7 custom MDX components: endpoint, api-example, param-table, response-schema, swagger-button, status-badge, download-button
+- Cmd+K full-text search (`/api/search`), 50 downloadable `.md` files generated at build time, 5 REST API routes under `/api/v1/docs/`
+- Per-page OpenGraph metadata, `/docs/sitemap.xml`, custom 404 page
+- Build: zero TypeScript/lint errors, 81 pages generated statically
+- Deferred: OG image generation (requires `@vercel/og`), mobile responsiveness testing (5 tasks), screen reader testing (1 task)
+
+---
+
+### 2026-03-18 — Summary: Platform Strategy Backend + Gymnasium + MCP + Frontend (STR-1 through STR-UI-2)
 
 **Learnings:**
 - Gymnasium's `check_env()` utility enforces that `reset()` returns `(obs, info)` and `step()` returns `(obs, reward, terminated, truncated, info)` — the 5-tuple, not the old 4-tuple from gym 0.21. All envs must use the new API.
@@ -265,181 +456,53 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 
 ---
 
-### 2026-03-18 — STR-3/STR-4 Code Review: Critical Fixes Applied
+### 2026-03-18 — Summary: Platform Strategy Backend + Gymnasium + MCP + Frontend (STR-1 through STR-UI-2)
 
-**Bugs fixed:**
-- `live_env.py` bare `except` → `except (httpx.HTTPError, httpx.TimeoutException)` — was swallowing non-network exceptions including KeyboardInterrupt.
-- `tools.py` `_call_api` crash on 204/empty body → added `response.content` guard before `.json()` parse.
-- `TrainingTracker.__del__` removed — unreliable finalizer could silently fail on interpreter shutdown; replaced with context manager + explicit `close()`.
-- `test_gymnasium_compliance.py` deferred imports moved to module top — import-time errors were surfacing as misleading test failures rather than import errors.
-- `Decimal(starting_balance)` conversion comment added — `starting_balance` comes in as float from the API; explicit `Decimal` cast required for consistency with platform money rules.
-- `reset()` added to `SharpeReward`, `SortinoReward`, `DrawdownPenaltyReward` — cross-episode state leakage without it.
-- Dead `_create_session` override removed from `LiveTradingEnv` — was shadowing parent and doing nothing.
-- `api_key` → `_api_key` in `BaseTradingEnv` — prevents accidental serialization/repr exposure.
-- `import json` moved to top of `tools.py` — lazy import inside function is a ruff violation (PLC0415) when not needed for circular-import avoidance.
-- Registration guard in `BaseTradingEnv` simplified — removed redundant try/except pattern around gymnasium registration.
+All server-side strategy phases (STR-1 to STR-5), gymnasium wrapper (STR-3), MCP expansion (12→43→58 tools), SDK extensions, strategy/training frontend UI (STR-UI-1, STR-UI-2), wallet fix, and docs site (all 8 phases) were completed in this session block (2026-03-17 through 2026-03-19).
 
----
+**Key decisions (permanent):**
+- `IndicatorEngine` uses pure numpy (not TA-Lib) — avoids C extension in Docker.
+- Entry conditions use AND logic; exit conditions use OR logic — standard strategy semantics.
+- Exit priority is deterministic: stop_loss → take_profit → trailing_stop → max_hold_candles → indicator exits.
+- Strategy versions are immutable after creation — new version for every update, all versions permanently accessible.
+- Ownership checks live in `StrategyService` only; `StrategyRepository` is auth-free.
+- Training run IDs are client-provided UUIDs — gym loops assign stable IDs before DB registration.
+- Aggregate training stats computed only on `complete()` — prevents re-aggregation on every episode write.
+- MCP tools are thin wrappers over REST endpoints — no business logic in the MCP layer; `TOOL_COUNT` constant kept in sync with `server.py`.
+- `cancel_all_orders` and `reset_account` have client-side confirmation guards.
+- Internal planning docs live under `development/` (not `docs/`).
+- Design decision #13: Dual-source price pattern — wallet components use WS prices primary + REST `/market/prices` (30s) fallback.
+- Training list uses 10s polling; active run detail uses 2s polling.
+- Dashboard status cards are separate components; sidebar animated dots reuse existing TanStack Query cache.
+- Next.js App Router `error.tsx` must be Client Component (`"use client"`).
+- `TrainingTracker` uses explicit `close()` / context manager (no `__del__` — unreliable finalizer).
+- Gymnasium `reset()` returns `(obs, info)` 2-tuple; `step()` returns 5-tuple — gymnasium ≥0.29 API.
+- Stateful reward functions require `reset()` — made abstract in base class; otherwise cross-episode state leakage.
+- CLAUDE.md template standardized: purpose → key files → architecture → public API → dependencies → tasks → gotchas → recent changes.
+- Root CLAUDE.md is cross-cutting only; all module details in sub-files.
+- Mandatory pipeline: code-reviewer → test-runner → context-manager after every change.
 
-### 2026-03-18 — STR-5: Training Run Aggregation (Phase Complete)
+**Key learnings (permanent):**
+- `TrainingEpisode` data is nested under `episode.metrics.*` — all frontend components must use this path.
+- Celery soft time limits raise `SoftTimeLimitExceeded` (catchable); hard limits SIGKILL — cleanup must finish before the soft limit.
+- Client-provided run IDs need a uniqueness check at register time; raw DB `IntegrityError` is not an acceptable API error.
+- `battle-store.ts` does not exist — battles use TanStack Query only (no Zustand store).
+- Battle historical mode had an open 500 INTERNAL_ERROR bug on create as of 2026-03-18 (needs investigation).
+- Migration 011 is missing from `alembic/versions/` — chain skips 010 → 012.
+- Numpy rolling window calculations return NaN arrays when data is insufficient — callers must guard explicitly.
+- MDX table cells with `{...}` syntax must be HTML-entity-escaped (`&#123;...&#125;`) — otherwise interpreted as JSX.
+- Fumadocs `source.config.ts` must be at repo root (not `src/`) for MDX plugin to resolve content paths.
+- `RootProvider` with `search.options.api` requires an absolute path (not relative) — fetched from a Web Worker context.
 
-**Changes:**
-- `src/strategies/training_service.py` — `TrainingRunService` with register, record_episode, complete, learning_curves, and comparison operations. Aggregate stats (win rate, avg reward, episode count, etc.) are computed only when `complete()` is called — not incrementally — to avoid partial-data reads mid-run.
-- `src/strategies/training_repository.py` — `TrainingRunRepository` with full CRUD for training runs and episodes. Follows the same repository pattern as `StrategyRepository` — no business logic, no auth.
-- `src/api/routes/training.py` — 7 REST endpoints under `/api/v1/training`: register run, record episode, complete run, get run, list runs, get learning curves, compare runs.
-- `src/api/schemas/training.py` — Pydantic v2 request/response schemas for all 7 endpoints.
-- `src/dependencies.py` — Added DI aliases for `TrainingRunRepoDep` and `TrainingRunServiceDep`.
-- `tests/unit/test_training_service.py` — 10 unit tests covering register, record, complete, learning curves, comparison, and ownership checks.
-- `tests/integration/test_training_endpoints.py` — 6 integration tests covering all 7 REST endpoints end-to-end.
-
-**Decisions:**
-- Training run IDs are client-provided UUIDs, not server-generated — allows the caller (e.g., a gym loop) to assign its own stable IDs and reference them before the run is registered in the DB.
-- Learning curve smoothing uses rolling mean — simple, predictable, no extra deps. Window size is configurable per request.
-- Aggregate stats (reward stats, episode counts, win rates) are computed only on `complete()`, not updated per episode — avoids expensive re-aggregation on every episode write and keeps reads fast during active runs.
-- Routes access the service exclusively, never `_repo` directly — learned from STR-2 code review where a route was flagging direct repository access as a pattern violation.
-
-**Learnings:**
-- Client-provided UUIDs for run IDs require a uniqueness check at register time; the repository must raise a conflict error rather than letting the DB constraint surface an opaque IntegrityError to the route handler.
-- Rolling mean smoothing with a window larger than the episode count silently returns unsmoothed data — callers should document this behavior expectation rather than assuming smoothing always applies.
-
----
-
-### 2026-03-18 — STR-2: Server-Side Strategy Executor (Phase Complete)
-
-**Changes:**
-- `src/strategies/indicator_engine.py` — `IndicatorEngine` class with 7 pure-numpy technical indicators: RSI, MACD, SMA, EMA, Bollinger Bands, ADX, ATR. No TA-Lib dependency; uses only numpy for portability.
-- `src/strategies/executor.py` — `StrategyExecutor` with 12 entry condition evaluators (AND logic — all must pass) and 7 exit condition handlers (OR logic — any can trigger). Exit priority order: stop_loss → take_profit → trailing_stop → max_hold_candles → indicator exits (RSI, MACD). Includes position sizing logic.
-- `src/strategies/orchestrator.py` — `TestOrchestrator` managing multi-episode strategy test lifecycles: episode sequencing, state tracking, coordination between executor and repository.
-- `src/strategies/aggregator.py` — `TestAggregator` computing overall and per-pair result breakdowns from completed episodes.
-- `src/strategies/recommendations.py` — `RecommendationEngine` with 11 rules that analyze aggregated test results and produce concrete strategy improvement suggestions.
-- `src/strategies/repository.py` — `TestRunRepository` extending `StrategyRepository` rather than a separate class, adding test run and episode CRUD without duplicating base methods.
-- `src/tasks/strategy_tasks.py` — 2 Celery tasks: `run_strategy_episode` (5-min soft / 6-min hard time limit per episode) and `aggregate_test_results` (post-episode aggregation trigger).
-- `src/api/routes/strategy_testing.py` — 6 REST endpoints under `/api/v1/strategies`: start test, get test status, get test results, list test runs, cancel test, get recommendations.
-- `src/dependencies.py` — Added `TestRunRepoDep`, `TestOrchestratorDep`, `IndicatorEngineDep` DI aliases.
-- `tests/unit/test_indicator_engine.py` — Unit tests for all 7 indicators covering edge cases (insufficient data, all-same prices, NaN propagation).
-- `tests/unit/test_strategy_executor.py` — Unit tests for entry/exit condition logic, position sizing, exit priority ordering.
-- `tests/unit/test_recommendation_engine.py` — Unit tests for all 11 recommendation rules.
-- `tests/integration/test_strategy_testing_endpoints.py` — Integration tests for all 6 REST endpoints.
-- `pyproject.toml` — Added `numpy` as a dependency (was not previously installed).
-
-**Decisions:**
-- `IndicatorEngine` uses pure numpy instead of TA-Lib to avoid a C extension dependency that complicates Docker builds and cross-platform deployment.
-- `TestRunRepository` extends `StrategyRepository` rather than being a standalone class — avoids duplicating base CRUD methods and keeps the inheritance chain shallow.
-- Celery episode tasks have a 5-min soft / 6-min hard time limit — prevents runaway episodes from blocking workers indefinitely while giving enough runway for large candle datasets.
-- Entry conditions use AND logic (all must pass); exit conditions use OR logic (any triggers exit) — matches standard strategy semantics where you need conviction to enter but any risk event exits.
-- Exit priority is deterministic: stop_loss → take_profit → trailing_stop → max_hold_candles → indicator exits — stop-loss always wins to protect capital regardless of profit signals.
-
-**Learnings:**
-- Numpy's rolling window calculations require minimum period checks before computing; insufficient data returns NaN arrays and must be handled explicitly — callers that don't guard get silent NaN propagation.
-- Celery soft time limits raise `SoftTimeLimitExceeded` which can be caught for graceful cleanup; hard limits SIGKILL the worker so cleanup must happen before the soft limit.
-
----
-
-### 2026-03-18 — STR-1: Strategy Registry (Phase Complete)
-
-**Changes:**
-- `alembic/versions/016_*.py` — Migration 016 adds 6 new tables: `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`. Head advances from 015 → 016.
-- `src/database/models.py` — Added 6 ORM models: `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode`.
-- `src/strategies/repository.py` — `StrategyRepository` with full CRUD, versioning (get_max_version + auto-increment), and test run management. Follows repository pattern — no business logic.
-- `src/strategies/service.py` — `StrategyService` with ownership enforcement, version auto-increment, and strategy lifecycle (create, publish, archive). Validation via Pydantic domain models, not at DB level.
-- `src/strategies/schemas.py` — Pydantic domain models: `StrategyDefinition`, `EntryConditions`, `ExitConditions`. Used for validating strategy logic before persisting a version.
-- `src/api/schemas/strategies.py` — API-layer Pydantic v2 request/response schemas for all 10 endpoints.
-- `src/api/routes/strategies.py` — 10 REST endpoints under `/api/v1/strategies`: create, list, get, update, delete, publish, archive, create-version, list-versions, get-version.
-- `src/utils/exceptions.py` — Added `StrategyNotFoundError` and `StrategyInvalidStateError` to exception hierarchy.
-- `src/dependencies.py` — Added `StrategyRepoDep` and `StrategyServiceDep` DI aliases.
-- `src/strategies/CLAUDE.md` — Full module documentation: file inventory, public API, patterns, state machine, gotchas.
-- `tests/unit/test_strategy_service.py` — 16 unit tests covering ownership checks, version increment, state transitions, and validation errors.
-- `tests/integration/test_strategy_endpoints.py` — 8 integration tests covering all 10 endpoints end-to-end; all passing.
-
-**Decisions:**
-- Strategy definitions are validated via Pydantic domain models in the service layer, not with DB constraints — keeps schema flexible for early iteration without migrations per change.
-- Version auto-increment uses `get_max_version() + 1` inside a transaction — avoids gaps and race conditions without a DB sequence.
-- Ownership checks live exclusively in `StrategyService`, not in `StrategyRepository` — repository is generic and reusable; authorization is a service concern.
-- `StrategyVersion` is immutable after creation — updating a strategy creates a new version; old versions are permanently accessible for audit and replay.
-- No restriction on number of deployed strategies per account — intentional to support multi-strategy agents.
-
-**Learnings:**
-- The existing DI alias pattern in `src/dependencies.py` required lazy imports (inside the dependency function) to avoid circular imports — consistent with all other DI aliases in the file.
-- Exception hierarchy in `src/utils/exceptions.py` uses class-level `http_status` and `code` attributes; new exceptions only need to set those two fields to integrate with the global handler automatically.
-
----
-
-### 2026-03-18 — Planning Docs Reorganized into development/ccxt/
-
-**Changes:**
-- `docs/plan-task.md` → `development/ccxt/plan-task.md` — 6-phase execution plan (CCXT integration, MCP expansion, SDK, battles, frontend, launch). Moved out of docs/ because it is internal execution tracking, not user-facing documentation.
-- `docs/ccxt_resarch_report.md` → `development/ccxt/ccxt_resarch_report.md` — CCXT integration analysis and research report. Moved for the same reason.
-- `docs/CLAUDE.md` — Removed both files from the docs inventory; logged the move.
-
-**Decisions:**
-- Internal planning and research documents live under `development/` (not `docs/`). `docs/` is for user-facing and external-audience documentation only. This keeps the docs inventory clean and avoids confusion for future agents reading `docs/CLAUDE.md`.
-
----
-
-### 2026-03-18 — Phase 2 Complete: MCP Server Expansion (12 → 43 Tools)
-
-**Changes:**
-- `src/mcp/tools.py` — Expanded from 12 to 43 tools. Added 31 new tools across 5 categories: backtesting (8), market + trading (7), agent management (6), battles (6), account + analytics (4). Added `TOOL_COUNT` constant, `_call_api_text()` for plain-text responses, `_text_content()` helper.
-- `src/mcp/server.py` — Updated tool count references from 12 to 43.
-- `src/mcp/__init__.py` — Updated docstring tool count from 12 to 43.
-- `src/mcp/CLAUDE.md` — Completely rewritten to document all 43 tools with categories, parameters, and return shapes.
-- `tests/unit/test_mcp_tools.py` — Expanded from 67 to 142 tests; all 43 tools now covered.
-- `docs/plan-task.md` — Phase 2 marked COMPLETE with all acceptance criteria checked.
-
-**Decisions:**
-- All 31 new tools are thin wrappers over existing REST endpoints — no new backend logic needed. Keeps the MCP layer simple and consistent with the REST API as the single source of truth.
-- `cancel_all_orders` and `reset_account` include client-side confirmation guards to prevent accidental destructive calls.
-- `get_agent_skill` returns plain text (not JSON) via the new `_call_api_text` helper, since the skill document is Markdown prose, not structured data.
-
-**Learnings:**
-- Adding `TOOL_COUNT = 43` as a module constant makes it easy to assert in tests and keep server.py in sync with tools.py without manual counting.
-
----
-
-### 2026-03-18 — Wallet Bug Fix + Live E2E Script
-
-**Changes:**
-- **Bug fix: Wallet showing 100% USDT** — `asset-list.tsx`, `asset-distribution.tsx`, and `allocation-pie-chart.tsx` relied exclusively on WebSocket prices. When WS hadn't streamed `ticker_all` data, all non-USDT assets showed $0 → USDT appeared as 100%. Fixed by adding REST price fallback (`GET /market/prices`, 30s polling via TanStack Query).
-- **New script: `scripts/e2e_full_scenario_live.py`** — Full 8-phase E2E against live backend: register, login, create 3 agents, 25 trades, 6 backtests, 1 battle, analytics, account management. All data persists in DB and is visible in the UI. Supports `--skip-backtest`, `--skip-battle`, `--email`.
-- **CLAUDE.md updates** — `scripts/CLAUDE.md`, `Frontend/src/hooks/CLAUDE.md`, `Frontend/src/components/CLAUDE.md`, `Frontend/CLAUDE.md` all updated with dual-source price pattern and new script.
-
-**E2E Results (live backend):**
-- 101 passed, 5 failed out of 106 steps
-- GammaBot trades: risk manager correctly blocked oversized positions (position_limit_exceeded) — expected behavior
-- Battle historical mode: 500 INTERNAL_ERROR on create — **open bug, needs investigation**
-- Default credentials: `e2e_trader@agentexchange.io` / `Tr@d1ng_S3cur3_2026!`
-
-**Decisions:**
-- Design decision #13: **Dual-source price pattern** — components that compute asset USDT values must use WS prices as primary and REST `/market/prices` as fallback. WebSocket-only is unreliable for initial page loads.
-
-**Learnings:**
-- WebSocket-only price sources break on initial load / slow connections — always have REST fallback
-- Battle service has unresolved bug with historical mode configuration
-
----
-
-### 2026-03-17 — Agentic Layer Complete Build
-
-**Changes:**
-- Root `CLAUDE.md` — Refactored: added index (35 sub-files), self-maintenance rule, sub-agents section, trimmed ~300 lines of redundancy
-- 21 `src/*/CLAUDE.md` files — Created for every backend module
-- 3 `tests/*/CLAUDE.md` files — Tests root, unit (62 files/974 tests), integration (20 files/433 tests)
-- 1 `alembic/CLAUDE.md` — 14-migration inventory
-- 7 `Frontend/*/CLAUDE.md` files — Components, hooks, stores, app, lib, backtest, battles
-- 3 other CLAUDE.md files — SDK, scripts, docs
-- 8 `.claude/agents/*.md` files — Full sub-agent fleet
-- `development/agentic-layer-plan-tasks.md` — All Phase 1-6 marked DONE
-
-**Decisions:**
-- CLAUDE.md template standardized: purpose → key files → architecture → public API → dependencies → tasks → gotchas → recent changes
-- Root CLAUDE.md is cross-cutting only; module details in sub-files (no duplication)
-- Mandatory agent flow: code-reviewer → test-runner after every change; context-manager proactively
-
-**Learnings:**
-- `Frontend/src/components/battles/` completely empty — backend done, frontend not started
-- `battle-store.ts` doesn't exist despite being referenced — battles use TanStack Query only
-- Migration 011 missing from versions directory
-- Test coverage: 974 unit + 433 integration = 1,407 total tests
+**Bugs fixed in this session:**
+- Wallet 100% USDT: WS-only price sources → added REST `/market/prices` 30s fallback.
+- `_call_api` crash on 204 responses → guard `response.content` before `.json()`.
+- Gym reward functions missing `reset()` → added to Sharpe, Sortino, DrawdownPenalty.
+- `api_key` → `_api_key` in `BaseTradingEnv` — repr/serialisation exposure.
+- `live_env.py` bare `except` → `except (httpx.HTTPError, httpx.TimeoutException)`.
+- Docs API rate limiter grew without bound → time-based eviction + 10k hard cap.
+- `listSections` called `statSync` per path → replaced with `withFileTypes: true`.
+- `sectionMeta` re-parsed on every request → cached at module level after first load.
 
 ---
 

@@ -319,6 +319,50 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ─────────────────────────────────────────────────────────────
+  # Agent: TradeReady Platform Testing Agent + ML Strategy System
+  #
+  # Only starts when the "agent" profile is explicitly requested:
+  #   docker compose --profile agent up agent
+  #
+  # The service runs once and exits (no restart policy). Volume mounts
+  # persist RL model checkpoints, regime classifier models, evolutionary
+  # results, and JSON validation reports across container restarts.
+  #
+  # Required env vars (supplied via agent/.env):
+  #   OPENROUTER_API_KEY  — OpenRouter API key for LLM calls
+  #   PLATFORM_API_KEY    — ak_live_... platform API key
+  #   PLATFORM_API_SECRET — sk_live_... platform API secret
+  #   PLATFORM_BASE_URL   — http://api:8000 (internal Docker hostname)
+  # ─────────────────────────────────────────────────────────────
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    profiles:
+      - agent
+    env_file: agent/.env
+    networks:
+      - internal
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./agent/reports:/app/agent/reports
+      - ./agent/strategies/rl/models:/app/agent/strategies/rl/models
+      - ./agent/strategies/regime/models:/app/agent/strategies/regime/models
+      - ./agent/strategies/evolutionary/results:/app/agent/strategies/evolutionary/results
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 # ─────────────────────────────────────────────────────────────
 # Named volumes
 # ─────────────────────────────────────────────────────────────
