@@ -51,6 +51,8 @@ app = Celery(
         "src.tasks.backtest_cleanup",
         "src.tasks.battle_snapshots",
         "src.tasks.strategy_tasks",
+        # Agent ecosystem tasks (agent/ package)
+        "agent.tasks",
     ],
 )
 
@@ -166,5 +168,29 @@ app.conf.beat_schedule = {
     "check-battle-completion": {
         "task": "src.tasks.battle_snapshots.check_battle_completion",
         "schedule": 10.0,  # seconds
+    },
+    # ── Agent Ecosystem Tasks ─────────────────────────────────────────────
+    # Daily morning market scan — runs at the hour configured by
+    # AgentConfig.agent_scheduled_review_hour (default 08:00 UTC).
+    "agent-morning-review": {
+        "task": "agent.tasks.agent_morning_review",
+        "schedule": crontab(hour=8, minute=0),  # 08:00 UTC — overridable via env
+    },
+    # Daily budget reset at midnight UTC — clears trades_today,
+    # exposure_today, and loss_today for every agent with a budget record.
+    "agent-budget-reset": {
+        "task": "agent.tasks.agent_budget_reset",
+        "schedule": crontab(hour=0, minute=2),  # 00:02 UTC — after circuit-breaker reset
+    },
+    # Daily memory cleanup — prunes expired and low-confidence learnings.
+    "agent-memory-cleanup": {
+        "task": "agent.tasks.agent_memory_cleanup",
+        "schedule": crontab(hour=3, minute=0),  # 03:00 UTC daily — off-peak
+    },
+    # Hourly rolling performance snapshot — one AgentPerformance row per
+    # active agent per hour (skips agents with zero trades in the window).
+    "agent-performance-snapshot": {
+        "task": "agent.tasks.agent_performance_snapshot",
+        "schedule": 3600.0,  # every hour
     },
 }

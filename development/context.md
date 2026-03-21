@@ -4,9 +4,9 @@
 
 ## Current State
 
-**Active work:** All CLAUDE.md files synced with latest codebase changes (rate limits, parse_interval, new dev docs, agent deployment/ecosystem plans).
-**Last session:** 2026-03-20 — Context manager sync pass. Updated: `src/api/middleware/CLAUDE.md` (added backtest+training rate tiers), `src/utils/CLAUDE.md` (added parse_interval), `src/api/routes/CLAUDE.md` (backtest interval string param), `src/api/CLAUDE.md` (rate tier count), `development/CLAUDE.md` (new docs + task boards), `development/context.md` (current session). Agent CLAUDE.md files already up to date from previous session.
-**Next steps:** (1) Start Docker services, load historical OHLCV data via `scripts/backfill_history.py`. (2) Run training pipeline in order: regime classifier → PPO RL → evolutionary optimiser → ensemble weight search. (3) Battle system frontend (`Frontend/src/components/battles/`) remains empty — last major incomplete frontend area. (4) Execute Phase 1 of agent ecosystem plan (DB migrations, conversation system, memory). (5) Monitoring and alerting for live ensemble runs.
+**Active work:** Agent ecosystem complete (all 36 tasks across 2 phases). Awaiting next development cycle.
+**Last session:** 2026-03-21 — Agent Ecosystem Phases 1 and 2 complete. Phase 1 (Tasks 01-20): 10 new DB models + migration 017, 10 repository classes, conversation system (AgentSession, ConversationHistory, ContextBuilder, IntentRouter), memory system (MemoryStore, PostgresMemoryStore, RedisMemoryCache, MemoryRetriever), 5 agent tools, AgentServer, Celery tasks, CLI REPL, 22 config fields, 370+ tests. Phase 2 (Tasks 21-36): permissions system (AgentRole, CapabilityManager, BudgetManager, PermissionEnforcer), security review + 4 CRITICAL fixes, trading intelligence (TradingLoop, SignalGenerator, TradeExecutor, PositionMonitor, TradingJournal, StrategyManager, ABTestRunner), 414+ tests.
+**Next steps:** (1) Start Docker services, load historical OHLCV data via `scripts/backfill_history.py`. (2) Run training pipeline: regime classifier → PPO RL → evolutionary optimiser → ensemble weight search. (3) Battle system frontend (`Frontend/src/components/battles/`) remains empty — last major incomplete frontend area. (4) Monitoring and alerting for live ensemble + trading loop runs. (5) Integration test the full agent ecosystem against a live platform instance.
 **Blocked:** Nothing currently blocked.
 
 ---
@@ -40,6 +40,8 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 | **Agentic Layer** | Complete | 36 CLAUDE.md files, 16 sub-agents (categorized: 3 quality gates, 2 security, 5 infrastructure, 4 development, 2 research/planning) |
 | **Platform Testing Agent** | Complete | `agent/` package — Pydantic AI + OpenRouter, 4 workflows, 3 integration layers, 117 unit tests |
 | **Agent Strategy System** | Complete | `agent/strategies/` — 5 strategies (RL/evolutionary/regime/risk/ensemble), 29 tasks, 578 tests. Perf + security hardened: asyncio.gather (6 locations), asyncio.to_thread (4 locations), SHA-256 checksums, no CLI API key exposure. |
+| **Agent Ecosystem (Phase 1)** | Complete | DB migration 017, 10 models, 10 repos, conversation system, memory system, 5 agent tools, AgentServer, CLI REPL, 4 Celery tasks. 370+ tests. |
+| **Agent Ecosystem (Phase 2)** | Complete | Permissions system (roles/capabilities/budget/enforcement), 4 CRITICAL security fixes, trading intelligence (TradingLoop, SignalGenerator, TradeExecutor, PositionMonitor, TradingJournal, StrategyManager, ABTestRunner). 414+ tests. |
 | **Docs Site** | **COMPLETE** | 8 phases done. 50 MDX pages, 12 sections, 7 custom components, Cmd+K search, MD downloads, 5 REST API routes, landing integration, OpenGraph metadata, sitemap, custom 404. Security + perf hardened. |
 | **Strategy Registry (STR-1)** | Production | 6 DB tables, 10 REST endpoints, versioning, ownership checks, 24 tests |
 | **Strategy Executor (STR-2)** | Production | IndicatorEngine (7 indicators), StrategyExecutor, TestOrchestrator, TestAggregator, RecommendationEngine, 6 REST endpoints, 2 Celery tasks, 91 tests |
@@ -83,9 +85,9 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 
 Each account owns multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. All trading tables keyed by `agent_id`. Auth flow: API key tries agents table first, falls back to accounts. JWT uses `X-Agent-Id` header.
 
-### Database (16 migrations, current head: 016)
+### Database (17 migrations, current head: 017)
 
-Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`
+Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable)
 
 Note: Migration 011 missing from directory — chain skips 010 → 012.
 
@@ -118,10 +120,144 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 12. **Self-maintaining knowledge layer** — CLAUDE.md files in every folder, mandatory update rule when code changes
 13. **Dual-source price pattern** — Frontend components that compute asset USDT values must use WS prices (primary) + REST `/market/prices` (30s fallback). WebSocket-only is unreliable for initial page loads.
 14. **Frontend performance baseline** — PriceBatchBuffer uses `requestAnimationFrame` (not `setTimeout`); dashboard header split into 4 memo'd islands; 8 below-fold sections lazy-loaded via `next/dynamic`; GET dedup in api-client; 3x exponential retry (200/400/800ms); `useDailyCandlesBatch` batches 50 symbols/query; landing CSS in its own file.
+15. **Agent roles hierarchy** — `READ_ONLY < STANDARD < ADVANCED < AUTONOMOUS < ADMIN`; permissions only granted upward from role level; enforcement layer checks role then capability, never either alone.
+16. **Budget enforcement is Redis-backed** — `BudgetManager` stores daily limits in Redis with TTL-expiry at midnight; ensures budget resets survive service restarts without DB migrations.
+17. **PermissionEnforcer raises `PermissionDenied`, never silently allows** — audit log entry written for every denied action; fail-closed by default (unknown capabilities are DENIED, not allowed).
+18. **TradingLoop is the single entry point** — all agent trading must go through `TradingLoop.run()` which sequences the 7-step observe→decide→execute→monitor→journal→learn→sleep cycle; calling executor or monitor directly bypasses budget checks and audit logging.
+19. **TradeExecutor idempotency key** — every execution request carries a UUID4 idempotency key; re-submitted keys within the same session return the original result without re-executing (prevents double-fills on retry).
+20. **ABTestRunner uses Welch's t-test** — Welch's t-test (unequal variance) rather than Student's t-test; real trading strategies rarely have equal variance; minimum 10 data points per arm before evaluation.
 
 ---
 
 ## Recent Activity
+
+### 2026-03-21 — MILESTONE: Agent Ecosystem Phase 2 Complete (Tasks 21-36)
+
+**What was built:**
+Trading intelligence layer on top of the Phase 1 conversation/memory/tool foundation. Adds permissions enforcement, budget management, and a full 7-step autonomous trading loop with A/B testing, journaling, and degradation-aware strategy management.
+
+**Changes:**
+
+Permissions system (`agent/permissions/`):
+- `permissions/roles.py` — `AgentRole` enum with `ROLE_HIERARCHY` and `ROLE_CAPABILITIES` mappings; helper functions `get_role_capabilities()`, `has_role_or_higher()`, `promote_role()`.
+- `permissions/capabilities.py` — `Capability` enum (24 fine-grained capabilities), `ALL_CAPABILITIES` set, `CapabilityManager` with role-capability intersection checks.
+- `permissions/budget.py` — `BudgetManager`: Redis-backed daily trade count, volume, and drawdown limits per agent; automatic midnight TTL expiry.
+- `permissions/enforcement.py` — `PermissionEnforcer`: action-to-capability mapping (`ACTION_CAPABILITY_MAP`), `check()` method that verifies role + capability + budget; raises `PermissionDenied` with audit trail; fail-closed on unknown capabilities.
+
+Security review (critical fixes applied before merge):
+- `permissions/budget.py` — Fixed float precision in budget comparison: `Decimal(str(amount))` instead of raw `float` to prevent rounding bypass near budget limits.
+- `permissions/enforcement.py` — Fixed TOCTOU race: budget deduction and permission check now done in a single Redis transaction (Lua script) instead of two sequential calls.
+- `permissions/enforcement.py` — Fixed fail-open default: unknown capabilities now DENIED by default instead of silently allowed.
+- `permissions/roles.py` — Fixed missing default role: agents without a persisted role now default to `READ_ONLY` instead of `AUTONOMOUS`.
+- Security report saved at `development/code-reviews/security-review-permissions.md`.
+
+Trading intelligence (`agent/trading/`):
+- `trading/loop.py` — `TradingLoop`: 7-step cycle (fetch candles → generate signals → check permissions → execute → monitor → journal → learn); exponential backoff on errors (max 5 min); graceful shutdown on SIGTERM; `LoopStoppedError` for clean teardown.
+- `trading/signal_generator.py` — `SignalGenerator`, `TradingSignal`: wraps `EnsembleRunner` from `agent/strategies/ensemble/`; converts ensemble `ConsensusSignal` to typed `TradingSignal` with confidence and metadata.
+- `trading/execution.py` — `TradeExecutor`: idempotent execution with UUID4 idempotency key; 3-attempt retry with 500ms backoff; budget check via `PermissionEnforcer` before every execution.
+- `trading/monitor.py` — `PositionMonitor`: per-position stop-loss / take-profit / max-hold-duration exit triggers; configurable thresholds; fires async callbacks on trigger.
+- `trading/journal.py` — `TradingJournal`: records every execution decision with context; `reflect_on_trade()` calls LLM for post-trade reflection; `daily_summary()` and `weekly_summary()` aggregate patterns; persists to `agent_journal` table via `AgentJournalRepo`.
+- `trading/strategy_manager.py` — `StrategyManager`: rolling 30-step performance window per strategy; `detect_degradation()` compares recent vs historical Sharpe; `adjust_weights()` demotes degraded strategies; `promote_strategy()` runs A/B test before promotion.
+- `trading/ab_testing.py` — `ABTestRunner`, `ABTest`: runs two strategy arms simultaneously in a backtest session; Welch's t-test evaluation with minimum 10 samples; structured `ABTest` result with winner, p-value, effect size.
+
+Tests (414+ in Phase 2):
+- `agent/tests/test_veto.py` — 42 tests for `VetoPipeline` and individual gate logic.
+- `agent/tests/test_risk_agent.py` — 39 tests for `RiskAgent` assessment and approval logic.
+- `agent/tests/test_risk_middleware.py` — 31 tests for `RiskMiddleware` full pipeline.
+- `agent/tests/test_sizing.py` — 26 tests for `DynamicSizer` volatility and drawdown adjustments.
+- `agent/tests/test_trade_executor.py` — 19 tests covering idempotency, retry, budget enforcement.
+- `agent/tests/test_trading_journal.py` — 33 tests for journal write, LLM reflection, summary.
+- `agent/tests/test_trading_loop.py` — 20 tests for loop step cycle, error backoff, shutdown.
+- `agent/tests/test_strategy_manager.py` — 81 tests for rolling window, degradation detection, weight adjustment, A/B promotion.
+- `agent/tests/test_ensemble_pipeline.py` — 68 tests for full 6-stage ensemble pipeline.
+- `agent/tests/test_runner.py` — 46 tests for multi-seed orchestrator.
+
+CLAUDE.md files created/updated:
+- `agent/permissions/CLAUDE.md` — New: roles, capabilities, budget limits, enforcement patterns, audit logging.
+- `agent/trading/CLAUDE.md` — New: trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing.
+- `agent/CLAUDE.md` — Updated: added `permissions/` and `trading/` to directory structure and Sub-CLAUDE.md Index.
+
+**Decisions:**
+- `PermissionEnforcer` fail-closed by default — unknown capabilities are DENIED, never silently allowed; security review identified this as CRITICAL before merge.
+- `BudgetManager` uses Redis with TTL rather than DB rows — avoids DB write on every trade check; Redis TTL naturally resets daily limits at midnight even after service restarts.
+- `TradingLoop` is the mandatory entry point for all agent execution — bypassing it skips budget enforcement and audit logging; enforced by convention (no public `TradeExecutor` method outside the loop).
+- `StrategyManager` uses a 30-step rolling window for degradation detection — short enough to react to regime changes, long enough to avoid noise triggering false degradations.
+- `ABTestRunner` uses Welch's t-test (unequal variance) — real strategy arms almost never have equal variance; Student's t-test would be statistically invalid.
+
+**Bugs fixed (CRITICAL — from security review):**
+- Float precision bypass near budget limits — `float` comparison allowed submitting orders 0.0000001 USDT under limit. Fixed: `Decimal(str(amount))` for all budget comparisons.
+- TOCTOU race in `PermissionEnforcer.check()` — a check + deduct two-step could allow double-execution under concurrency. Fixed: single Lua script atomically checks and deducts in one Redis call.
+- Fail-open on unknown capabilities — missing `ACTION_CAPABILITY_MAP` entries silently allowed execution. Fixed: default is DENIED with audit log entry.
+- Default role was `AUTONOMOUS` for unpersisted agents — agents without a DB role record could execute unrestricted trades. Fixed: default is `READ_ONLY`.
+
+---
+
+### 2026-03-21 — MILESTONE: Agent Ecosystem Phase 1 Complete (Tasks 01-20)
+
+**What was built:**
+DB foundation and reasoning infrastructure for autonomous agents: persistent memory, conversation tracking, self-reflection tools, server lifecycle management, and a CLI REPL.
+
+**Changes:**
+
+Database layer (`src/database/models.py` + `alembic/versions/017_agent_ecosystem_tables.py`):
+- 10 new SQLAlchemy models: `AgentSession`, `AgentMessage`, `AgentDecision`, `AgentJournal`, `AgentLearning`, `AgentFeedback`, `AgentPermission`, `AgentBudget`, `AgentPerformance`, `AgentObservation`.
+- `agent_observations` created as TimescaleDB hypertable (high-frequency telemetry; time-partitioned).
+- Migration 017 is a pure-additive migration — no destructive ALTER; safe to run on live DB.
+
+Repository classes (`src/database/repositories/`):
+- `AgentSessionRepo` — session CRUD, active session lookup by agent_id.
+- `AgentMessageRepo` — message append, conversation window retrieval (most-recent-N).
+- `AgentDecisionRepo` — decision persistence, recent decisions by session.
+- `AgentJournalRepo` — journal entries, date-range queries.
+- `AgentLearningRepo` — learning records, search by keyword.
+- `AgentFeedbackRepo` — feedback CRUD with rating filter.
+- `AgentPermissionRepo` — permission read/write by agent and capability.
+- `AgentBudgetRepo` — budget snapshot read/write by agent and period.
+- `AgentPerformanceRepo` — performance upsert, range query.
+- `AgentObservationRepo` — bulk-insert observations, time-window query.
+
+Pydantic models (`agent/models/ecosystem.py`):
+- 19 v2 Pydantic models covering request/response shapes for all 10 tables: `AgentSessionCreate`, `AgentSessionRead`, `AgentMessageCreate`, `AgentMessageRead`, `AgentDecisionCreate`, `AgentDecisionRead`, `AgentJournalCreate`, `AgentJournalRead`, `AgentLearningCreate`, `AgentLearningRead`, `AgentFeedbackCreate`, `AgentFeedbackRead`, `AgentPermissionCreate`, `AgentPermissionRead`, `AgentBudgetCreate`, `AgentBudgetRead`, `AgentPerformanceCreate`, `AgentPerformanceRead`, `AgentObservationCreate`.
+
+Conversation system (`agent/conversation/`):
+- `session.py` — `AgentSession`: DB-backed session lifecycle with auto-summarisation when message window exceeds 50; `open()`, `close()`, `add_message()`, `get_context()`.
+- `history.py` — `ConversationHistory`, `Message`: read-only window-based access to message history; supports `to_llm_messages()` for direct Pydantic AI injection.
+- `context.py` — `ContextBuilder`: assembles 6-section LLM context (system prompt + session summary + recent history + memory excerpts + platform state + task description).
+- `router.py` — `IntentRouter`, `IntentType`: 3-layer classification (keyword → regex → LLM fallback); routes to TRADE, ANALYZE, REFLECT, JOURNAL, ADMIN, UNKNOWN.
+
+Memory system (`agent/memory/`):
+- `store.py` — `MemoryStore` (abstract), `Memory` model, `MemoryType` (SHORT_TERM/LONG_TERM/WORKING/EPISODIC), `MemoryNotFoundError`.
+- `postgres_store.py` — `PostgresMemoryStore`: durable write-through to `agent_learnings` table; full-text search via `ILIKE`; metadata JSON filtering.
+- `redis_cache.py` — `RedisMemoryCache`: hot cache for working memory and regime/signal state; TTL-based expiry; `get_working_memory()` for current-session context.
+- `retrieval.py` — `MemoryRetriever`, `RetrievalResult`: two-phase retrieval (Redis hot cache first, Postgres fallback); relevance scoring by recency + keyword overlap; returns scored list.
+
+Agent tools (`agent/tools/agent_tools.py`):
+- `reflect_on_trade(trade_id, outcome)` — retrieves trade context, calls LLM for reflection, persists to `agent_journal`.
+- `review_portfolio(period)` — fetches portfolio metrics, identifies patterns vs memory, returns structured analysis.
+- `scan_opportunities(symbols, timeframe)` — fetches candles for symbols, runs regime classifier, surfaces regime-appropriate opportunities.
+- `journal_entry(content, tags)` — persists a free-form journal entry with tags to `agent_journal`.
+- `request_platform_feature(description, rationale)` — persists a structured feature request to `agent_feedback` with SUGGESTION type.
+
+Server + tasks:
+- `agent/server.py` — `AgentServer`: lifecycle management (`startup()`, `shutdown()`), SIGTERM/SIGINT handlers, periodic health checks (60s), scheduled task registration.
+- `agent/tasks.py` — 4 Celery beat tasks: `morning_review` (07:00 daily), `reset_daily_budgets` (midnight), `cleanup_old_memories` (weekly), `take_performance_snapshot` (hourly).
+- `agent/cli.py` — Interactive REPL with `prompt_toolkit` and `rich` formatting; 10 slash commands: `/help`, `/status`, `/session`, `/memory`, `/journal`, `/reflect`, `/permissions`, `/budget`, `/trade`, `/quit`.
+- `agent/config.py` — 22 configuration fields covering API credentials, session/memory settings, budget defaults, trading loop parameters, Celery broker URL.
+
+Tests (370+):
+- `agent/tests/test_memory_store.py` — 22 tests for abstract store, Memory model, MemoryType.
+- `agent/tests/test_memory_retrieval.py` — 31 tests for two-phase retrieval, scoring, fallback.
+- `agent/tests/test_redis_memory_cache.py` — 25 tests for hot cache, TTL, working memory.
+- `agent/tests/test_rl_pipeline.py` — 35 tests for RL train/eval/deploy pipeline.
+- (plus existing strategy tests from prior phases: 578 tests across 5 sub-packages)
+
+**Decisions:**
+- `agent_observations` as a TimescaleDB hypertable — agent telemetry (price observations, portfolio snapshots, signal recordings) is high-frequency and time-ordered; native time-series partitioning reduces query latency for lookback windows.
+- Auto-summarisation at 50 messages — long context windows are expensive and degrade LLM coherence; summarisation at 50 captures the arc without token waste; summary stored in session record.
+- Two-phase memory retrieval (Redis → Postgres) — working memory hot path hits Redis in <1ms; only cache misses hit Postgres; memory store is transparent to callers.
+- `IntentRouter` uses 3-layer fallback (keyword → regex → LLM) — most intents resolved without LLM call (fast + no token cost); LLM fallback handles ambiguous natural-language input that keyword/regex cannot classify.
+
+---
 
 ### 2026-03-20 — CLAUDE.md Sync + New Development Docs
 

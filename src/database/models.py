@@ -2124,3 +2124,958 @@ class TrainingEpisode(Base):
 
     def __repr__(self) -> str:
         return f"<TrainingEpisode run={self.training_run_id} ep={self.episode_number}>"
+
+
+# ── Agent Ecosystem tables ─────────────────────────────────────────────────
+
+
+# ── AgentSession ──────────────────────────────────────────────────────────────
+
+
+class AgentSession(Base):
+    """A conversation session for an agent.
+
+    Groups a series of messages exchanged with an agent into a single
+    logical conversation.  Summaries are written by the system when the
+    session ends so future sessions can bootstrap context from past ones.
+
+    Attributes:
+        id:            Primary key (UUID v4, server-generated).
+        agent_id:      Foreign key → ``agents.id`` (cascade delete).
+        title:         Short title describing the session topic.
+        started_at:    UTC timestamp when the session was created.
+        ended_at:      UTC timestamp when the session was closed (nullable).
+        summary:       LLM-generated summary of the conversation (nullable).
+        message_count: Running count of messages in the session.
+        is_active:     Whether the session is still open.
+        created_at:    UTC timestamp of row creation (used for index).
+    """
+
+    __tablename__ = "agent_sessions"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str | None] = mapped_column(
+        VARCHAR(255),
+        nullable=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    summary: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    message_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="TRUE",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+    messages: Mapped[list[AgentMessage]] = relationship(
+        "AgentMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("idx_agent_sessions_agent_created", "agent_id", "created_at"),
+        Index("idx_agent_sessions_active", "agent_id", "is_active"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentSession id={self.id} agent={self.agent_id} active={self.is_active}>"
+
+
+# ── AgentMessage ─────────────────────────────────────────────────────────────
+
+
+class AgentMessage(Base):
+    """A single message in an agent conversation session.
+
+    Records the full chat history including tool calls and their results.
+    The ``role`` column follows the OpenAI/Anthropic convention of
+    ``user``, ``assistant``, ``system``, and ``tool``.
+
+    Attributes:
+        id:           Primary key (UUID v4, server-generated).
+        session_id:   Foreign key → ``agent_sessions.id`` (cascade delete).
+        role:         Message role: ``user``, ``assistant``, ``system``, or ``tool``.
+        content:      Plain-text message body.
+        tool_calls:   JSONB list of tool invocations issued by the assistant.
+        tool_results: JSONB list of results returned for each tool call.
+        tokens_used:  LLM token count for this message (nullable).
+        created_at:   UTC timestamp of message creation.
+    """
+
+    __tablename__ = "agent_messages"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    tool_calls: Mapped[list[Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    tool_results: Mapped[list[Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    tokens_used: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    session: Mapped[AgentSession] = relationship("AgentSession", back_populates="messages")
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'system', 'tool')",
+            name="ck_agent_messages_role",
+        ),
+        Index("idx_agent_messages_session_created", "session_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentMessage id={self.id} session={self.session_id} role={self.role!r}>"
+
+
+# ── AgentDecision ─────────────────────────────────────────────────────────────
+
+
+class AgentDecision(Base):
+    """A trade decision recorded with full reasoning context.
+
+    Captures what the agent decided, why it decided it, and (later) what
+    the outcome was.  ``outcome_pnl`` and ``outcome_recorded_at`` are
+    written back by the system once the linked order settles.
+
+    Attributes:
+        id:                   Primary key (UUID v4, server-generated).
+        agent_id:             Foreign key → ``agents.id`` (cascade delete).
+        session_id:           Foreign key → ``agent_sessions.id`` (nullable SET NULL).
+        decision_type:        High-level action: ``trade``, ``hold``, ``exit``, or
+                              ``rebalance``.
+        symbol:               Trading pair affected, e.g. ``"BTCUSDT"`` (nullable).
+        direction:            Intended direction: ``buy``, ``sell``, or ``hold``.
+        confidence:           Model confidence score in [0, 1] (5 sig. figs, 4 dec.).
+        reasoning:            Free-text explanation of the decision.
+        market_snapshot:      JSONB snapshot of prices / indicators at decision time.
+        signals:              JSONB list of strategy signals that influenced the decision.
+        risk_assessment:      JSONB output from the risk overlay pipeline.
+        order_id:             Foreign key → ``orders.id`` (nullable SET NULL).
+        outcome_pnl:          Realised PnL of the linked order (nullable).
+        outcome_recorded_at:  UTC timestamp when the outcome was written back.
+        created_at:           UTC timestamp of decision creation.
+    """
+
+    __tablename__ = "agent_decisions"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agent_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    decision_type: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        VARCHAR(20),
+        nullable=True,
+    )
+    direction: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+    )
+    confidence: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True,
+    )
+    reasoning: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    market_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    signals: Mapped[list[Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    risk_assessment: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    order_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    outcome_pnl: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    outcome_recorded_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+    session: Mapped[AgentSession | None] = relationship("AgentSession")
+    order: Mapped[Order | None] = relationship("Order")
+
+    __table_args__ = (
+        CheckConstraint(
+            "decision_type IN ('trade', 'hold', 'exit', 'rebalance')",
+            name="ck_agent_decisions_type",
+        ),
+        CheckConstraint(
+            "direction IN ('buy', 'sell', 'hold')",
+            name="ck_agent_decisions_direction",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="ck_agent_decisions_confidence",
+        ),
+        Index("idx_agent_decisions_agent_created", "agent_id", "created_at"),
+        Index("idx_agent_decisions_session", "session_id"),
+        Index("idx_agent_decisions_order", "order_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentDecision id={self.id} agent={self.agent_id} "
+            f"type={self.decision_type!r} direction={self.direction!r}>"
+        )
+
+
+# ── AgentJournal ─────────────────────────────────────────────────────────────
+
+
+class AgentJournal(Base):
+    """A trading journal entry written by or for an agent.
+
+    Journal entries capture reflections, insights, mistakes, and periodic
+    reviews.  They are the primary mechanism for long-form qualitative
+    learning that complements the structured ``AgentLearning`` records.
+
+    Attributes:
+        id:                Primary key (UUID v4, server-generated).
+        agent_id:          Foreign key → ``agents.id`` (cascade delete).
+        entry_type:        Category: ``reflection``, ``insight``, ``mistake``,
+                           ``improvement``, ``daily_review``, or ``weekly_review``.
+        title:             Short title for the entry.
+        content:           Full entry body (TEXT).
+        market_context:    JSONB snapshot of market conditions at write time.
+        related_decisions: JSONB array of ``AgentDecision`` UUIDs referenced by
+                           this entry.
+        tags:              JSONB array of free-form string tags.
+        created_at:        UTC timestamp of entry creation.
+    """
+
+    __tablename__ = "agent_journal"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    entry_type: Mapped[str] = mapped_column(
+        VARCHAR(30),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(
+        VARCHAR(255),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    market_context: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    related_decisions: Mapped[list[Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    tags: Mapped[list[Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        CheckConstraint(
+            "entry_type IN ('reflection', 'insight', 'mistake', 'improvement', "
+            "'daily_review', 'weekly_review')",
+            name="ck_agent_journal_type",
+        ),
+        Index("idx_agent_journal_agent_created", "agent_id", "created_at"),
+        Index("idx_agent_journal_type", "agent_id", "entry_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentJournal id={self.id} agent={self.agent_id} type={self.entry_type!r}>"
+
+
+# ── AgentLearning ─────────────────────────────────────────────────────────────
+
+
+class AgentLearning(Base):
+    """An extracted knowledge record for an agent.
+
+    Learnings are structured facts the agent has derived from its experience.
+    They are classified by memory type (episodic, semantic, procedural),
+    reinforced on repeated encounter, and may expire after a configurable
+    period to prevent stale beliefs.
+
+    Attributes:
+        id:                Primary key (UUID v4, server-generated).
+        agent_id:          Foreign key → ``agents.id`` (cascade delete).
+        memory_type:       Classification: ``episodic``, ``semantic``, or
+                           ``procedural``.
+        content:           The learning expressed in plain text.
+        source:            Where this learning came from (e.g. session ID, journal
+                           entry reference).
+        confidence:        Certainty score in [0, 1] (5 sig. figs, 4 dec.).
+        times_reinforced:  How many times this learning was reaffirmed.
+        last_accessed_at:  UTC timestamp of the most recent retrieval.
+        expires_at:        UTC timestamp after which this learning should be
+                           discarded (nullable = never expires).
+        embedding:         JSONB placeholder for a vector embedding (nullable;
+                           populated when a vector store is integrated).
+        created_at:        UTC timestamp of initial learning creation.
+        updated_at:        UTC timestamp of last update.
+    """
+
+    __tablename__ = "agent_learnings"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    memory_type: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    source: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    confidence: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True,
+    )
+    times_reinforced: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="1",
+    )
+    last_accessed_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    embedding: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        CheckConstraint(
+            "memory_type IN ('episodic', 'semantic', 'procedural')",
+            name="ck_agent_learnings_memory_type",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="ck_agent_learnings_confidence",
+        ),
+        Index("idx_agent_learnings_agent_created", "agent_id", "created_at"),
+        Index("idx_agent_learnings_type", "agent_id", "memory_type"),
+        Index("idx_agent_learnings_expires", "agent_id", "expires_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentLearning id={self.id} agent={self.agent_id} "
+            f"type={self.memory_type!r} reinforced={self.times_reinforced}>"
+        )
+
+
+# ── AgentFeedback ─────────────────────────────────────────────────────────────
+
+
+class AgentFeedback(Base):
+    """A platform improvement idea raised by an agent.
+
+    Agents can flag missing data, missing tools, bugs, performance issues,
+    or feature requests.  Items flow through a lightweight status machine
+    that human operators triage and resolve.
+
+    Attributes:
+        id:               Primary key (UUID v4, server-generated).
+        agent_id:         Foreign key → ``agents.id`` (cascade delete).
+        category:         Issue category: ``missing_data``, ``missing_tool``,
+                          ``performance_issue``, ``bug``, or ``feature_request``.
+        title:            Short description.
+        description:      Full description (TEXT).
+        priority:         Urgency level: ``low``, ``medium``, ``high``, or
+                          ``critical``.
+        status:           Lifecycle state: ``new``, ``acknowledged``,
+                          ``in_progress``, ``resolved``, or ``wont_fix``.
+        resolution_notes: Operator notes explaining the resolution (nullable).
+        created_at:       UTC timestamp of submission.
+        resolved_at:      UTC timestamp of resolution (nullable).
+    """
+
+    __tablename__ = "agent_feedback"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category: Mapped[str] = mapped_column(
+        VARCHAR(30),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(
+        VARCHAR(255),
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    priority: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+        server_default="'medium'",
+    )
+    status: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'new'",
+    )
+    resolution_notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('missing_data', 'missing_tool', 'performance_issue', "
+            "'bug', 'feature_request')",
+            name="ck_agent_feedback_category",
+        ),
+        CheckConstraint(
+            "priority IN ('low', 'medium', 'high', 'critical')",
+            name="ck_agent_feedback_priority",
+        ),
+        CheckConstraint(
+            "status IN ('new', 'acknowledged', 'in_progress', 'resolved', 'wont_fix')",
+            name="ck_agent_feedback_status",
+        ),
+        Index("idx_agent_feedback_agent_created", "agent_id", "created_at"),
+        Index("idx_agent_feedback_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentFeedback id={self.id} agent={self.agent_id} "
+            f"category={self.category!r} status={self.status!r}>"
+        )
+
+
+# ── AgentPermission ───────────────────────────────────────────────────────────
+
+
+class AgentPermission(Base):
+    """Per-agent capability and role assignment.
+
+    One row per agent (enforced by UNIQUE constraint on ``agent_id``).
+    The ``capabilities`` JSONB holds a fine-grained feature flag map
+    (e.g. ``{"live_trading": true, "max_order_size": 1000}``).
+
+    Attributes:
+        id:           Primary key (UUID v4, server-generated).
+        agent_id:     Foreign key → ``agents.id`` (cascade delete); UNIQUE.
+        role:         Broad role: ``viewer``, ``paper_trader``, ``live_trader``,
+                      or ``admin``.
+        capabilities: JSONB map of capability flags and limits.
+        granted_by:   Foreign key → ``accounts.id`` (the account owner who
+                      granted permissions).
+        granted_at:   UTC timestamp of initial grant.
+        updated_at:   UTC timestamp of last update.
+    """
+
+    __tablename__ = "agent_permissions"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    role: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+        server_default="'paper_trader'",
+    )
+    capabilities: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="'{}'",
+    )
+    granted_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    granted_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+    grantor: Mapped[Account] = relationship("Account")
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('viewer', 'paper_trader', 'live_trader', 'admin')",
+            name="ck_agent_permissions_role",
+        ),
+        Index("idx_agent_permissions_agent", "agent_id", unique=True),
+        Index("idx_agent_permissions_granted_by", "granted_by"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentPermission agent={self.agent_id} role={self.role!r}>"
+
+
+# ── AgentBudget ───────────────────────────────────────────────────────────────
+
+
+class AgentBudget(Base):
+    """Daily and weekly trade budget limits for an agent.
+
+    One row per agent (enforced by UNIQUE constraint on ``agent_id``).
+    Counters (``trades_today``, ``exposure_today``, ``loss_today``) are
+    reset by a Celery beat task at midnight UTC and written back via
+    ``last_reset_at``.
+
+    Attributes:
+        id:                   Primary key (UUID v4, server-generated).
+        agent_id:             Foreign key → ``agents.id`` (cascade delete); UNIQUE.
+        max_trades_per_day:   Maximum number of trades allowed per day.
+        max_exposure_pct:     Maximum portfolio exposure as a percentage (5 sig.
+                              figs, 2 dec.).
+        max_daily_loss_pct:   Maximum daily loss as a percentage of starting equity.
+        max_position_size_pct: Maximum single position size as a percentage.
+        trades_today:         Count of trades placed since last reset.
+        exposure_today:       Current total exposure in USDT.
+        loss_today:           Realised loss in USDT since last reset.
+        last_reset_at:        UTC timestamp of last counter reset.
+        updated_at:           UTC timestamp of last modification.
+    """
+
+    __tablename__ = "agent_budgets"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    max_trades_per_day: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    max_exposure_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
+    max_daily_loss_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
+    max_position_size_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
+    trades_today: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    exposure_today: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+        server_default="0",
+    )
+    loss_today: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+        server_default="0",
+    )
+    last_reset_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        Index("idx_agent_budgets_agent", "agent_id", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentBudget agent={self.agent_id} trades_today={self.trades_today} "
+            f"loss_today={self.loss_today}>"
+        )
+
+
+# ── AgentPerformance ─────────────────────────────────────────────────────────
+
+
+class AgentPerformance(Base):
+    """Rolling strategy performance statistics for an agent.
+
+    One row per (agent, strategy_name, period, period_start) combination.
+    Records are written at the end of each period by the Celery beat task
+    that closes rolling windows.
+
+    Attributes:
+        id:                 Primary key (UUID v4, server-generated).
+        agent_id:           Foreign key → ``agents.id`` (cascade delete).
+        strategy_name:      Label of the strategy being tracked.
+        period:             Aggregation window: ``daily``, ``weekly``, or
+                            ``monthly``.
+        period_start:       UTC start of the aggregation window.
+        period_end:         UTC end of the aggregation window.
+        total_trades:       Total trades executed in the period.
+        winning_trades:     Trades with positive realised PnL.
+        total_pnl:          Net realised PnL in USDT for the period.
+        sharpe_ratio:       Sharpe ratio for the period (nullable).
+        max_drawdown_pct:   Maximum intra-period drawdown percentage (nullable).
+        win_rate:           Winning trades / total trades in [0, 1] (nullable).
+        avg_trade_duration: Average duration of a closed trade (nullable).
+        extra_metrics:      JSONB for additional metrics not covered above.
+        created_at:         UTC timestamp of row creation.
+    """
+
+    __tablename__ = "agent_performance"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy_name: Mapped[str] = mapped_column(
+        VARCHAR(100),
+        nullable=False,
+    )
+    period: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+    )
+    period_start: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+    )
+    period_end: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+    )
+    total_trades: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    winning_trades: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    total_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+        server_default="0",
+    )
+    sharpe_ratio: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 4),
+        nullable=True,
+    )
+    max_drawdown_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 4),
+        nullable=True,
+    )
+    win_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True,
+    )
+    avg_trade_duration: Mapped[timedelta | None] = mapped_column(
+        Interval,
+        nullable=True,
+    )
+    extra_metrics: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="'{}'",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+
+    __table_args__ = (
+        CheckConstraint(
+            "period IN ('daily', 'weekly', 'monthly')",
+            name="ck_agent_performance_period",
+        ),
+        CheckConstraint(
+            "win_rate IS NULL OR (win_rate >= 0 AND win_rate <= 1)",
+            name="ck_agent_performance_win_rate",
+        ),
+        Index("idx_agent_performance_agent_created", "agent_id", "created_at"),
+        Index("idx_agent_performance_agent_period", "agent_id", "period", "period_start"),
+        Index("idx_agent_performance_strategy", "agent_id", "strategy_name"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentPerformance agent={self.agent_id} strategy={self.strategy_name!r} "
+            f"period={self.period!r} pnl={self.total_pnl}>"
+        )
+
+
+# ── AgentObservation ─────────────────────────────────────────────────────────
+
+
+class AgentObservation(Base):
+    """Market snapshot captured at each agent decision point.
+
+    This table will be converted to a **TimescaleDB hypertable** partitioned
+    by ``time`` with 1-day chunks via Alembic migration.  The composite PK
+    ``(time, agent_id)`` is required by TimescaleDB.
+
+    The hypertable DDL to add in the migration's ``upgrade()`` function::
+
+        op.execute(
+            "SELECT create_hypertable('agent_observations', 'time', "
+            "chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE)"
+        )
+
+    Attributes:
+        time:            UTC timestamp of the observation (hypertable partition key;
+                         part of composite PK).
+        agent_id:        Foreign key → ``agents.id`` (part of composite PK).
+        decision_id:     Foreign key → ``agent_decisions.id`` (nullable SET NULL).
+        prices:          JSONB map of symbol → price at observation time.
+        indicators:      JSONB map of indicator name → value at observation time.
+        regime:          Detected market regime label (e.g. ``"trending"``).
+        portfolio_state: JSONB snapshot of portfolio at observation time.
+        signals:         JSONB list of strategy signals present at this moment.
+    """
+
+    __tablename__ = "agent_observations"
+
+    # TimescaleDB composite PK: time must be first for partitioning.
+    time: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        primary_key=True,
+        nullable=False,
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    decision_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agent_decisions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    prices: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    indicators: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    regime: Mapped[str | None] = mapped_column(
+        VARCHAR(50),
+        nullable=True,
+    )
+    portfolio_state: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    signals: Mapped[list[Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    agent: Mapped[Agent] = relationship("Agent")
+    decision: Mapped[AgentDecision | None] = relationship("AgentDecision")
+
+    __table_args__ = (
+        # Primary time-range scans per agent — most common query pattern.
+        Index("idx_agent_obs_agent_time", "agent_id", "time"),
+        # Look up observations linked to a specific decision.
+        Index("idx_agent_obs_decision", "decision_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentObservation agent={self.agent_id} time={self.time} regime={self.regime!r}>"

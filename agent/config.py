@@ -44,6 +44,36 @@ class AgentConfig(BaseSettings):
     max_trade_pct: float = 0.05
     symbols: list[str] = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
+    # ── Memory settings ───────────────────────────────────────────────────────
+    memory_search_limit: int = 10
+    memory_cache_ttl: int = 3600  # seconds
+    memory_cleanup_confidence_threshold: float = 0.2
+    memory_cleanup_age_days: int = 90
+
+    # ── Conversation settings ─────────────────────────────────────────────────
+    context_max_tokens: int = 8000
+    context_recent_messages: int = 20
+    context_summary_threshold: int = 50  # summarize after N messages
+
+    # ── Server settings ───────────────────────────────────────────────────────
+    agent_server_host: str = "0.0.0.0"
+    agent_server_port: int = 8001
+    agent_health_check_interval: int = 60  # seconds
+    agent_scheduled_review_hour: int = 8  # UTC hour for morning review
+
+    # ── Permission defaults ───────────────────────────────────────────────────
+    # Default to the least-privileged role so agents without explicit permission
+    # records cannot trade.  Override to "paper_trader" or higher only after
+    # explicit review of the agent's risk profile.
+    default_agent_role: str = "viewer"
+    default_max_trades_per_day: int = 50
+    default_max_exposure_pct: float = 25.0
+    default_max_daily_loss_pct: float = 5.0
+
+    # ── Trading loop settings ─────────────────────────────────────────────────
+    trading_loop_interval: int = 3600  # seconds (1 hour)
+    trading_min_confidence: float = 0.6
+
     # ── Computed ──────────────────────────────────────────────────────────────
 
     @computed_field  # type: ignore[prop-decorator]

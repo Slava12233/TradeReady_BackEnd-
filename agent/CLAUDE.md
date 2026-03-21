@@ -1,6 +1,6 @@
 # agent/ — TradeReady Platform Testing Agent
 
-<!-- last-updated: 2026-03-20 (Docker support, [ml]/[all] extras, checksum security, 901 tests) -->
+<!-- last-updated: 2026-03-21 -->
 
 > Autonomous AI agent for end-to-end testing of the AiTradingAgent platform using Pydantic AI + OpenRouter.
 
@@ -32,10 +32,38 @@ agent/
 │   ├── system.py            # SYSTEM_PROMPT constant (used by all LLM agents)
 │   └── skill_context.py     # load_skill_context() — loads docs/skill.md
 ├── tools/
-│   ├── __init__.py          # Re-exports all 5 public tool factories
+│   ├── __init__.py          # Re-exports all 6 public tool factories
 │   ├── sdk_tools.py         # get_sdk_tools() — 7 tools via AsyncAgentExchangeClient
 │   ├── mcp_tools.py         # get_mcp_server(), get_mcp_server_with_jwt()
-│   └── rest_tools.py        # PlatformRESTClient, get_rest_tools() — 11 REST tool functions
+│   ├── rest_tools.py        # PlatformRESTClient, get_rest_tools() — 11 REST tool functions
+│   └── agent_tools.py       # get_agent_tools() — 5 self-reflection/journal/feedback tools
+├── conversation/
+│   ├── __init__.py          # Re-exports AgentSession, SessionError, IntentRouter, IntentType
+│   ├── session.py           # AgentSession — DB-backed session lifecycle, auto-summarisation
+│   ├── history.py           # ConversationHistory, Message — read-only message access
+│   ├── context.py           # ContextBuilder — 6-section LLM context assembly
+│   └── router.py            # IntentRouter, IntentType — 3-layer message classification
+├── memory/
+│   ├── __init__.py          # Re-exports MemoryType, Memory, MemoryStore, MemoryNotFoundError, PostgresMemoryStore, RedisMemoryCache, MemoryRetriever, RetrievalResult
+│   ├── store.py             # MemoryStore ABC, Memory model, MemoryType, MemoryNotFoundError
+│   ├── postgres_store.py    # PostgresMemoryStore — durable Postgres implementation
+│   ├── redis_cache.py       # RedisMemoryCache — hot cache, working memory, regime/signal state
+│   └── retrieval.py         # MemoryRetriever, RetrievalResult — scored two-phase retrieval
+├── permissions/
+│   ├── __init__.py          # Re-exports all public symbols from all 4 submodules
+│   ├── roles.py             # AgentRole, ROLE_HIERARCHY, ROLE_CAPABILITIES, helper functions
+│   ├── capabilities.py      # Capability, ALL_CAPABILITIES, CapabilityManager
+│   ├── budget.py            # BudgetManager — Redis-backed daily limits
+│   └── enforcement.py       # PermissionEnforcer, PermissionDenied, ACTION_CAPABILITY_MAP
+├── trading/
+│   ├── __init__.py          # Re-exports TradingLoop, SignalGenerator, TradingSignal, StrategyManager, LoopStoppedError, TradeExecutor, PositionMonitor, TradingJournal, ABTestRunner, ABTest, and exceptions
+│   ├── loop.py              # TradingLoop — observe→learn cycle, error backoff, shutdown
+│   ├── signal_generator.py  # SignalGenerator, TradingSignal — ensemble-backed signals
+│   ├── execution.py         # TradeExecutor — idempotent, retried execution with budget
+│   ├── monitor.py           # PositionMonitor — stop-loss/take-profit/max-hold exits
+│   ├── journal.py           # TradingJournal — decision records, LLM reflections, summaries
+│   ├── strategy_manager.py  # StrategyManager — rolling windows, degradation, adjustments
+│   └── ab_testing.py        # ABTestRunner, ABTest — A/B test framework
 ├── workflows/
 │   ├── __init__.py          # Re-exports all 4 workflow runner functions
 │   ├── smoke_test.py        # run_smoke_test() — 10-step connectivity validation
@@ -400,11 +428,15 @@ Each subdirectory has its own `CLAUDE.md` with full details. Read the local file
 | Path | Description |
 |------|-------------|
 | `agent/models/CLAUDE.md` | All 6 Pydantic output models — fields, constraints, frozen pattern, gotchas |
-| `agent/tools/CLAUDE.md` | Three integration layers — SDK tools (7), MCP server factory, REST tools (11) |
+| `agent/tools/CLAUDE.md` | Four integration layers — SDK tools (7), MCP server factory, REST tools (11), agent tools (5) |
 | `agent/prompts/CLAUDE.md` | `SYSTEM_PROMPT` content summary and `load_skill_context` disk/REST fallback |
 | `agent/workflows/CLAUDE.md` | Four workflow runners — step tables, LLM usage, status logic, gotchas |
 | `agent/tests/CLAUDE.md` | 117 unit tests — mock patterns, test counts per file, running instructions |
 | `agent/strategies/CLAUDE.md` | 5-strategy system — RL, evolutionary, regime, risk, ensemble; file inventory, CLI commands, dependencies, checksum security |
+| `agent/conversation/CLAUDE.md` | Session management, message history, LLM context assembly, intent routing |
+| `agent/memory/CLAUDE.md` | Memory store (abstract + Postgres + Redis), scored retrieval, working memory |
+| `agent/permissions/CLAUDE.md` | Roles, capabilities, budget limits, enforcement with audit logging |
+| `agent/trading/CLAUDE.md` | Trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing |
 
 ## Recent Changes
 
@@ -412,3 +444,4 @@ Each subdirectory has its own `CLAUDE.md` with full details. Read the local file
 - `2026-03-20` — Added Sub-CLAUDE.md Index with references to all 5 sub-module files.
 - `2026-03-20` — Added `strategies/` directory to Directory Structure. Added strategy-specific optional dependencies table. Added `agent/strategies/CLAUDE.md` to Sub-CLAUDE.md Index.
 - `2026-03-20` — Added Docker section (Dockerfile + docker-compose `agent` profile). Updated `[ml]` and `[all]` optional dependency tables. Added checksum security gotcha (`agent/strategies/checksum.py`). Added no-CLI-API-key gotcha. Updated total test count to 901.
+- `2026-03-21` — Added `conversation/`, `memory/`, `permissions/`, `trading/` packages to Directory Structure. Updated `tools/` entry for new `agent_tools.py`. Added 4 new entries to Sub-CLAUDE.md Index.

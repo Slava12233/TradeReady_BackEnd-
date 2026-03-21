@@ -88,7 +88,11 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 |------|-------------|
 | `alembic/CLAUDE.md` | Migration workflow, async env, naming convention, inventory |
 | `sdk/CLAUDE.md` | Python SDK — sync/async clients, WebSocket client |
-| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows, 3 tool integrations; sub-files in `agent/models/`, `agent/tools/`, `agent/prompts/`, `agent/workflows/`, `agent/tests/`, `agent/strategies/` |
+| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows, 4 tool integrations; sub-files in `agent/models/`, `agent/tools/`, `agent/prompts/`, `agent/workflows/`, `agent/tests/`, `agent/strategies/`, `agent/conversation/`, `agent/memory/`, `agent/permissions/`, `agent/trading/` |
+| `agent/conversation/CLAUDE.md` | Session management, message history, LLM context assembly, intent routing — `AgentSession`, `ConversationHistory`, `ContextBuilder`, `IntentRouter` |
+| `agent/memory/CLAUDE.md` | Memory store (abstract + Postgres + Redis), scored retrieval — `MemoryStore`, `PostgresMemoryStore`, `RedisMemoryCache`, `MemoryRetriever` |
+| `agent/permissions/CLAUDE.md` | Roles, capabilities, budget limits, enforcement — `AgentRole`, `CapabilityManager`, `BudgetManager`, `PermissionEnforcer` |
+| `agent/trading/CLAUDE.md` | Trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing — `TradingLoop`, `TradeExecutor`, `TradingJournal`, `ABTestRunner` |
 | `agent/strategies/CLAUDE.md` | 5-strategy agent trading system — PPO RL, genetic algorithm, market regime detection, risk overlay, ensemble combiner; file inventory, CLI commands, dependencies |
 | `agent/strategies/rl/CLAUDE.md` | PPO RL strategy — `RLConfig`, `train()`, `ModelEvaluator`, `PPODeployBridge`; CLI commands, SB3 gotchas |
 | `agent/strategies/evolutionary/CLAUDE.md` | Genetic algorithm strategy — `StrategyGenome` (12 params), `Population`, `BattleRunner`; GA operators, fitness formula, CLI |

@@ -1,12 +1,12 @@
 # agent/tools — Platform Integration Layers
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-21 -->
 
-> Three integration layers that wrap platform access for Pydantic AI agents: SDK tools, MCP server factory, and REST tools.
+> Four integration layers that wrap platform access for Pydantic AI agents: SDK tools, MCP server factory, REST tools, and agent self-reflection tools.
 
 ## What This Module Does
 
-Provides all three channels through which the testing agent calls the AiTradingAgent platform. Each layer targets a different surface area: the SDK client covers live trading and market data; the MCP server subprocess exposes all 58 platform tools via JSON-RPC; and the REST client covers the backtest lifecycle and strategy management surfaces that the SDK does not expose. All tool functions follow a consistent error contract — errors are returned as `{"error": "<message>"}` rather than raised, so the LLM can handle failures gracefully without crashing the workflow.
+Provides all four channels through which the agent calls the AiTradingAgent platform. Each layer targets a different surface area: the SDK client covers live trading and market data; the MCP server subprocess exposes all 58 platform tools via JSON-RPC; the REST client covers the backtest lifecycle and strategy management surfaces that the SDK does not expose; and the agent tools provide self-reflection, portfolio review, opportunity scanning, journaling, and platform feature requests backed by direct DB writes. All tool functions follow a consistent error contract — errors are returned as `{"error": "<message>"}` rather than raised, so the LLM can handle failures gracefully without crashing the workflow.
 
 ## Key Files
 
@@ -15,7 +15,8 @@ Provides all three channels through which the testing agent calls the AiTradingA
 | `sdk_tools.py` | `get_sdk_tools()` — 7 async tool functions backed by `AsyncAgentExchangeClient` |
 | `mcp_tools.py` | `get_mcp_server()`, `get_mcp_server_with_jwt()` — spawns the platform MCP server subprocess |
 | `rest_tools.py` | `PlatformRESTClient` class and `get_rest_tools()` — 11 REST tool functions for backtest + strategy |
-| `__init__.py` | Re-exports all 5 public names: `PlatformRESTClient`, `get_mcp_server`, `get_mcp_server_with_jwt`, `get_rest_tools`, `get_sdk_tools` |
+| `agent_tools.py` | `get_agent_tools()` — 5 async tool functions for self-reflection, portfolio review, opportunity scan, journaling, and feature requests |
+| `__init__.py` | Re-exports all 6 public names: `PlatformRESTClient`, `get_agent_tools`, `get_mcp_server`, `get_mcp_server_with_jwt`, `get_rest_tools`, `get_sdk_tools` |
 
 ## Public API / Key Classes
 
@@ -85,6 +86,173 @@ All tool functions catch `httpx.HTTPStatusError` and `httpx.RequestError` and re
 
 The shared `PlatformRESTClient` is **not** closed inside the tool functions. Workflows that use these tools (`backtest_workflow`, `strategy_workflow`) use `PlatformRESTClient` as an `async with` context manager directly rather than going through the tool factory.
 
+### `get_agent_tools(config, agent_id)` — `agent_tools.py`
+
+Factory that instantiates a single `AsyncAgentExchangeClient` shared across all returned tools and closes over `config`, `agent_id`, and the client. Returns a `list` of 5 async tool functions suitable for `Agent(tools=...)`.
+
+These tools write directly to the platform database. They are designed for **co-located deployments** (agent process running on the same host as the database) and are not appropriate for remote-only API integrations.
+
+All tools catch exceptions and return `{"error": "<message>"}` instead of raising.
+
+| Tool function | Purpose | Key parameters | Returns on success |
+|---------------|---------|----------------|-------------------|
+| `reflect_on_trade(ctx, trade_id)` | Generate a structured reflection on a completed trade | `trade_id: str` — the trade to reflect on | `TradeReflection` dict (see below) |
+| `review_portfolio(ctx)` | Evaluate portfolio health, concentration, and budget usage | none | `PortfolioReview` dict (see below) |
+| `scan_opportunities(ctx, criteria)` | Scan all live prices for trading opportunities meeting criteria | `criteria: dict` — filter and scoring options | `list[Opportunity]` dicts (see below) |
+| `journal_entry(ctx, content, entry_type="reflection")` | Write a journal entry with auto-generated market snapshot and tags | `content: str`, `entry_type: str` | `JournalEntry` dict (see below) |
+| `request_platform_feature(ctx, description, category="feature_request")` | Submit a feature request or bug report to the platform feedback table | `description: str`, `category: str` | `FeedbackEntry` dict (see below) |
+
+---
+
+#### `reflect_on_trade(ctx, trade_id)`
+
+Fetches the agent's last 50 trades, finds the matching entry/exit pair for `trade_id`, fetches all observations from `agent_observations` for that trade, then computes:
+
+- `pnl` — realised profit/loss
+- `mae` — maximum adverse excursion (worst price vs entry)
+- `entry_quality` — heuristic score for how well-timed the entry was
+- `exit_quality` — heuristic score for the exit timing
+
+Persists a `"reflection"` row to `agent_journal` and a learning row to `agent_learnings`.
+
+**`TradeReflection` dict fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `trade_id` | `str` | The reflected trade |
+| `symbol` | `str` | Trading pair |
+| `pnl` | `str` (Decimal string) | Realised PnL |
+| `mae` | `str` (Decimal string) | Maximum adverse excursion |
+| `entry_quality` | `float` | `[0.0, 1.0]` entry quality score |
+| `exit_quality` | `float` | `[0.0, 1.0]` exit quality score |
+| `key_learning` | `str` | One-sentence learning saved to memory |
+| `journal_entry_id` | `str` | UUID of the created journal row |
+
+---
+
+#### `review_portfolio(ctx)`
+
+Fetches balances and positions via the SDK, fetches budget status from the DB, then scores portfolio health.
+
+**Concentration thresholds:**
+
+| Level | Single-asset portfolio share |
+|-------|------------------------------|
+| Normal | < 30% |
+| HIGH | 30%–49% |
+| EXTREME | ≥ 50% |
+
+**Health score:** Starts at `1.0`, decremented by:
+- Extreme concentration: −0.3 per asset
+- High concentration: −0.1 per asset
+- Open positions with unrealised PnL < −5%: −0.1 per position
+- Budget usage > 75%: −0.2
+
+Persists an `"insight"` row to `agent_journal`.
+
+**`PortfolioReview` dict fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_value` | `str` | Total portfolio USDT value |
+| `health_score` | `float` | `[0.0, 1.0]` overall health |
+| `concentration_warnings` | `list[str]` | Symbols with HIGH or EXTREME concentration |
+| `position_count` | `int` | Number of open positions |
+| `budget_usage_pct` | `float` | Fraction of daily trade budget consumed |
+| `recommendations` | `list[str]` | Human-readable action suggestions |
+| `journal_entry_id` | `str` | UUID of the created journal row |
+
+---
+
+#### `scan_opportunities(ctx, criteria)`
+
+Reads all current prices from Redis `HGETALL prices` (falls back to SDK `get_price()` per symbol in `config.symbols`). Scores each symbol as a potential opportunity.
+
+**`criteria` dict options:**
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `trending_up` | `bool` | `False` | Only include symbols with positive 1h change |
+| `trending_down` | `bool` | `False` | Only include symbols with negative 1h change |
+| `min_price` | `float \| None` | `None` | Minimum price in USDT |
+| `max_price` | `float \| None` | `None` | Maximum price in USDT |
+| `symbols` | `list[str] \| None` | `None` | Restrict scan to these symbols only |
+| `top_n` | `int` | `10` | Maximum number of opportunities to return |
+
+**Signal strength formula:** `min(1.0, abs_change_pct / 10.0)`
+**Minimum threshold:** `0.30` (signals below this are filtered out)
+**Risk/reward requirement:** ≥ 1.5 (using stop-loss 2%, take-profit 4%)
+
+**`Opportunity` dict fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `symbol` | `str` | Trading pair |
+| `signal_strength` | `float` | `[0.0, 1.0]` — higher is stronger |
+| `direction` | `str` | `"buy"` or `"sell"` |
+| `current_price` | `str` | Current price as Decimal string |
+| `suggested_stop_loss` | `str` | 2% below/above entry as Decimal string |
+| `suggested_take_profit` | `str` | 4% above/below entry as Decimal string |
+| `reasoning` | `str` | Brief explanation of why this symbol qualifies |
+
+Results are sorted by `signal_strength` descending.
+
+---
+
+#### `journal_entry(ctx, content, entry_type="reflection")`
+
+Captures a market snapshot (top prices from Redis + portfolio state from SDK) at the time of the call. Auto-generates tags by matching `content` against `_TAG_KEYWORD_MAP` keyword sets. Persists to `agent_journal`.
+
+**Valid `entry_type` values:**
+
+| Input value | Stored as | Notes |
+|-------------|-----------|-------|
+| `"reflection"` | `"reflection"` | — |
+| `"insight"` | `"insight"` | — |
+| `"observation"` | `"observation"` | — |
+| `"daily_review"` | `"daily_review"` | — |
+| `"weekly_review"` | `"weekly_review"` | — |
+| `"daily_summary"` | `"daily_review"` | Remapped for consistency |
+| `"ab_test"` | `"insight"` | Remapped for consistency |
+
+**`JournalEntry` dict fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entry_id` | `str` | UUID of the created journal row |
+| `entry_type` | `str` | Stored entry type (after remapping) |
+| `tags` | `list[str]` | Auto-generated tags from keyword matching |
+| `market_snapshot` | `dict` | Prices and portfolio state at call time |
+| `created_at` | `str` | ISO-8601 UTC timestamp |
+
+---
+
+#### `request_platform_feature(ctx, description, category="feature_request")`
+
+Deduplicates against existing feedback rows by checking for an existing entry with an ILIKE match on the first 60 characters of `description`. If a duplicate is found, returns the existing entry's ID without creating a new row.
+
+**`category` mapping:**
+
+| Input category | Stored category | Priority |
+|----------------|----------------|---------|
+| `"feature_request"` | `"feature_request"` | `"medium"` |
+| `"bug_report"` | `"bug"` | `"high"` |
+| `"performance"` | `"performance_issue"` | `"medium"` |
+| `"ux"` | `"missing_tool"` | `"low"` |
+
+**`FeedbackEntry` dict fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `feedback_id` | `str` | UUID of the feedback row |
+| `category` | `str` | Stored category (after mapping) |
+| `priority` | `str` | `"high"`, `"medium"`, or `"low"` |
+| `description` | `str` | The submitted description |
+| `is_duplicate` | `bool` | `True` if an existing similar entry was found |
+| `created_at` | `str` | ISO-8601 UTC timestamp |
+
+---
+
 ## Patterns
 
 - **Closure-based tools**: Both `get_sdk_tools` and `get_rest_tools` use nested `async def` functions that close over a shared client instance. This avoids creating redundant connection pools per tool invocation.
@@ -101,7 +269,12 @@ The shared `PlatformRESTClient` is **not** closed inside the tool functions. Wor
 - **`platform_api_secret` is not forwarded to MCP as a JWT**: `get_mcp_server()` intentionally does not forward `platform_api_secret` as `MCP_JWT_TOKEN`. A pre-issued JWT must be obtained separately (e.g. via SDK login) and passed to `get_mcp_server_with_jwt()`.
 - **`create_strategy` omits `description` when empty**: The `description` field is only included in the POST body when it is a non-empty string. This matches the server's optional field handling.
 - **`step_backtest_batch` range**: The `steps` argument is valid from 1 to 10,000. Passing 0 or a negative value will result in a server-side 422 error.
+- **`get_agent_tools()` requires database access**: Unlike the other three factories, `get_agent_tools()` writes directly to the platform database via `session_factory`. It is not suitable for use in environments where only the REST API is accessible. Pass a valid `session_factory` that connects to the same database as the running platform.
+- **`get_agent_tools()` SDK client is shared and must be closed**: Same lifecycle rules as `get_sdk_tools()` — the `AsyncAgentExchangeClient` created inside `get_agent_tools()` is never auto-closed. The caller must call `await client.aclose()` when the agent session ends.
+- **`scan_opportunities()` Redis fallback may be slow**: If Redis is unavailable, `scan_opportunities()` falls back to calling `sdk_client.get_price()` for each symbol in `config.symbols` sequentially. For large symbol lists this adds meaningful latency. Keep `config.symbols` short (3–5 symbols) for fast fallback behaviour.
+- **`request_platform_feature()` dedup is approximate**: The ILIKE check on the first 60 characters of `description` may miss near-duplicates that differ in their opening words, and may falsely match unrelated descriptions that happen to start identically. Review the feedback table periodically to merge true duplicates.
 
 ## Recent Changes
 
 - `2026-03-20` — Initial CLAUDE.md created.
+- `2026-03-21` — Added `agent_tools.py` section documenting `get_agent_tools()` and all 5 tool functions (reflect_on_trade, review_portfolio, scan_opportunities, journal_entry, request_platform_feature). Updated header description, Key Files table, and `__init__.py` export count. Added 4 new gotchas for agent tools.

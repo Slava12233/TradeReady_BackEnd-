@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import uuid
 from collections.abc import Callable, Coroutine
@@ -371,6 +372,12 @@ async def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Pydantic AI's OpenRouterProvider reads the API key from the OS environment,
+    # but AgentConfig loads it from agent/.env via pydantic-settings.  Bridge the
+    # gap so the provider can find the key at Agent() instantiation time.
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        os.environ["OPENROUTER_API_KEY"] = config.openrouter_api_key
 
     # ── Apply runtime overrides ────────────────────────────────────────────────
     if args.model is not None:
