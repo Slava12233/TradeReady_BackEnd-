@@ -1,12 +1,18 @@
 ---
 task_id: 16
 title: "Enhanced agent tools — reflect_on_trade and review_portfolio"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [9, 3]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/tools/agent_tools.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 16: Enhanced agent tools — reflect_on_trade and review_portfolio

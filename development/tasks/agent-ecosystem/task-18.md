@@ -1,12 +1,18 @@
 ---
 task_id: 18
 title: "Tests for enhanced agent tools"
+type: task
 agent: "test-runner"
 phase: 1
 depends_on: [16, 17]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["tests/unit/test_agent_tools.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 18: Tests for enhanced agent tools

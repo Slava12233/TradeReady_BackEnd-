@@ -1,13 +1,19 @@
 ---
 task_id: 5
 title: "Memoize chart context provider value"
+type: task
 agent: "frontend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/components/ui/chart.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 5: Memoize Chart Context Provider Value

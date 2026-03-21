@@ -1,12 +1,18 @@
 ---
 task_id: 28
 title: "Documentation update (CLAUDE.md, skill.md)"
+type: task
 agent: "doc-updater"
 phase: Post
 depends_on: [26, 27]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/CLAUDE.md", "CLAUDE.md", "docs/skill.md"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 28: Documentation update

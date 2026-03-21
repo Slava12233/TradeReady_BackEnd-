@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Code Review Tasks — Issue Tracker"
+status: archived
+phase: agentic-layer
+tags:
+  - task
+  - agentic-layer
+---
+
 # Code Review Tasks — Issue Tracker
 
 > **Created:** 2026-03-01

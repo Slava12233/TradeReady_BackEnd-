@@ -1,3 +1,13 @@
+---
+type: plan
+title: "Code Review Plan — AI Agent Crypto Trading Platform (Backend)"
+status: archived
+phase: agentic-layer
+tags:
+  - plan
+  - agentic-layer
+---
+
 # Code Review Plan — AI Agent Crypto Trading Platform (Backend)
 
 > **Created:** 2026-03-01

@@ -1,12 +1,18 @@
 ---
 task_id: 13
 title: "Agent server — persistent async process"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [5, 9]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/server.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 13: Agent server — persistent async process

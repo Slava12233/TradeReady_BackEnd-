@@ -1,12 +1,18 @@
 ---
 task_id: 05
 title: "Conversation session manager"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [3]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/conversation/__init__.py", "agent/conversation/session.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 05: Conversation session manager

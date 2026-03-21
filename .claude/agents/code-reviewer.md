@@ -18,6 +18,18 @@ Before reviewing, **always read these files** to understand the project rules:
 
 Use the CLAUDE.md Index in the root file to locate the right sub-files.
 
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
+
 ## Workflow
 
 ### Step 1: Identify Changes
@@ -213,6 +225,17 @@ After completing the review, **always** save a report file to `development/code-
 4. Write the report file using the Write tool to `development/code-reviews/review_{timestamp}_{scope}.md` with this format:
 
 ```markdown
+---
+type: code-review
+date: {YYYY-MM-DD}
+reviewer: code-reviewer
+verdict: {PASS | PASS WITH WARNINGS | NEEDS FIXES}
+scope: {scope}
+tags:
+  - review
+  - {relevant module tags}
+---
+
 # Code Review Report
 
 - **Date:** {YYYY-MM-DD HH:MM}

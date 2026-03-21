@@ -1,3 +1,16 @@
+---
+type: code-review
+date: 2026-03-18
+reviewer: code-reviewer
+verdict: NEEDS FIXES
+scope: gym-mcp-sdk
+tags:
+  - review
+  - gym
+  - mcp
+  - sdk
+---
+
 # Code Review Report
 
 - **Date:** 2026-03-18 16:54

@@ -1,12 +1,18 @@
 ---
 task_id: 10
 title: "Run evolutionary training (30 generations)"
+type: task
 agent: "ml-engineer"
 phase: 6
 depends_on: [9]
 status: "pending"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/strategies/evolutionary/results/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 10: Run evolutionary training (30 generations)

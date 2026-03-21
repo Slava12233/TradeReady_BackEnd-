@@ -1,13 +1,18 @@
 ---
 task_id: 13
 title: "CLI entry point (main.py)"
+type: task
 agent: "backend-developer"
 phase: 6
 depends_on: [9, 10, 11, 12]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/main.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 13: CLI entry point (main.py)

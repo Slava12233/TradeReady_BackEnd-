@@ -1,12 +1,18 @@
 ---
 task_id: 23
 title: "Final context update"
+type: task
 agent: "context-manager"
 phase: 12
 depends_on: [22]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["development/context.md"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 23: Final context update

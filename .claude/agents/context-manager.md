@@ -109,6 +109,18 @@ Structure:
 [older entries below, most recent first]
 ```
 
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
+
 ## Workflow
 
 ### Step 1: Read Current Context
@@ -210,6 +222,20 @@ Key classes, functions, or endpoints.
 
 4. **Add to root CLAUDE.md index** — Insert a row in the appropriate index table
 5. **Add to parent CLAUDE.md** — If the parent has a sub-file index, add a reference
+
+### Step 7.5: Update Daily Note
+
+If `development/daily/YYYY-MM-DD.md` exists for today, append a summary of changes to the "Agent Activity" section using the Edit tool. If the daily note doesn't exist, run:
+```bash
+bash scripts/create-daily-note.sh
+```
+Then append the summary. Format the additions under the existing headings:
+
+- **Changes Made** — one-line per file changed: `- \`path/to/file.py\` — description`
+- **Decisions** — any architectural or design decisions made
+- **Issues Found** — any problems discovered during the task
+
+If the daily note already has content in these sections, append below existing entries (don't overwrite). If the daily note script fails or the file can't be created, log a warning and proceed — this step is optional and should never block the rest of the workflow.
 
 ### Step 8: Prune Old Entries
 

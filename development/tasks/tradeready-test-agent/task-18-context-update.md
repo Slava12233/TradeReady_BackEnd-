@@ -1,13 +1,18 @@
 ---
 task_id: 18
 title: "Context log update"
+type: task
 agent: "context-manager"
 phase: 6
 depends_on: [17]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "low"
 files:
   - "development/context.md"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 18: Context log update

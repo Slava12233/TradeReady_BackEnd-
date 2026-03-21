@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Multi-Agent Fixes: Risk Isolation & Agent-Scoped Architecture"
+status: archived
+phase: battles
+tags:
+  - task
+  - battles
+---
+
 # Multi-Agent Fixes: Risk Isolation & Agent-Scoped Architecture
 
 ## Task Checklist

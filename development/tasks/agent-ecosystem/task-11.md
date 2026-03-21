@@ -1,12 +1,18 @@
 ---
 task_id: 11
 title: "Memory retrieval engine"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [9, 10]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/memory/retrieval.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 11: Memory retrieval engine

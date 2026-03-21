@@ -1,12 +1,18 @@
 ---
 task_id: 02
 title: "Verify platform services & prerequisites"
+type: task
 agent: "deploy-checker"
 phase: 2
 depends_on: [1]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 02: Verify platform services & prerequisites

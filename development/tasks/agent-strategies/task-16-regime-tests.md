@@ -1,12 +1,18 @@
 ---
 task_id: 16
 title: "Regime system tests"
+type: task
 agent: "test-runner"
 phase: C
 depends_on: [12, 14]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/tests/test_regime_labeler.py", "agent/tests/test_regime_switcher.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 16: Regime system tests

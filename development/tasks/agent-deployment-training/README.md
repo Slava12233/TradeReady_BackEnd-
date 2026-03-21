@@ -1,3 +1,17 @@
+---
+type: task-board
+title: Agent Deployment & Training
+created: 2026-03-20
+status: done
+total_tasks: 23
+plan_source: "[[plan]]"
+tags:
+  - task-board
+  - deployment
+  - training
+  - ml
+---
+
 # Task Board: Agent Deployment & Training
 
 **Plan source:** `development/plan.md`

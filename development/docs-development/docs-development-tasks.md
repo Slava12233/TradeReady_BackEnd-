@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Documentation Site — Task Tracker (A-Z)"
+status: complete
+phase: docs
+tags:
+  - task
+  - docs
+---
+
 # Documentation Site — Task Tracker (A-Z)
 
 <!-- last-updated: 2026-03-19 -->

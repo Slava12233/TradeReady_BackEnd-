@@ -1,13 +1,19 @@
 ---
 task_id: 4
 title: "Add useShallow to portfolio Zustand selector"
+type: task
 agent: "frontend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/hooks/use-portfolio.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 4: Add useShallow to Portfolio Zustand Selector

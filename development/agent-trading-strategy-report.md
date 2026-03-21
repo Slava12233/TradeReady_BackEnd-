@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "Building a 5%-Daily AI Trading Agent: Complete Strategy Report"
+status: archived
+phase: agent-strategies
+tags:
+  - research
+  - agent-strategies
+---
+
 # Building a 5%-Daily AI Trading Agent: Complete Strategy Report
 ## How to Use Every Platform Tool to Maximize Agent Performance
 

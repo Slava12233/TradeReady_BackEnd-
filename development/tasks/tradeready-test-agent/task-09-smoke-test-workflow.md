@@ -1,13 +1,18 @@
 ---
 task_id: 9
 title: "Smoke test workflow"
+type: task
 agent: "backend-developer"
 phase: 5
 depends_on: [4, 5, 6, 7, 8]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/workflows/smoke_test.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 9: Smoke test workflow

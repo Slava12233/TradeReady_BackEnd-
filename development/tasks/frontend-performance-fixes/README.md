@@ -1,3 +1,16 @@
+---
+type: task-board
+title: Frontend Performance Fixes
+created: 2026-03-20
+status: done
+total_tasks: 23
+plan_source: "[[frontend-performance-review]]"
+tags:
+  - task-board
+  - frontend
+  - performance
+---
+
 # Task Board: Frontend Performance Fixes
 
 **Plan source:** `development/code-reviews/frontend-performance-review.md`

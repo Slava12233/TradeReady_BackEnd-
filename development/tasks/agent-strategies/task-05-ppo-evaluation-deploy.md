@@ -1,12 +1,18 @@
 ---
 task_id: 05
 title: "PPO evaluation & deployment bridge"
+type: task
 agent: "ml-engineer"
 phase: A
 depends_on: [4]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/rl/evaluate.py", "agent/strategies/rl/deploy.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 05: PPO evaluation & deployment bridge

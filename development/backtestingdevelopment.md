@@ -1,3 +1,13 @@
+---
+type: plan
+title: "AgentExchange — Backtesting Engine Development Plan v2"
+status: archived
+phase: backtesting
+tags:
+  - plan
+  - backtesting
+---
+
 # AgentExchange — Backtesting Engine Development Plan v2
 
 > **Version:** 2.0 | **Date:** February 2026

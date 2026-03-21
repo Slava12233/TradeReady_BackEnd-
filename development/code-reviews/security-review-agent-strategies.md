@@ -1,3 +1,15 @@
+---
+type: code-review
+date: 2026-03-20
+reviewer: security-reviewer
+verdict: PASS WITH WARNINGS
+scope: agent-strategies
+tags:
+  - review
+  - security
+  - strategies
+---
+
 # Security Review: agent/strategies/
 
 **Date:** 2026-03-20

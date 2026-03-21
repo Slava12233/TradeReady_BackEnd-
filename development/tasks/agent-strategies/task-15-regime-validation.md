@@ -1,12 +1,18 @@
 ---
 task_id: 15
 title: "Regime strategy validation backtests"
+type: task
 agent: "e2e-tester"
 phase: C
 depends_on: [14]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: []
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 15: Regime strategy validation backtests

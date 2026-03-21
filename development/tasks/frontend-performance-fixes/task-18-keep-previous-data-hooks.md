@@ -1,14 +1,20 @@
 ---
 task_id: 18
 title: "Add keepPreviousData to remaining paginated hooks"
+type: task
 agent: "frontend-developer"
 phase: 3
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "low"
 files:
   - "Frontend/src/hooks/use-market-data.ts"
   - "Frontend/src/hooks/use-backtests.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 18: Add keepPreviousData to Remaining Paginated Hooks

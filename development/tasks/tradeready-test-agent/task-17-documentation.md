@@ -1,14 +1,19 @@
 ---
 task_id: 17
 title: "Documentation update (CLAUDE.md, README)"
+type: task
 agent: "doc-updater"
 phase: 6
 depends_on: [16]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "low"
 files:
   - "agent/CLAUDE.md"
   - "CLAUDE.md"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 17: Documentation update

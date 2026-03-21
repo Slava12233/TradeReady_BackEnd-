@@ -1,12 +1,17 @@
 ---
 task_id: 3
 title: "Research SDK/MCP/REST integration surfaces"
+type: task
 agent: "codebase-researcher"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 3: Research SDK/MCP/REST integration surfaces

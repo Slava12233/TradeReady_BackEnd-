@@ -1,12 +1,18 @@
 ---
 task_id: 20
 title: "Create agent Dockerfile & compose service"
+type: task
 agent: "backend-developer"
 phase: 10
 depends_on: [1]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "low"
 files: ["agent/Dockerfile", "docker-compose.yml"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 20: Create agent Dockerfile & compose service

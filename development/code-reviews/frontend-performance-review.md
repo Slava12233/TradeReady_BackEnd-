@@ -1,3 +1,15 @@
+---
+type: code-review
+date: 2026-03-20
+reviewer: perf-checker
+verdict: NEEDS FIXES
+scope: frontend-performance
+tags:
+  - review
+  - frontend
+  - performance
+---
+
 # Frontend Performance Review (A-Z)
 
 **Date:** 2026-03-20

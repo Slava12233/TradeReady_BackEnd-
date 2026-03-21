@@ -1,10 +1,12 @@
 ---
 task_id: 14
 title: "Unit tests for tools & models"
+type: task
 agent: "test-runner"
 phase: 6
 depends_on: [4, 5, 6, 7]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "medium"
 files:
   - "agent/tests/__init__.py"
@@ -12,6 +14,9 @@ files:
   - "agent/tests/test_sdk_tools.py"
   - "agent/tests/test_rest_tools.py"
   - "agent/tests/test_config.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 14: Unit tests for tools & models

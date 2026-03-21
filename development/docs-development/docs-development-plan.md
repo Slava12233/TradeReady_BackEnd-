@@ -1,3 +1,13 @@
+---
+type: plan
+title: "Documentation Site — Full Development Plan"
+status: complete
+phase: docs
+tags:
+  - plan
+  - docs
+---
+
 # Documentation Site — Full Development Plan
 
 <!-- last-updated: 2026-03-19 -->

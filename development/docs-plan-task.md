@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Documentation Site — Plan & Task Breakdown"
+status: archived
+phase: docs
+tags:
+  - task
+  - docs
+---
+
 # Documentation Site — Plan & Task Breakdown
 
 ## Overview

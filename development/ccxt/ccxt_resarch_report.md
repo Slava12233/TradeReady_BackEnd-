@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "CCXT: Complete Integration Analysis"
+status: archived
+phase: ccxt-integration
+tags:
+  - research
+  - ccxt-integration
+---
+
 # CCXT: Complete Integration Analysis
 
 **What It Is, What It Costs, and How TradeReady Should Use It**

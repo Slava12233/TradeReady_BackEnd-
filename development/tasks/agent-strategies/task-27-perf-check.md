@@ -1,12 +1,18 @@
 ---
 task_id: 27
 title: "Performance check (training & inference)"
+type: task
 agent: "perf-checker"
 phase: Post
 depends_on: [6, 11, 16, 20, 25]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 27: Performance check (training & inference)

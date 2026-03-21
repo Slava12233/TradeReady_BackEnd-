@@ -1,12 +1,18 @@
 ---
 task_id: 15
 title: "CLI chat interface (REPL)"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [13, 7]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/cli.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 15: CLI chat interface (REPL)

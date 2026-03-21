@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Agents + Backtesting + Battles Integration — Task Breakdown"
+status: archived
+phase: integration
+tags:
+  - task
+  - integration
+---
+
 # Agents + Backtesting + Battles Integration — Task Breakdown
 
 > **Created:** 2026-03-17

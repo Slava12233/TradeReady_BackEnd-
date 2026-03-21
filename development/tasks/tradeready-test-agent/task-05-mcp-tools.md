@@ -1,13 +1,18 @@
 ---
 task_id: 5
 title: "MCP tools module"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [2, 3]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "medium"
 files:
   - "agent/tools/mcp_tools.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 5: MCP tools module

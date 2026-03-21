@@ -1,14 +1,20 @@
 ---
 task_id: 1
 title: "Add React.memo to PriceFlashCell and market table row components"
+type: task
 agent: "frontend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/components/market/market-table-row.tsx"
   - "Frontend/src/components/market/market-table.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 1: Add React.memo to PriceFlashCell and Market Table Row Components

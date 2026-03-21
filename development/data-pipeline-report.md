@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "TradeReady Data Pipeline: Complete A-Z Report"
+status: archived
+phase: data-pipeline
+tags:
+  - research
+  - data-pipeline
+---
+
 # TradeReady Data Pipeline: Complete A-Z Report
 ## How Data Flows from Binance to Every Consumer
 

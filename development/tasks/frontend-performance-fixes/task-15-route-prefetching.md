@@ -1,14 +1,20 @@
 ---
 task_id: 15
 title: "Add route data prefetching on link hover"
+type: task
 agent: "frontend-developer"
 phase: 3
 depends_on: [9]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/components/layout/sidebar.tsx"
   - "Frontend/src/lib/prefetch.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 15: Add Route Data Prefetching on Link Hover

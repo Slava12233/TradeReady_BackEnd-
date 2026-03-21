@@ -1,3 +1,13 @@
+---
+type: plan
+title: "Implementation Plan: Periodic Market Data Gap-Fill Task"
+status: archived
+phase: data-pipeline
+tags:
+  - plan
+  - data-pipeline
+---
+
 # Implementation Plan: Periodic Market Data Gap-Fill Task
 
 ## Context

@@ -1,3 +1,15 @@
+---
+type: code-review
+date: 2026-03-20
+reviewer: code-reviewer
+verdict: NEEDS FIXES
+scope: frontend-perf-fixes
+tags:
+  - review
+  - frontend
+  - performance
+---
+
 # Code Review Report
 
 - **Date:** 2026-03-20 16:24

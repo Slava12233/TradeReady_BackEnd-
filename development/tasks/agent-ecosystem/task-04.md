@@ -1,12 +1,18 @@
 ---
 task_id: 04
 title: "Unit tests for agent ecosystem repositories"
+type: task
 agent: "test-runner"
 phase: 1
 depends_on: [3]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["tests/unit/test_agent_session_repo.py", "tests/unit/test_agent_message_repo.py", "tests/unit/test_agent_decision_repo.py", "tests/unit/test_agent_learning_repo.py", "tests/unit/test_agent_budget_repo.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 04: Unit tests for agent ecosystem repositories

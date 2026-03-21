@@ -1,3 +1,17 @@
+---
+type: task-board
+title: Agent Ecosystem
+created: 2026-03-20
+status: done
+total_tasks: 36
+plan_source: "[[agent-ecosystem-plan]]"
+tags:
+  - task-board
+  - agent
+  - ecosystem
+  - backend
+---
+
 # Agent Ecosystem — Task Board
 
 > Phase 1 (Agent Core) + Phase 2 (Trading Intelligence) from `development/agent-ecosystem-plan.md`

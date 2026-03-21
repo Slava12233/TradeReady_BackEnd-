@@ -1,12 +1,18 @@
 ---
 task_id: 18
 title: "Add model checksum verification"
+type: task
 agent: "security-reviewer"
 phase: 9
 depends_on: []
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/strategies/rl/deploy.py", "agent/strategies/rl/evaluate.py", "agent/strategies/rl/runner.py", "agent/strategies/regime/classifier.py", "agent/strategies/ensemble/run.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 18: Add model checksum verification

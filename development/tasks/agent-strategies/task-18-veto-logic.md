@@ -1,12 +1,18 @@
 ---
 task_id: 18
 title: "Veto logic & position sizing"
+type: task
 agent: "ml-engineer"
 phase: D
 depends_on: [17]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/risk/veto.py", "agent/strategies/risk/sizing.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 18: Veto logic & position sizing

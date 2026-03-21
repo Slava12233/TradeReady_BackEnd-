@@ -1,3 +1,13 @@
+---
+type: plan
+title: "TradeReady Agent Ecosystem — Master Plan"
+status: complete
+phase: agent-ecosystem
+tags:
+  - plan
+  - agent-ecosystem
+---
+
 # TradeReady Agent Ecosystem — Master Plan
 
 > **Vision:** A self-improving AI trading agent that trades, learns, and improves both itself and the platform it runs on. The agent and platform form a feedback loop — the agent identifies what it needs, we build it, the agent gets better, it identifies the next need.

@@ -1,12 +1,18 @@
 ---
 task_id: 24
 title: "Ensemble validation & final battle"
+type: task
 agent: "e2e-tester"
 phase: E
 depends_on: [23]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "low"
 files: []
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 24: Ensemble validation & final battle

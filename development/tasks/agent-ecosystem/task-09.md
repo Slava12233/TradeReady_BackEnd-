@@ -1,12 +1,18 @@
 ---
 task_id: 09
 title: "Memory store interface and Postgres implementation"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [3]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/memory/__init__.py", "agent/memory/store.py", "agent/memory/postgres_store.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 09: Memory store interface and Postgres implementation

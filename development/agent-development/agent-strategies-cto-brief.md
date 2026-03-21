@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "Agent Trading Strategies — CTO Technical Brief"
+status: archived
+phase: agent-strategies
+tags:
+  - research
+  - agent-strategies
+---
+
 # Agent Trading Strategies — CTO Technical Brief
 
 > **Audience:** CTO / Technical Leadership (not quant traders)

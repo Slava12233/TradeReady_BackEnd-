@@ -1,12 +1,18 @@
 ---
 task_id: 14
 title: "Run ensemble final validation"
+type: task
 agent: "e2e-tester"
 phase: 8
 depends_on: [13]
 status: "pending"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/reports/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 14: Run ensemble final validation

@@ -1,14 +1,20 @@
 ---
 task_id: 17
 title: "Lazy-load tsparticles Sparkles component"
+type: task
 agent: "frontend-developer"
 phase: 3
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/components/ui/sparkles.tsx"
   - "Frontend/src/components/landing/frameworks-section.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 17: Lazy-Load tsparticles Sparkles Component

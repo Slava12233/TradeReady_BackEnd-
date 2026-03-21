@@ -1,12 +1,18 @@
 ---
 task_id: 32
 title: "Tests for strategy management and A/B testing"
+type: task
 agent: "test-runner"
 phase: 2
 depends_on: [29, 30]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["tests/unit/test_strategy_manager.py", "tests/unit/test_ab_testing.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 32: Tests for strategy management and A/B testing

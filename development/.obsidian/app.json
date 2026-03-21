@@ -1,0 +1,11 @@
+{
+  "interfaceFontSize": 14,
+  "newFileLocation": "folder",
+  "newFileFolderPath": "daily",
+  "attachmentFolderPath": "_attachments",
+  "alwaysUpdateLinks": true,
+  "strictLineBreaks": false,
+  "showFrontmatter": true,
+  "readableLineLength": true,
+  "showLineNumber": true
+}

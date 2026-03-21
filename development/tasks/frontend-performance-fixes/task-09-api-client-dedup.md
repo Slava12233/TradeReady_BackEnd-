@@ -1,13 +1,19 @@
 ---
 task_id: 9
 title: "Add request deduplication to API client"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/lib/api-client.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 9: Add Request Deduplication to API Client

@@ -1,12 +1,18 @@
 ---
 task_id: 23
 title: "Permission system — enforcement middleware and audit log"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [21, 22]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/permissions/enforcement.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 23: Permission system — enforcement middleware and audit log

@@ -1,13 +1,19 @@
 ---
 task_id: 8
 title: "Code-split dashboard page with next/dynamic for below-fold components"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: [6]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/app/(dashboard)/dashboard/page.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 8: Code-Split Dashboard Page with next/dynamic

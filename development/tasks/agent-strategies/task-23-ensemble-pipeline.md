@@ -1,12 +1,18 @@
 ---
 task_id: 23
 title: "Full ensemble pipeline"
+type: task
 agent: "ml-engineer"
 phase: E
 depends_on: [21, 22, 19]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "low"
 files: ["agent/strategies/ensemble/run.py", "agent/strategies/ensemble/config.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 23: Full ensemble pipeline

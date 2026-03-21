@@ -1,12 +1,18 @@
 ---
 task_id: 01
 title: "Add ML optional dependencies to agent/pyproject.toml"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/pyproject.toml", "agent/strategies/__init__.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 01: Add ML optional dependencies to agent/pyproject.toml

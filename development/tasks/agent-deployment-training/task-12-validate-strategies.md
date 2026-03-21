@@ -1,12 +1,18 @@
 ---
 task_id: 12
 title: "Validate individual strategies (regime + PPO)"
+type: task
 agent: "e2e-tester"
 phase: 7
 depends_on: [5, 7]
 status: "pending"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/reports/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 12: Validate individual strategies (regime + PPO)

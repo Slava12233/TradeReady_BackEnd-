@@ -1,3 +1,17 @@
+---
+type: task-board
+title: Agent Trading Strategies (5 Strategies for 10% Portfolio Improvement)
+created: 2026-03-20
+status: done
+total_tasks: 29
+plan_source: "[[agent-strategies-report]]"
+tags:
+  - task-board
+  - ml
+  - strategies
+  - agent
+---
+
 # Task Board: Agent Trading Strategies (5 Strategies for 10% Portfolio Improvement)
 
 **Plan source:** `development/agent-development/agent-strategies-report.md`

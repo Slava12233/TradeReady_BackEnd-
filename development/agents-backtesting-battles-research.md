@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "Agents + Backtesting + Battles: Integration Research"
+status: archived
+phase: integration
+tags:
+  - research
+  - integration
+---
+
 # Agents + Backtesting + Battles: Integration Research
 
 > **Author:** Head Developer

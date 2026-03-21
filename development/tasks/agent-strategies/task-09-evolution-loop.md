@@ -1,12 +1,18 @@
 ---
 task_id: 09
 title: "Evolution loop orchestrator"
+type: task
 agent: "ml-engineer"
 phase: B
 depends_on: [7, 8]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/evolutionary/evolve.py", "agent/strategies/evolutionary/config.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 09: Evolution loop orchestrator

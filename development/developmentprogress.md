@@ -1,3 +1,13 @@
+---
+type: progress-tracker
+title: "Development Progress — AI Agent Crypto Trading Platform"
+status: archived
+phase: platform-foundation
+tags:
+  - progress
+  - platform-foundation
+---
+
 # Development Progress — AI Agent Crypto Trading Platform
 
 > **Last Updated:** 2026-03-12

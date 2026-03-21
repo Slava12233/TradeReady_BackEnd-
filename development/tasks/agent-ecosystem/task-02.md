@@ -1,12 +1,18 @@
 ---
 task_id: 02
 title: "Alembic migration for agent ecosystem tables"
+type: task
 agent: "migration-helper"
 phase: 1
 depends_on: [1]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["alembic/versions/017_agent_ecosystem_tables.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 02: Alembic migration for agent ecosystem tables

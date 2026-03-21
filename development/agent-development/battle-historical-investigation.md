@@ -1,3 +1,13 @@
+---
+type: investigation
+title: "Battle Historical Mode -- 500 Error Investigation"
+status: complete
+phase: battles
+tags:
+  - investigation
+  - battles
+---
+
 # Battle Historical Mode -- 500 Error Investigation
 
 **Date of investigation:** 2026-03-20

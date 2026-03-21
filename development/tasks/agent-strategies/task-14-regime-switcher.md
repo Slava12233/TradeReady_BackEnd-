@@ -1,12 +1,18 @@
 ---
 task_id: 14
 title: "Regime switching logic"
+type: task
 agent: "ml-engineer"
 phase: C
 depends_on: [12, 13]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/regime/switcher.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 14: Regime switching logic

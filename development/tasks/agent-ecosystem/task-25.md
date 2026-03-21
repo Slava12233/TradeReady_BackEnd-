@@ -1,12 +1,18 @@
 ---
 task_id: 25
 title: "Tests for permission system"
+type: task
 agent: "test-runner"
 phase: 2
 depends_on: [21, 22, 23]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["tests/unit/test_agent_permissions.py", "tests/unit/test_agent_budget.py", "tests/unit/test_permission_enforcement.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 25: Tests for permission system

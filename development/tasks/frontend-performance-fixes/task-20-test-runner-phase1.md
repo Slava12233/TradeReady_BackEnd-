@@ -1,12 +1,18 @@
 ---
 task_id: 20
 title: "Run tests after Phase 1 changes"
+type: task
 agent: "test-runner"
 phase: 1
 depends_on: [1, 2, 3, 4, 5, 6]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 20: Run Tests After Phase 1 Changes

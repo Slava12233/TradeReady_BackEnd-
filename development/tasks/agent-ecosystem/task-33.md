@@ -1,12 +1,18 @@
 ---
 task_id: 33
 title: "Phase 2 integration test"
+type: task
 agent: "test-runner"
 phase: 2
 depends_on: [25, 31, 32]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["tests/integration/test_agent_ecosystem_phase2.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 33: Phase 2 integration test

@@ -1,10 +1,12 @@
 ---
 task_id: 1
 title: "Project scaffolding & pyproject.toml"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/__init__.py"
@@ -15,6 +17,9 @@ files:
   - "agent/prompts/__init__.py"
   - "agent/workflows/__init__.py"
   - "agent/reports/.gitkeep"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 1: Project scaffolding & pyproject.toml

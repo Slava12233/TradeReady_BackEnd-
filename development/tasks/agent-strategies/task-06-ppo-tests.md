@@ -1,12 +1,18 @@
 ---
 task_id: 06
 title: "PPO unit & integration tests"
+type: task
 agent: "test-runner"
 phase: A
 depends_on: [2, 5]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/tests/test_rl_config.py", "agent/tests/test_rl_pipeline.py", "agent/tests/test_rl_deploy.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 06: PPO unit & integration tests

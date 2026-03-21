@@ -1,12 +1,18 @@
 ---
 task_id: 07
 title: "Evaluate PPO models vs benchmarks"
+type: task
 agent: "ml-engineer"
 phase: 5
 depends_on: [6]
 status: "pending"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/reports/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 07: Evaluate PPO models vs benchmarks

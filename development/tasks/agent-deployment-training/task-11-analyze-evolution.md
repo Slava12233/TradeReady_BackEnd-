@@ -1,12 +1,18 @@
 ---
 task_id: 11
 title: "Analyze evolution results"
+type: task
 agent: "ml-engineer"
 phase: 6
 depends_on: [10]
 status: "pending"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/reports/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 11: Analyze evolution results

@@ -1,15 +1,20 @@
 ---
 task_id: 8
 title: "System prompt & skill context loader"
+type: task
 agent: "backend-developer"
 phase: 4
 depends_on: [7]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "medium"
 files:
   - "agent/prompts/system.py"
   - "agent/prompts/skill_context.py"
   - "agent/prompts/__init__.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 8: System prompt & skill context loader

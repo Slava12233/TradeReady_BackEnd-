@@ -1,12 +1,18 @@
 ---
 task_id: 03
 title: "Database repositories for agent ecosystem"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [1, 2]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["src/database/repositories/agent_session_repo.py", "src/database/repositories/agent_message_repo.py", "src/database/repositories/agent_decision_repo.py", "src/database/repositories/agent_journal_repo.py", "src/database/repositories/agent_learning_repo.py", "src/database/repositories/agent_feedback_repo.py", "src/database/repositories/agent_permission_repo.py", "src/database/repositories/agent_budget_repo.py", "src/database/repositories/agent_performance_repo.py", "src/database/repositories/agent_observation_repo.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 03: Database repositories for agent ecosystem

@@ -1,3 +1,13 @@
+---
+type: executive-summary
+title: "TradeReady AI Trading Agent — Executive Summary"
+status: active
+phase: platform
+tags:
+  - executive
+  - platform
+---
+
 # TradeReady AI Trading Agent — Executive Summary
 
 **Date:** March 20, 2026

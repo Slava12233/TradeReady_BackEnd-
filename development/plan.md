@@ -1,3 +1,13 @@
+---
+type: plan
+title: "Plan: From Code to Running Agent & Training"
+status: active
+phase: agent-deployment
+tags:
+  - plan
+  - agent-deployment
+---
+
 # Plan: From Code to Running Agent & Training
 
 <!-- Created: 2026-03-20 -->

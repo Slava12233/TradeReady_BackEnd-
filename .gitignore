@@ -1,3 +1,6 @@
+# ─── Agent Local Memory (not shared) ────────────────────────────────────────
+.claude/agent-memory-local/
+
 # ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
@@ -89,7 +92,7 @@ prometheus_data/
 grafana_data/
 
 Frontend/
-claude-code-starter-kit/
+
 
 # ─── Agent reports (generated output, not source) ────────────────────────────
 agent/reports/
@@ -104,3 +107,11 @@ agent/strategies/*/models/logs/
 agent/strategies/*/models/checkpoint/
 agent/strategies/*/models/best_model/
 agent/strategies/rl/results/*.json
+
+# ─── Obsidian (development vault) ─────────────────────────────────────────
+# Commit .obsidian/ config but exclude workspace state and local plugin caches
+development/.obsidian/workspace.json
+development/.obsidian/workspace-mobile.json
+development/.obsidian/.obsidian-git
+development/.obsidian/plugins/*/data.json
+!development/.obsidian/plugins/dataview/data.json

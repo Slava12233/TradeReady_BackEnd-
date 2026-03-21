@@ -1,16 +1,22 @@
 ---
 task_id: 19
 title: "Performance validation after Phase 1 quick wins"
+type: task
 agent: "perf-checker"
 phase: 1
 depends_on: [1, 2, 3, 4, 5, 6]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/components/market/market-table-row.tsx"
   - "Frontend/src/components/ui/dotted-surface.tsx"
   - "Frontend/src/hooks/use-portfolio.ts"
   - "Frontend/src/components/ui/chart.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 19: Performance Validation After Phase 1

@@ -1,12 +1,18 @@
 ---
 task_id: 30
 title: "Strategy A/B testing framework"
+type: task
 agent: "ml-engineer"
 phase: 2
 depends_on: [29]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/trading/ab_testing.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 30: Strategy A/B testing framework

@@ -1,12 +1,18 @@
 ---
 task_id: 24
 title: "Security review of permission system"
+type: task
 agent: "security-reviewer"
 phase: 2
 depends_on: [21, 22, 23]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/permissions/roles.py", "agent/permissions/capabilities.py", "agent/permissions/budget.py", "agent/permissions/enforcement.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 24: Security review of permission system

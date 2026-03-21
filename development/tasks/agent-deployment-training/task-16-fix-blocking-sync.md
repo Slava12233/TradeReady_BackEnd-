@@ -1,12 +1,18 @@
 ---
 task_id: 16
 title: "Fix blocking sync in async contexts"
+type: task
 agent: "backend-developer"
 phase: 9
 depends_on: []
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/strategies/rl/deploy.py", "agent/strategies/ensemble/run.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 16: Fix blocking sync in async contexts

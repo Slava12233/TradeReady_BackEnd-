@@ -1,12 +1,18 @@
 ---
 task_id: 22
 title: "Code review all performance changes"
+type: task
 agent: "code-reviewer"
 phase: 3
 depends_on: [20, 21]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 22: Code Review All Performance Changes

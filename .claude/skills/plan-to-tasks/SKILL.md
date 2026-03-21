@@ -194,12 +194,17 @@ For each task, write `development/tasks/{plan-slug}/task-{NN}-{slug}.md`:
 ---
 task_id: {NN}
 title: "{Task title}"
+type: task
 agent: "{agent-name}"
 phase: {phase number}
 depends_on: [{list of task_ids this depends on}]
 status: "pending"
 priority: "{high|medium|low}"
+board: "[[{plan-slug}/README]]"
 files: ["{list of file paths this task will touch}"]
+tags:
+  - task
+  - {relevant module/feature tags}
 ---
 
 # Task {NN}: {Task title}

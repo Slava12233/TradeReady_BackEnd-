@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Agentic Layer — CLAUDE.md Distribution Plan"
+status: archived
+phase: agentic-layer
+tags:
+  - task
+  - agentic-layer
+---
+
 # Agentic Layer — CLAUDE.md Distribution Plan
 
 ## Goal

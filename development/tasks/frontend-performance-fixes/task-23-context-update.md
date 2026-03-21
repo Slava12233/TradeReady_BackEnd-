@@ -1,10 +1,12 @@
 ---
 task_id: 23
 title: "Update development context and CLAUDE.md files"
+type: task
 agent: "context-manager"
 phase: 3
 depends_on: [22]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "development/context.md"
@@ -12,6 +14,10 @@ files:
   - "Frontend/src/components/CLAUDE.md"
   - "Frontend/src/hooks/CLAUDE.md"
   - "Frontend/src/lib/CLAUDE.md"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 23: Update Development Context and CLAUDE.md Files

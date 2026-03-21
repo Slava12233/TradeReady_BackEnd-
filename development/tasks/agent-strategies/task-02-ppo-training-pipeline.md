@@ -1,12 +1,18 @@
 ---
 task_id: 02
 title: "PPO training pipeline setup"
+type: task
 agent: "ml-engineer"
 phase: A
 depends_on: [1]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/rl/__init__.py", "agent/strategies/rl/config.py", "agent/strategies/rl/train.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 02: PPO training pipeline setup

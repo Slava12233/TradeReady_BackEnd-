@@ -1,12 +1,18 @@
 ---
 task_id: 36
 title: "Context manager — update development context"
+type: task
 agent: "context-manager"
 phase: 2
 depends_on: [35]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["development/context.md"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 36: Context manager — update development context

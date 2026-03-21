@@ -1,12 +1,18 @@
 ---
 task_id: 10
 title: "Evolution analysis & reporting"
+type: task
 agent: "ml-engineer"
 phase: B
 depends_on: [9]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/evolutionary/analyze.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 10: Evolution analysis & reporting

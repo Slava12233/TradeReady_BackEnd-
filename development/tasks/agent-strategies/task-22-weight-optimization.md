@@ -1,12 +1,18 @@
 ---
 task_id: 22
 title: "Meta-learner weight optimization via battles"
+type: task
 agent: "ml-engineer"
 phase: E
 depends_on: [21]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "low"
 files: ["agent/strategies/ensemble/optimize_weights.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 22: Meta-learner weight optimization via battles

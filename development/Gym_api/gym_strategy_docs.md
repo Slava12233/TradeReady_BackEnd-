@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "TradeReady Gym & Strategy System — Complete Documentation"
+status: archived
+phase: gym-api
+tags:
+  - research
+  - gym-api
+---
+
 # TradeReady Gym & Strategy System — Complete Documentation
 
 > **Version:** 1.0 | **Date:** March 18, 2026

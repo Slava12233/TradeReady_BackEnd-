@@ -1,12 +1,18 @@
 ---
 task_id: 29
 title: "Context log update"
+type: task
 agent: "context-manager"
 phase: Post
 depends_on: [28]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["development/context.md"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 29: Context log update

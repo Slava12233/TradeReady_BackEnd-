@@ -1,12 +1,17 @@
 ---
 task_id: 15
 title: "Code review of full agent package"
+type: task
 agent: "code-reviewer"
 phase: 6
 depends_on: [13]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "medium"
 files: []
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 15: Code review of full agent package

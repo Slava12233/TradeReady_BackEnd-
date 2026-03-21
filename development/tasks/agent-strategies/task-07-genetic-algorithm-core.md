@@ -1,12 +1,18 @@
 ---
 task_id: 07
 title: "Genetic algorithm core (genome, operators)"
+type: task
 agent: "ml-engineer"
 phase: B
 depends_on: []
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/evolutionary/__init__.py", "agent/strategies/evolutionary/genome.py", "agent/strategies/evolutionary/operators.py", "agent/strategies/evolutionary/population.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 07: Genetic algorithm core (genome, operators)

@@ -1,12 +1,18 @@
 ---
 task_id: 19
 title: "Agent config extensions for ecosystem"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [1]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/config.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 19: Agent config extensions for ecosystem

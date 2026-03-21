@@ -1,12 +1,18 @@
 ---
 task_id: 08
 title: "Tests for conversation system"
+type: task
 agent: "test-runner"
 phase: 1
 depends_on: [5, 6, 7]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["tests/unit/test_agent_session.py", "tests/unit/test_context_builder.py", "tests/unit/test_intent_router.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 08: Tests for conversation system

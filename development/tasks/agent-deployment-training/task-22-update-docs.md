@@ -1,12 +1,18 @@
 ---
 task_id: 22
 title: "Update documentation for deployment"
+type: task
 agent: "doc-updater"
 phase: 12
 depends_on: [20, 21]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/CLAUDE.md", "agent/strategies/CLAUDE.md", "CLAUDE.md", "docs/skill.md"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 22: Update documentation for deployment

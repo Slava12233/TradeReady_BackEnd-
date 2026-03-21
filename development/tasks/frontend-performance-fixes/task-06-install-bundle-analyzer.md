@@ -1,14 +1,20 @@
 ---
 task_id: 6
 title: "Install and configure @next/bundle-analyzer"
+type: task
 agent: "frontend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/package.json"
   - "Frontend/next.config.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 6: Install and Configure @next/bundle-analyzer

@@ -1,13 +1,18 @@
 ---
 task_id: 12
 title: "Strategy workflow"
+type: task
 agent: "backend-developer"
 phase: 5
 depends_on: [6, 7, 8]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "medium"
 files:
   - "agent/workflows/strategy_workflow.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 12: Strategy workflow

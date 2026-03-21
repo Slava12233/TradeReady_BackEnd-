@@ -1,12 +1,18 @@
 ---
 task_id: 09
 title: "Fix battle historical mode (if broken)"
+type: task
 agent: "backend-developer"
 phase: 5
 depends_on: [8]
 status: "skipped"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["src/battles/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 09: Fix battle historical mode (if broken)

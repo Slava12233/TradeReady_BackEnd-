@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "TradeReady Platform: Complete A-Z Report"
+status: archived
+phase: platform
+tags:
+  - research
+  - platform
+---
+
 # TradeReady Platform: Complete A-Z Report
 ## Agents, Strategies, Training, Backtesting & Gym API
 

@@ -1,12 +1,18 @@
 ---
 task_id: 13
 title: "Strategy version creation (4 regimes)"
+type: task
 agent: "backend-developer"
 phase: C
 depends_on: [12]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/regime/strategy_definitions.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 13: Strategy version creation (4 regimes)

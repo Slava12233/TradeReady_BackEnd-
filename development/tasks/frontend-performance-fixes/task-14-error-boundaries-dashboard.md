@@ -1,14 +1,20 @@
 ---
 task_id: 14
 title: "Add partial error boundaries to dashboard sections"
+type: task
 agent: "frontend-developer"
 phase: 3
 depends_on: [8]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/app/(dashboard)/dashboard/page.tsx"
   - "Frontend/src/components/shared/section-error-boundary.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 14: Add Partial Error Boundaries to Dashboard Sections

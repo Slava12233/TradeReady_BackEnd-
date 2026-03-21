@@ -1,12 +1,18 @@
 ---
 task_id: 03
 title: "Data preparation & validation script"
+type: task
 agent: "ml-engineer"
 phase: A
 depends_on: [1]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/rl/data_prep.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 03: Data preparation & validation script

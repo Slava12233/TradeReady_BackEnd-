@@ -1,13 +1,18 @@
 ---
 task_id: 2
 title: "AgentConfig settings class"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [1]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/config.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 2: AgentConfig settings class

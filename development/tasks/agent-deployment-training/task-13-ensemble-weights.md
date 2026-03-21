@@ -1,12 +1,18 @@
 ---
 task_id: 13
 title: "Run ensemble weight optimization"
+type: task
 agent: "e2e-tester"
 phase: 8
 depends_on: [5, 7, 11]
 status: "pending"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/reports/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 13: Run ensemble weight optimization

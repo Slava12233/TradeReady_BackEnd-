@@ -1,13 +1,18 @@
 ---
 task_id: 10
 title: "Trading workflow"
+type: task
 agent: "backend-developer"
 phase: 5
 depends_on: [4, 7, 8]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/workflows/trading_workflow.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 10: Trading workflow

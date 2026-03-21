@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Tasks — AI Agent Crypto Trading Platform !"
+status: archived
+phase: platform-foundation
+tags:
+  - task
+  - platform-foundation
+---
+
 # Tasks — AI Agent Crypto Trading Platform !
 
 > **Last Updated:** 2026-03-12

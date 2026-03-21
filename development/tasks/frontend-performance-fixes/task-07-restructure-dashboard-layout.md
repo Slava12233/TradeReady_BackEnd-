@@ -1,15 +1,21 @@
 ---
 task_id: 7
 title: "Restructure dashboard layout to prevent full-tree re-renders"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/app/(dashboard)/layout.tsx"
   - "Frontend/src/components/layout/header.tsx"
   - "Frontend/src/components/layout/sidebar.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 7: Restructure Dashboard Layout to Prevent Full-Tree Re-Renders

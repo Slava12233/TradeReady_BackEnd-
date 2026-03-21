@@ -1,12 +1,18 @@
 ---
 task_id: 08
 title: "Battle integration runner"
+type: task
 agent: "backend-developer"
 phase: B
 depends_on: [7]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/evolutionary/battle_runner.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 08: Battle integration runner

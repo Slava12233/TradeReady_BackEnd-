@@ -1,12 +1,18 @@
 ---
 task_id: 10
 title: "Redis memory cache layer"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [9]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/memory/redis_cache.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 10: Redis memory cache layer

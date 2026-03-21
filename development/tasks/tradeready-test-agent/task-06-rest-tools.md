@@ -1,13 +1,18 @@
 ---
 task_id: 6
 title: "REST tools module (backtest, strategy, battle)"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [2, 3]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/tools/rest_tools.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 6: REST tools module

@@ -1,12 +1,18 @@
 ---
 task_id: 25
 title: "Ensemble tests"
+type: task
 agent: "test-runner"
 phase: E
 depends_on: [21, 23]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "low"
 files: ["agent/tests/test_meta_learner.py", "agent/tests/test_ensemble_pipeline.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 25: Ensemble tests

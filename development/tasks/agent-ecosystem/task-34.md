@@ -1,12 +1,18 @@
 ---
 task_id: 34
 title: "Pydantic output models for agent ecosystem"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: []
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/models/ecosystem.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 34: Pydantic output models for agent ecosystem

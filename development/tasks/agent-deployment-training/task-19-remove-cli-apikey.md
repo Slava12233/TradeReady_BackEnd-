@@ -1,12 +1,18 @@
 ---
 task_id: 19
 title: "Remove CLI --api-key arguments"
+type: task
 agent: "security-reviewer"
 phase: 9
 depends_on: []
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/strategies/rl/data_prep.py", "agent/strategies/rl/runner.py", "agent/strategies/rl/evaluate.py", "agent/strategies/rl/deploy.py", "agent/strategies/regime/validate.py", "agent/strategies/ensemble/optimize_weights.py", "agent/strategies/ensemble/validate.py", "agent/strategies/ensemble/run.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 19: Remove CLI --api-key arguments

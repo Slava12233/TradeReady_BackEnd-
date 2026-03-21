@@ -1,12 +1,18 @@
 ---
 task_id: 22
 title: "Permission system — budget enforcement"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [21]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/permissions/budget.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 22: Permission system — budget enforcement

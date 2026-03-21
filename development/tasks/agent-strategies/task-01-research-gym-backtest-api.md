@@ -1,12 +1,18 @@
 ---
 task_id: 01
 title: "Research gym environments & backtest API surface"
+type: task
 agent: "codebase-researcher"
 phase: A
 depends_on: []
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["tradeready-gym/", "src/backtesting/", "src/strategies/indicators.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 01: Research gym environments & backtest API surface

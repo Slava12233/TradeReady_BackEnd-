@@ -1,12 +1,18 @@
 ---
 task_id: 11
 title: "Evolutionary system tests"
+type: task
 agent: "test-runner"
 phase: B
 depends_on: [7, 8]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/tests/test_genome.py", "agent/tests/test_operators.py", "agent/tests/test_battle_runner.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 11: Evolutionary system tests

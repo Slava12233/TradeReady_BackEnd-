@@ -1,12 +1,18 @@
 ---
 task_id: 21
 title: "Meta-learner signal combiner"
+type: task
 agent: "ml-engineer"
 phase: E
 depends_on: [5, 10, 14]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "low"
 files: ["agent/strategies/ensemble/__init__.py", "agent/strategies/ensemble/meta_learner.py", "agent/strategies/ensemble/signals.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 21: Meta-learner signal combiner

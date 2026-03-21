@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Backtesting Engine — Complete Task Breakdown"
+status: archived
+phase: backtesting
+tags:
+  - task
+  - backtesting
+---
+
 # Backtesting Engine — Complete Task Breakdown
 
 > **Last Updated:** 2026-03-09

@@ -1,12 +1,18 @@
 ---
 task_id: 35
 title: "Documentation and CLAUDE.md updates"
+type: task
 agent: "doc-updater"
 phase: 2
 depends_on: [20, 33]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/conversation/CLAUDE.md", "agent/memory/CLAUDE.md", "agent/permissions/CLAUDE.md", "agent/trading/CLAUDE.md", "agent/tools/CLAUDE.md"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 35: Documentation and CLAUDE.md updates

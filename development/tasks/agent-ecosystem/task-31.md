@@ -1,12 +1,18 @@
 ---
 task_id: 31
 title: "Tests for trading loop and journal"
+type: task
 agent: "test-runner"
 phase: 2
 depends_on: [26, 27, 28]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["tests/unit/test_trading_loop.py", "tests/unit/test_trade_executor.py", "tests/unit/test_trading_journal.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 31: Tests for trading loop and journal

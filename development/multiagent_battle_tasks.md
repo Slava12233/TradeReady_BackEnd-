@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Multi-Agent & Agents Battle — Task Breakdown"
+status: archived
+phase: battles
+tags:
+  - task
+  - battles
+---
+
 # Multi-Agent & Agents Battle — Task Breakdown
 
 > **Authority:** `Multiagentbattleplan.md` — all file names, schemas, endpoints MUST match

@@ -1,12 +1,18 @@
 ---
 task_id: 27
 title: "Trading loop — execution engine and position monitor"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [26]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/trading/execution.py", "agent/trading/monitor.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 27: Trading loop — execution engine and position monitor

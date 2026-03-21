@@ -1,12 +1,18 @@
 ---
 task_id: 26
 title: "Security review (all strategies)"
+type: task
 agent: "security-reviewer"
 phase: Post
 depends_on: [6, 11, 16, 20, 25]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 26: Security review (all strategies)

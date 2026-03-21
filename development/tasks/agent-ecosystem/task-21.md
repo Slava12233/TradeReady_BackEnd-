@@ -1,12 +1,18 @@
 ---
 task_id: 21
 title: "Permission system — roles and capabilities"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [3]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/permissions/__init__.py", "agent/permissions/roles.py", "agent/permissions/capabilities.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 21: Permission system — roles and capabilities

@@ -1,12 +1,18 @@
 ---
 task_id: 17
 title: "Risk agent core"
+type: task
 agent: "backend-developer"
 phase: D
 depends_on: []
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/risk/__init__.py", "agent/strategies/risk/risk_agent.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 17: Risk agent core

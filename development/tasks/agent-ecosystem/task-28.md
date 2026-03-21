@@ -1,12 +1,18 @@
 ---
 task_id: 28
 title: "Trading journal system"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [26, 27]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/trading/journal.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 28: Trading journal system

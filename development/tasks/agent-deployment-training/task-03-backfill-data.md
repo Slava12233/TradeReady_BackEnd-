@@ -1,12 +1,18 @@
 ---
 task_id: 03
 title: "Backfill historical data & validate coverage"
+type: task
 agent: "e2e-tester"
 phase: 3
 depends_on: [2]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 03: Backfill historical data & validate coverage

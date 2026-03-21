@@ -1,12 +1,17 @@
 ---
 task_id: 16
 title: "E2E smoke test against live platform"
+type: task
 agent: "e2e-tester"
 phase: 6
 depends_on: [13, 15]
 status: "skipped"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 16: E2E smoke test against live platform

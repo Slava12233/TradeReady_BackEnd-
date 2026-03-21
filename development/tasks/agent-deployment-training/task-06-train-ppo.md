@@ -1,12 +1,18 @@
 ---
 task_id: 06
 title: "Train PPO agent (3 seeds)"
+type: task
 agent: "ml-engineer"
 phase: 5
 depends_on: [3]
 status: "validated"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/strategies/rl/models/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 06: Train PPO agent (3 seeds)

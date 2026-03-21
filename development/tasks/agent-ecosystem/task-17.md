@@ -1,12 +1,18 @@
 ---
 task_id: 17
 title: "Enhanced agent tools — scan_opportunities, journal_entry, request_platform_feature"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [16]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/tools/agent_tools.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 17: Enhanced agent tools — scan_opportunities, journal_entry, request_platform_feature

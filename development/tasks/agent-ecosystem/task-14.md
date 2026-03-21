@@ -1,12 +1,18 @@
 ---
 task_id: 14
 title: "Celery beat tasks for agent scheduled work"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [13]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/tasks.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 14: Celery beat tasks for agent scheduled work

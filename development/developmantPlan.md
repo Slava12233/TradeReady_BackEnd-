@@ -1,3 +1,13 @@
+---
+type: plan
+title: "AI Agent Crypto Trading Platform — Complete Development Plan"
+status: archived
+phase: platform-foundation
+tags:
+  - plan
+  - platform-foundation
+---
+
 # AI Agent Crypto Trading Platform — Complete Development Plan
 
 > **Version:** 1.0 | **Date:** February 2026

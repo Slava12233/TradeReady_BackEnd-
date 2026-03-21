@@ -1,13 +1,19 @@
 ---
 task_id: 3
 title: "Add missing loading.tsx for /battles route"
+type: task
 agent: "frontend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/app/(dashboard)/battles/loading.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 3: Add Missing loading.tsx for /battles Route

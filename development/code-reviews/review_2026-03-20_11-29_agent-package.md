@@ -1,3 +1,15 @@
+---
+type: code-review
+date: 2026-03-20
+reviewer: code-reviewer
+verdict: PASS WITH WARNINGS
+scope: agent-package
+tags:
+  - review
+  - agent
+  - workflows
+---
+
 # Code Review Report
 
 - **Date:** 2026-03-20 11:29

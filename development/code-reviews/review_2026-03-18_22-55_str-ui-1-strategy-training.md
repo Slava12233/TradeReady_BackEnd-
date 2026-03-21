@@ -1,3 +1,16 @@
+---
+type: code-review
+date: 2026-03-18
+reviewer: code-reviewer
+verdict: NEEDS FIXES
+scope: str-ui-1-strategy-training
+tags:
+  - review
+  - frontend
+  - strategies
+  - training
+---
+
 # Code Review Report
 
 - **Date:** 2026-03-18 22:55

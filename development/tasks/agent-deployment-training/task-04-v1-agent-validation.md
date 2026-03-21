@@ -1,12 +1,18 @@
 ---
 task_id: 04
 title: "Run V1 agent full validation (4 workflows)"
+type: task
 agent: "e2e-tester"
 phase: 4
 depends_on: [3]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: []
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 04: Run V1 agent full validation (4 workflows)

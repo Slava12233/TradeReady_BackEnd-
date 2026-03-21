@@ -1,12 +1,18 @@
 ---
 task_id: 06
 title: "Conversation history and context builder"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [5]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/conversation/history.py", "agent/conversation/context.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 06: Conversation history and context builder

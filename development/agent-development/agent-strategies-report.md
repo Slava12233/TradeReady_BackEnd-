@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "Agent Trading Strategies Research Report"
+status: archived
+phase: agent-strategies
+tags:
+  - research
+  - agent-strategies
+---
+
 # Agent Trading Strategies Research Report
 
 > **Goal:** Identify the 5 best strategies for building AI trading agents on the TradeReady platform that can improve portfolio performance by 10%+. This informs what to build next and how to develop the agent system.

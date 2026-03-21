@@ -1,13 +1,19 @@
 ---
 task_id: 13
 title: "Add Suspense boundaries in dashboard layout for streaming"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: [7]
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/app/(dashboard)/layout.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 13: Add Suspense Boundaries in Dashboard Layout

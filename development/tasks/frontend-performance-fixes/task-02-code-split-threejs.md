@@ -1,13 +1,19 @@
 ---
 task_id: 2
 title: "Code-split Three.js DottedSurface with next/dynamic"
+type: task
 agent: "frontend-developer"
 phase: 1
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/components/ui/dotted-surface.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 2: Code-Split Three.js DottedSurface with next/dynamic

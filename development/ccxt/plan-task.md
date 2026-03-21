@@ -1,3 +1,13 @@
+---
+type: plan
+title: "TradeReady Execution Plan"
+status: archived
+phase: ccxt-integration
+tags:
+  - plan
+  - ccxt-integration
+---
+
 # TradeReady Execution Plan
 
 **Status**: Phase 1 & Phase 2 COMPLETE — Phase 3 next

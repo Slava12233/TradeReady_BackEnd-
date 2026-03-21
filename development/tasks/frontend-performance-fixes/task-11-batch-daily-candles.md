@@ -1,13 +1,19 @@
 ---
 task_id: 11
 title: "Batch useDailyCandlesBatch into groups of 50 symbols"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/hooks/use-market-data.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 11: Batch useDailyCandlesBatch into Groups of 50 Symbols

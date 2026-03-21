@@ -1,12 +1,18 @@
 ---
 task_id: 08
 title: "Investigate battle historical mode bug"
+type: task
 agent: "codebase-researcher"
 phase: 5
 depends_on: [2]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["src/battles/historical_engine.py", "src/api/routes/battles.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 08: Investigate battle historical mode bug

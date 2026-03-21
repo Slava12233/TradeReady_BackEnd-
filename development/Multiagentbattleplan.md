@@ -1,3 +1,13 @@
+---
+type: plan
+title: "Multi-Agent Architecture & Agents Battle — Development Plan"
+status: archived
+phase: battles
+tags:
+  - plan
+  - battles
+---
+
 # Multi-Agent Architecture & Agents Battle — Development Plan
 
 > **Version:** 1.0 | **Date:** March 2026  

@@ -1,12 +1,18 @@
 ---
 task_id: 17
 title: "Fix unbounded growth & add caching"
+type: task
 agent: "backend-developer"
 phase: 9
 depends_on: []
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "medium"
 files: ["agent/strategies/ensemble/run.py", "agent/strategies/regime/switcher.py", "agent/strategies/evolutionary/evolve.py", "agent/strategies/ensemble/meta_learner.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 17: Fix unbounded growth & add caching

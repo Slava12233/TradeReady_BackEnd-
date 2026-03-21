@@ -1,12 +1,18 @@
 ---
 task_id: 07
 title: "Intent router for conversation system"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [5]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/conversation/router.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 07: Intent router for conversation system

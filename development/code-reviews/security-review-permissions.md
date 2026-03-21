@@ -1,3 +1,15 @@
+---
+type: code-review
+date: 2026-03-20
+reviewer: security-reviewer
+verdict: PASS
+scope: agent-permissions
+tags:
+  - review
+  - security
+  - permissions
+---
+
 # Security Review: Agent Permission System
 
 **Date:** 2026-03-20

@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Test Coverage Tasks — Full Gap Fill Plan"
+status: archived
+phase: testing
+tags:
+  - task
+  - testing
+---
+
 # Test Coverage Tasks — Full Gap Fill Plan
 
 **Branch:** V.0.0.2

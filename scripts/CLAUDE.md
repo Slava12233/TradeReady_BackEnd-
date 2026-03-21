@@ -1,6 +1,6 @@
 # Scripts
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Standalone scripts for database seeding, data migration, backfill operations, testing, and platform validation.
 
@@ -26,6 +26,10 @@ This directory contains one-off and repeatable scripts that operate directly aga
 | `e2e_comprehensive_live.py` | Comprehensive E2E scenario against a live backend: creates 1 account with 3 agents (Alpha Scalper, Beta Swing, Gamma ML Bot), 12+ trades per agent (market, limit, stop-loss, take-profit), 3 backtests with different configs, 1 battle, 3 strategies (RSI Momentum, MACD Crossover, Bollinger Bounce) with versioning. All data persists and is visible in the UI. | **After deployment** or during UI development — the most complete data population script. Requires API at `localhost:8000` with live prices. |
 | `validate_phase1.py` | Validates Phase 1 infrastructure: Redis connectivity and price freshness, TimescaleDB tick ingestion and growth, `trading_pairs` seeding, continuous aggregates, and `/health` endpoint. Prints pass/fail summary. | **After `docker compose up`** — to confirm all services are healthy. |
 | `stability_test_24h.py` | Monitors the price ingestion pipeline for 24 hours (configurable via `DURATION_SECONDS`), sampling tick throughput, stale pair counts, Redis freshness, and API health every 60 seconds. Writes a JSON report to `reports/`. | **Production readiness** — run before go-live or after infrastructure changes. Use `DURATION_SECONDS=600` for a 10-minute smoke test. |
+| `log-agent-activity.sh` | Called by PostToolUse hook in `.claude/settings.json` after every Write/Edit/Bash tool call. Appends a JSONL event `{ts, tool, target}` to `development/agent-activity-log.jsonl`. Uses `jq` if available, pure-bash fallback otherwise. Always exits 0 — never blocks the agent. | **Automatic** — invoked by settings.json hook; no manual invocation needed. |
+| `agent-run-summary.sh` | Summarizes recent agent activity from `development/agent-activity-log.jsonl`. Shows total events, top tools, most-touched files, and activity by day. Accepts optional `--days N` argument (default: 7). | **Manual analysis** — run to spot-check agent activity patterns. |
+| `analyze-agent-metrics.sh` | Deep analysis of agent activity log (requires `jq`). Generates tool frequency histogram, file heatmap, and hourly activity distribution. Called by the `/analyze-agents` skill. | **Invoked by skill** — called as part of `/analyze-agents` workflow; also safe to run directly. |
+| `create-daily-note.sh` | Creates today's Obsidian daily note at `development/daily/YYYY-MM-DD.md` from template. Exits 0 if note already exists. Used by context-manager agent and CI when Obsidian Templater is unavailable. | **Automatic** — called by context-manager agent; also safe to run manually. |
 
 ## Common Tasks
 
@@ -111,8 +115,9 @@ DURATION_SECONDS=600 python scripts/stability_test_24h.py
 
 ## Recent Changes
 
-- `2026-03-17` — Initial CLAUDE.md created
-- `2026-03-18` — Added `e2e_full_scenario_live.py` to inventory
-- `2026-03-18` — Added `--exchange` flag to `seed_pairs.py` and `backfill_history.py` for CCXT multi-exchange support
-- `2026-03-19` — Added `e2e_comprehensive_live.py` to inventory (strategies, versioning, comprehensive data population)
+- `2026-03-21` — Added 3 agent activity logging scripts: `log-agent-activity.sh`, `agent-run-summary.sh`, `analyze-agent-metrics.sh` (Tasks 09-11 of Agent Memory & Learning System)
 - `2026-03-19` — Synced with codebase: confirmed 13 Python files (12 scripts + `__init__.py`) and 1 SQL file. All inventory entries match files on disk.
+- `2026-03-19` — Added `e2e_comprehensive_live.py` to inventory (strategies, versioning, comprehensive data population)
+- `2026-03-18` — Added `--exchange` flag to `seed_pairs.py` and `backfill_history.py` for CCXT multi-exchange support
+- `2026-03-18` — Added `e2e_full_scenario_live.py` to inventory
+- `2026-03-17` — Initial CLAUDE.md created

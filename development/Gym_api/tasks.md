@@ -1,3 +1,13 @@
+---
+type: task-list
+title: "Strategy & Gym System — Master Task List"
+status: archived
+phase: gym-api
+tags:
+  - task
+  - gym-api
+---
+
 # Strategy & Gym System — Master Task List
 
 > **Created:** 2026-03-18 | **Total Tasks:** 95 | **Phases:** 7

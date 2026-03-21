@@ -1,12 +1,18 @@
 ---
 task_id: 05
 title: "Train regime classifier"
+type: task
 agent: "ml-engineer"
 phase: 5
 depends_on: [3]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/strategies/regime/models/regime_classifier.joblib"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 05: Train regime classifier

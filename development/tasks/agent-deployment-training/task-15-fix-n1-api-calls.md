@@ -1,12 +1,18 @@
 ---
 task_id: 15
 title: "Fix N+1 API call patterns (6 locations)"
+type: task
 agent: "backend-developer"
 phase: 9
 depends_on: []
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/strategies/evolutionary/battle_runner.py", "agent/strategies/rl/deploy.py", "agent/strategies/rl/data_prep.py", "agent/strategies/ensemble/run.py"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 15: Fix N+1 API call patterns (6 locations)

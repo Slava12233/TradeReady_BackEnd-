@@ -1,3 +1,13 @@
+---
+type: plan
+title: "TradeReady Strategy & Gym System — Complete Development Plan"
+status: archived
+phase: gym-api
+tags:
+  - plan
+  - gym-api
+---
+
 # TradeReady Strategy & Gym System — Complete Development Plan
 
 > **Version:** 1.0 | **Date:** March 18, 2026

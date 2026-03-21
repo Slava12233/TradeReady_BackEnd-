@@ -1,12 +1,18 @@
 ---
 task_id: 12
 title: "Regime classifier training"
+type: task
 agent: "ml-engineer"
 phase: C
 depends_on: []
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/regime/__init__.py", "agent/strategies/regime/classifier.py", "agent/strategies/regime/labeler.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 12: Regime classifier training

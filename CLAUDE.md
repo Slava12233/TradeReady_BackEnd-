@@ -101,17 +101,20 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `agent/strategies/ensemble/CLAUDE.md` | Ensemble combiner — `MetaLearner` (weighted voting), `EnsembleRunner` (6-stage pipeline), weight optimiser CLI |
 | `scripts/CLAUDE.md` | Available scripts, when to run each, dependencies |
 | `docs/CLAUDE.md` | Documentation inventory, audience for each doc |
-| `development/CLAUDE.md` | Development planning docs, progress tracking, archived phase plans |
+| `development/CLAUDE.md` | Development planning docs, Obsidian vault structure, progress tracking, archived phase plans |
 | `development/code-reviews/CLAUDE.md` | Code review reports from code-reviewer agent |
 | `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 4 rewards, 3 wrappers) for agent training |
+| `.claude/agents/CLAUDE.md` | 16 sub-agent definitions — inventory, config fields, memory, pipelines |
+| `.claude/skills/CLAUDE.md` | 6 slash-command skill workflows — inventory, patterns, gotchas |
+| `.claude/agent-memory/CLAUDE.md` | Agent memory storage — 16 per-agent MEMORY.md directories, file format |
 
 ---
 
 ## Sub-Agents (`.claude/agents/`)
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-21 -->
 
-16 specialized agents that can be delegated to for specific tasks. Organized by role category.
+16 specialized agents that can be delegated to for specific tasks. Organized by role category. All agents have `memory: project` enabled — see `.claude/agent-memory/` for their MEMORY.md files.
 
 ### Agent Inventory
 
@@ -204,7 +207,22 @@ planner → codebase-researcher → backend-developer / frontend-developer / ml-
 5. **For performance-sensitive changes** (DB queries, async code, caching, ingestion), run `perf-checker` before the standard pipeline.
 6. If `test-runner` identifies missing coverage, it writes new tests following `tests/CLAUDE.md` standards.
 7. If tests fail, fix the code (or tests if behavior intentionally changed), then re-run via `test-runner` until all pass.
-8. **`context-manager` is ALWAYS the final step** of every task. It updates `development/context.md` and syncs all CLAUDE.md files. Not optional.
+8. **`context-manager` is ALWAYS the final step** of every task. It updates `development/context.md`, syncs all CLAUDE.md files, and appends to today's daily note (`development/daily/YYYY-MM-DD.md`). Not optional.
+9. **At the end of every task**, include an **Agent Activity Report** in your final response to the user. Format:
+
+```
+## Agent Activity Report
+
+| Agent | Task | Result |
+|-------|------|--------|
+| `agent-name` | What it was asked to do | Outcome (files changed, issues found, tests passed, etc.) |
+| ... | ... | ... |
+
+**Pipeline:** agent1 → agent2 → agent3
+**Total agents used:** N
+```
+
+This report gives the CTO visibility into which agents ran, what they accomplished, and the pipeline flow. Always include it — even for simple tasks with just 1 agent.
 
 ### Agent Configuration Reference
 
@@ -254,10 +272,11 @@ Reusable slash-command workflows invoked with `/skill-name`:
 | Skill | Command | Description |
 |-------|---------|-------------|
 | `commit` | `/commit` | Smart commit: stages, generates conventional message (`type(scope): desc`), runs ruff check, commits |
-| `review-changes` | `/review-changes` | Full post-change pipeline: detects pipeline type, runs agents in order (code-reviewer → test-runner → context-manager + extras) |
+| `review-changes` | `/review-changes` | Full post-change pipeline: detects pipeline type, runs agents in order (code-reviewer → test-runner → context-manager + extras). Includes feedback capture. |
 | `run-checks` | `/run-checks` | Quick quality gate: ruff + mypy + pytest on changed files only. Fast feedback, no agent delegation |
 | `sync-context` | `/sync-context` | Scan all CLAUDE.md files, fix stale inventories, create missing ones, update development/context.md |
 | `plan-to-tasks` | `/plan-to-tasks <file>` | Read a plan file, discover agents, match tasks to agents, create task files in `development/tasks/` |
+| `analyze-agents` | `/analyze-agents` | Analyze agent activity logs and memory files to generate improvement report in `development/agent-analysis/` |
 
 ## Configuration (`.claude/settings.json`)
 
@@ -295,6 +314,75 @@ This platform is **deployed in production with CI/CD pipelines**. Every change m
 
 ### Historical Development Files
 Original planning docs are archived in `development/` for reference. These are **reference only** — do not update them. The source of truth is the code itself.
+
+## Obsidian Knowledge Vault
+
+The `development/` directory doubles as an **Obsidian vault** for human knowledge management. Agents and humans share this space with clear ownership rules.
+
+### Vault Structure
+
+```
+development/                  ← Obsidian vault root
+  .obsidian/                  ← Vault config (3 plugins: Dataview, Templater, Git)
+  _moc/                       ← Map of Content navigation hubs (Home.md is the entry point)
+  _templates/                 ← Obsidian Templater templates (code-review, task, daily-note, plan, research-report)
+  _dashboards/                ← Dataview query dashboards (project-health, agent-activity)
+  _attachments/               ← Image/file attachments
+  daily/                      ← Daily development log (YYYY-MM-DD.md, shared between humans and agents)
+  code-reviews/               ← Agent code review reports (with frontmatter)
+  tasks/                      ← Task boards (with frontmatter)
+  context.md                  ← Rolling dev context (agent-owned)
+  VAULT-SETUP.md              ← One-time Obsidian setup instructions
+```
+
+### Frontmatter Convention
+
+All markdown files in `development/` have YAML frontmatter with at minimum:
+
+```yaml
+---
+type: code-review | task | task-board | plan | research-report | daily-note | context-log | moc | dashboard
+tags:
+  - relevant-tags
+---
+```
+
+**When creating files in `development/`**, always include appropriate frontmatter. This enables Obsidian Dataview queries to aggregate and display data across the vault.
+
+### Wikilink Rules
+
+- **Use `[[wikilinks]]` only in `development/` files** — for cross-referencing plans, tasks, reviews, and daily notes
+- **NEVER add wikilinks to CLAUDE.md files** — these use standard markdown and serve as agent navigation
+- **NEVER add wikilinks to source code** — reference files as inline code: `` `src/path/file.py` ``
+- See `development/_moc/wikilink-conventions.md` for the full linking standard
+
+### Daily Notes
+
+The `development/daily/` directory contains daily development log notes:
+
+- **Humans** write observations, decisions, and plans in the "Human Notes" section
+- **Agents** (via context-manager) append changes, decisions, and issues to the "Agent Activity" section
+- New daily notes can be created by Obsidian Templater or by running: `bash scripts/create-daily-note.sh`
+- Daily notes link to `[[context]]` and to previous/next days
+
+### File Ownership
+
+| Files | Owner | Rule |
+|-------|-------|------|
+| `daily/*.md` | Shared | Humans write "Human Notes", agents append "Agent Activity" |
+| `context.md` | Agent (context-manager) | Humans read only |
+| `code-reviews/*.md` | Agent (code-reviewer) | Humans read only |
+| `tasks/**/*.md` | Agent (plan-to-tasks, etc.) | Humans read only |
+| `_moc/*.md`, `_dashboards/*.md` | Human | Agents don't modify |
+| Archived planning docs | Frozen | Neither edits |
+
+### Agent Output Format
+
+When agents create new files in `development/`:
+
+1. **Code reviews** — include frontmatter with `type: code-review`, `date`, `reviewer`, `verdict`, `scope`, `tags`
+2. **Task files** — include frontmatter with `type: task`, `board`, `tags` (in addition to existing `task_id`, `title`, `agent`, etc.)
+3. **Context-manager** — after updating `context.md`, also append to today's daily note in `development/daily/YYYY-MM-DD.md`
 
 ## Running the Platform
 
@@ -363,6 +451,7 @@ alembic downgrade -1                                # Rollback one
 
 python scripts/seed_pairs.py       # Seed Binance USDT pairs
 python scripts/backfill_history.py # Backfill Binance historical klines into candles_backfill
+bash scripts/create-daily-note.sh  # Create today's Obsidian daily note (if not exists)
 ```
 
 ## Architecture Overview

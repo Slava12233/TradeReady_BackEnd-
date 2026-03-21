@@ -1,16 +1,21 @@
 ---
 task_id: 7
 title: "Output models (TradeSignal, Analysis, Report)"
+type: task
 agent: "backend-developer"
 phase: 3
 depends_on: [1]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/models/trade_signal.py"
   - "agent/models/analysis.py"
   - "agent/models/report.py"
   - "agent/models/__init__.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 7: Output models (TradeSignal, Analysis, Report)

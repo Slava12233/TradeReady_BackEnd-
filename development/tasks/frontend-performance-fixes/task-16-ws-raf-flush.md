@@ -1,13 +1,19 @@
 ---
 task_id: 16
 title: "Switch WebSocket price flush to requestAnimationFrame"
+type: task
 agent: "frontend-developer"
 phase: 3
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/hooks/use-websocket.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 16: Switch WebSocket Price Flush to requestAnimationFrame

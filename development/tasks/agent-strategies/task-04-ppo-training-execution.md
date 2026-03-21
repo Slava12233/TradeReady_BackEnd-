@@ -1,12 +1,18 @@
 ---
 task_id: 04
 title: "PPO training execution & convergence"
+type: task
 agent: "ml-engineer"
 phase: A
 depends_on: [2, 3]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "high"
 files: ["agent/strategies/rl/train.py", "agent/strategies/rl/models/"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 04: PPO training execution & convergence

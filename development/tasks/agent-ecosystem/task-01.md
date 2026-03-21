@@ -1,12 +1,18 @@
 ---
 task_id: 01
 title: "Database models for agent ecosystem tables"
+type: task
 agent: "backend-developer"
 phase: 1
 depends_on: []
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["src/database/models.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 01: Database models for agent ecosystem tables

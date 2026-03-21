@@ -1,13 +1,19 @@
 ---
 task_id: 10
 title: "Reduce coin detail page polling frequency"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "high"
 files:
   - "Frontend/src/hooks/use-market-data.ts"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 10: Reduce Coin Detail Page Polling Frequency

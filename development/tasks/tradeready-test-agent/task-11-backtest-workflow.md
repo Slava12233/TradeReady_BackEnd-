@@ -1,13 +1,18 @@
 ---
 task_id: 11
 title: "Backtest workflow"
+type: task
 agent: "backend-developer"
 phase: 5
 depends_on: [6, 7, 8]
 status: "completed"
+board: "[[tradeready-test-agent/README]]"
 priority: "high"
 files:
   - "agent/workflows/backtest_workflow.py"
+tags:
+  - task
+  - testing-agent
 ---
 
 # Task 11: Backtest workflow

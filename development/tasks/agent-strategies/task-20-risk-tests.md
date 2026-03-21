@@ -1,12 +1,18 @@
 ---
 task_id: 20
 title: "Risk agent tests"
+type: task
 agent: "test-runner"
 phase: D
 depends_on: [17, 18]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/tests/test_risk_agent.py", "agent/tests/test_veto.py", "agent/tests/test_sizing.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 20: Risk agent tests

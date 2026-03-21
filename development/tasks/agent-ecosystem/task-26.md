@@ -1,12 +1,18 @@
 ---
 task_id: 26
 title: "Trading loop — main loop and signal generator"
+type: task
 agent: "backend-developer"
 phase: 2
 depends_on: [13, 23]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "high"
 files: ["agent/trading/__init__.py", "agent/trading/loop.py", "agent/trading/signal_generator.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 26: Trading loop — main loop and signal generator

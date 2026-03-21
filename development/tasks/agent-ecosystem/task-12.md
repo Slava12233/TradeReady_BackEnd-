@@ -1,12 +1,18 @@
 ---
 task_id: 12
 title: "Tests for memory system"
+type: task
 agent: "test-runner"
 phase: 1
 depends_on: [9, 10, 11]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["tests/unit/test_memory_store.py", "tests/unit/test_redis_memory_cache.py", "tests/unit/test_memory_retrieval.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 12: Tests for memory system

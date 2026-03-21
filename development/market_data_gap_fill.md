@@ -1,3 +1,13 @@
+---
+type: research-report
+title: "Market Data Gap-Fill: Continuous Backfill Task"
+status: archived
+phase: data-pipeline
+tags:
+  - research
+  - data-pipeline
+---
+
 # Market Data Gap-Fill: Continuous Backfill Task
 
 ## Problem

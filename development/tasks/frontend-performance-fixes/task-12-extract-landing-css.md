@@ -1,14 +1,20 @@
 ---
 task_id: 12
 title: "Extract landing-only CSS from globals.css"
+type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: []
 status: "completed"
+board: "[[frontend-performance-fixes/README]]"
 priority: "medium"
 files:
   - "Frontend/src/app/globals.css"
   - "Frontend/src/app/page.tsx"
+tags:
+  - task
+  - frontend
+  - performance
 ---
 
 # Task 12: Extract Landing-Only CSS from globals.css

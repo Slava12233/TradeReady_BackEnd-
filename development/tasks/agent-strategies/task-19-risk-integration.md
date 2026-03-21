@@ -1,12 +1,18 @@
 ---
 task_id: 19
 title: "Risk agent integration with signal strategies"
+type: task
 agent: "ml-engineer"
 phase: D
 depends_on: [5, 18]
 status: "completed"
+board: "[[agent-strategies/README]]"
 priority: "medium"
 files: ["agent/strategies/risk/middleware.py"]
+tags:
+  - task
+  - ml
+  - strategies
 ---
 
 # Task 19: Risk agent integration with signal strategies

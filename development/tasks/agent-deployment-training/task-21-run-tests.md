@@ -1,12 +1,18 @@
 ---
 task_id: 21
 title: "Run full test suite & fix failures"
+type: task
 agent: "test-runner"
 phase: 11
 depends_on: [15, 16, 17, 18, 19]
 status: "completed"
+board: "[[agent-deployment-training/README]]"
 priority: "high"
 files: ["agent/tests/"]
+tags:
+  - task
+  - deployment
+  - training
 ---
 
 # Task 21: Run full test suite & fix failures

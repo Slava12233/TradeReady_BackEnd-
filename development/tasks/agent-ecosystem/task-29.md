@@ -1,12 +1,18 @@
 ---
 task_id: 29
 title: "Strategy management — performance monitoring and degradation detection"
+type: task
 agent: "ml-engineer"
 phase: 2
 depends_on: [26]
 status: "pending"
+board: "[[agent-ecosystem/README]]"
 priority: "medium"
 files: ["agent/trading/strategy_manager.py"]
+tags:
+  - task
+  - agent
+  - ecosystem
 ---
 
 # Task 29: Strategy management — performance monitoring and degradation detection
