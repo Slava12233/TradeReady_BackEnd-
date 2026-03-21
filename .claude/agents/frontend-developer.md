@@ -3,6 +3,9 @@ name: frontend-developer
 description: "Full-stack frontend development agent for the Next.js 16 / React 19 / Tailwind v4 trading platform UI. Implements components, hooks, pages, and features following all project conventions. Reads CLAUDE.md hierarchy for navigation."
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
+memory: project
+skills:
+  - frontend-design
 ---
 
 # Frontend Developer Agent
@@ -58,6 +61,18 @@ Use this index to find the right documentation for any task:
 |------|-------------|
 | `Frontend/src/remotion/CLAUDE.md` | Remotion video compositions |
 | `Frontend/src/styles/CLAUDE.md` | Chart theme, style utilities |
+
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
 
 ## Tech Stack
 

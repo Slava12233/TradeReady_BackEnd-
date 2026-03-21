@@ -76,7 +76,7 @@ def _make_vec_env(config: Any, start: str, end: str) -> Any:
     try:
         return SubprocVecEnv(factories)
     except Exception as exc:
-        log.warning("vec_env.subproc_failed", error=str(exc), fallback="DummyVecEnv")
+        log.warning("agent.strategy.rl.train.vec_env_subproc_failed", error=str(exc), fallback="DummyVecEnv")
         return DummyVecEnv(factories)
 
 
@@ -102,7 +102,7 @@ def train(config: Any) -> Path:
     except ImportError:
         pass
 
-    log.info("training.start", timesteps=config.total_timesteps, n_envs=config.n_envs,
+    log.info("agent.strategy.rl.train.start", timesteps=config.total_timesteps, n_envs=config.n_envs,
              seed=config.seed, reward=config.reward_type)
 
     config.models_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +129,7 @@ def train(config: Any) -> Path:
         seed=config.seed,
         verbose=0,
     )
-    log.info("model.initialised", pi=config.net_arch_pi, vf=config.net_arch_vf,
+    log.info("agent.strategy.rl.train.model_initialised", pi=config.net_arch_pi, vf=config.net_arch_vf,
              lr=config.learning_rate)
 
     checkpoint_cb = CheckpointCallback(
@@ -158,23 +158,20 @@ def train(config: Any) -> Path:
     finally:
         train_env.close()
         eval_env.close()
-        log.info("env.closed")
+        log.info("agent.strategy.rl.train.env_closed")
 
     final = config.models_dir / "ppo_portfolio_final"
     model.save(str(final))
     saved = Path(str(final) + ".zip")
-    log.info("model.saved", path=str(saved))
+    log.info("agent.strategy.rl.train.model_saved", path=str(saved))
     return saved
 
 
 def main() -> None:
     """CLI entry point."""
-    structlog.configure(processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.dev.ConsoleRenderer(),
-    ])
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
+
+    configure_agent_logging()
 
     p = argparse.ArgumentParser(
         prog="python -m agent.strategies.rl.train",
@@ -214,17 +211,17 @@ def main() -> None:
         config = config.model_copy(update=overrides)
 
     if not config.platform_api_key:
-        log.error("config.missing_api_key",
+        log.error("agent.strategy.rl.train.config_missing_api_key",
                   hint="Set RL_PLATFORM_API_KEY in agent/.env or as environment variable")
         sys.exit(1)
 
     try:
         saved = train(config)
-        log.info("training.complete", model=str(saved))
+        log.info("agent.strategy.rl.train.complete", model=str(saved))
     except KeyboardInterrupt:
-        log.info("training.interrupted")
+        log.info("agent.strategy.rl.train.interrupted")
     except Exception as exc:
-        log.exception("training.failed", error=str(exc))
+        log.exception("agent.strategy.rl.train.failed", error=str(exc))
         sys.exit(1)
 
 

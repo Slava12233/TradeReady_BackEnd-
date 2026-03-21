@@ -1,0 +1,11 @@
+# Add these lines to your project's .gitignore:
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json
+
+# Agent local memory (machine-local, not shared)
+.claude/agent-memory-local/
+
+# Agent activity logs (optional — commit if you want team visibility)
+# development/agent-activity-log.jsonl
+# development/agent-runs/

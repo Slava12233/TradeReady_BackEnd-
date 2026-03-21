@@ -159,7 +159,7 @@ class ConversationHistory:
                 return [_orm_to_message(r) for r in rows]
 
         except Exception as exc:  # noqa: BLE001
-            log.warning("history.load_session.failed", error=str(exc))
+            log.warning("agent.session.history.load_session.failed", error=str(exc))
             return []
 
     async def load_recent(
@@ -231,7 +231,7 @@ class ConversationHistory:
             return messages[-limit:]
 
         except Exception as exc:  # noqa: BLE001
-            log.warning("history.load_recent.failed", error=str(exc))
+            log.warning("agent.session.history.load_recent.failed", error=str(exc))
             return []
 
     async def search(
@@ -321,11 +321,11 @@ class ConversationHistory:
             tier_contains.sort(key=lambda m: m.created_at, reverse=True)
             result = (tier_start + tier_contains)[:limit]
 
-            log.debug("history.search.done", matches=len(result))
+            log.debug("agent.session.history.search.done", matches=len(result))
             return result
 
         except Exception as exc:  # noqa: BLE001
-            log.warning("history.search.failed", error=str(exc))
+            log.warning("agent.session.history.search.failed", error=str(exc))
             return []
 
     async def get_summary(self, session_id: str) -> str | None:
@@ -360,7 +360,7 @@ class ConversationHistory:
                 return row.summary
 
         except Exception as exc:  # noqa: BLE001
-            log.warning("history.get_summary.failed", error=str(exc))
+            log.warning("agent.session.history.get_summary.failed", error=str(exc))
             return None
 
 

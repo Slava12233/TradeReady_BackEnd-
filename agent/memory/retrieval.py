@@ -324,13 +324,14 @@ class MemoryRetriever:
         # ── Post-retrieval cache warm-up ──────────────────────────────────────
         await self._cache_top_results(top_results)
 
-        logger.debug(
-            "memory.retrieve.complete",
-            agent_id=agent_id,
-            query=query,
+        top_score = top_results[0].relevance_score if top_results else 0.0
+        logger.info(
+            "agent.memory.retrieval.complete",
+            query=query[:50] if query else "",
+            total=len(top_results),
             cache_hits=len(cache_results),
             db_hits=len(db_results),
-            returned=len(top_results),
+            top_score=top_score,
         )
 
         return top_results
@@ -367,7 +368,7 @@ class MemoryRetriever:
             )
         except Exception as exc:  # noqa: BLE001
             logger.error(
-                "memory.get_context.store_error",
+                "agent.memory.get_context.store_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -397,10 +398,10 @@ class MemoryRetriever:
         """
         try:
             await self._store.reinforce(memory_id)
-            logger.debug("memory.record_access", memory_id=memory_id)
+            logger.debug("agent.memory.record_access", memory_id=memory_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "memory.record_access.failed",
+                "agent.memory.record_access.failed",
                 memory_id=memory_id,
                 error=str(exc),
             )
@@ -542,6 +543,6 @@ class MemoryRetriever:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "memory.cache_top_results.error",
+                "agent.memory.cache_top_results.error",
                 error=str(exc),
             )

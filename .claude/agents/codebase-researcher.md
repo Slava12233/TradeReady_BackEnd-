@@ -3,6 +3,7 @@ name: codebase-researcher
 description: "Researches the codebase to answer questions, find patterns, trace data flows, and explain how things work. Uses the CLAUDE.md file hierarchy as its primary navigation system."
 tools: Read, Grep, Glob, Bash
 model: sonnet
+memory: project
 ---
 
 # Codebase Researcher Agent
@@ -60,6 +61,18 @@ Use this to decide which CLAUDE.md files to read based on the research topic:
 | SDK | `sdk/CLAUDE.md` |
 | Scripts | `scripts/CLAUDE.md` |
 | Documentation | `docs/CLAUDE.md` |
+
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns and learnings from previous runs
+2. Apply relevant learnings to the current analysis
+
+After completing work:
+1. Note any new patterns or insights discovered during analysis
+2. Update your `MEMORY.md` with findings that will help future runs
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
 
 ## Research Workflow
 

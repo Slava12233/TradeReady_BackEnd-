@@ -40,7 +40,7 @@ log = structlog.get_logger(__name__)
 
 # ── Result models ─────────────────────────────────────────────────────────────
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class SeedMetrics(BaseModel):
@@ -156,7 +156,7 @@ class _ConvergenceMonitor:
 
         if self._plateau_count >= self._patience:
             log.warning(
-                "convergence.plateau_detected",
+                "agent.strategy.rl.runner.convergence.plateau_detected",
                 evaluations_without_improvement=self._plateau_count,
                 best_reward=round(self._best, 4),
                 latest_reward=round(mean_reward, 4),
@@ -215,14 +215,14 @@ def _make_convergence_callback(monitor: _ConvergenceMonitor, config: Any) -> Any
                         mean_reward = sum(ep_rewards) / len(ep_rewards)
                         plateau = monitor.record(mean_reward)
                         log.debug(
-                            "convergence.check",
+                            "agent.strategy.rl.runner.convergence.check",
                             mean_reward=round(mean_reward, 4),
                             plateau=plateau,
                             n_calls=self.n_calls,
                         )
                         if plateau:
                             log.info(
-                                "convergence.stopping_early",
+                                "agent.strategy.rl.runner.convergence.stopping_early",
                                 timesteps_so_far=self.num_timesteps,
                             )
                             return False  # signals SB3 to stop model.learn()
@@ -255,7 +255,7 @@ def _evaluate_model_sync(model_path: str, config: Any) -> dict[str, float | None
     try:
         from stable_baselines3 import PPO  # noqa: PLC0415
     except ImportError:
-        log.error("evaluate.sb3_not_installed")
+        log.error("agent.strategy.rl.runner.evaluate.sb3_not_installed")
         return {
             "sharpe_ratio": None,
             "roi_pct": None,
@@ -268,16 +268,16 @@ def _evaluate_model_sync(model_path: str, config: Any) -> dict[str, float | None
 
     from agent.strategies.rl.train import _env_factory  # noqa: PLC0415
 
-    log.info("evaluate.loading_model", path=model_path)
+    log.info("agent.strategy.rl.runner.evaluate.loading_model", path=model_path)
     try:
         from agent.strategies.checksum import SecurityError, verify_checksum  # noqa: PLC0415
 
         verify_checksum(Path(model_path))
     except SecurityError as exc_sec:
-        log.error("evaluate.checksum_mismatch", path=model_path, error=str(exc_sec))
+        log.error("agent.strategy.rl.runner.evaluate.checksum_mismatch", path=model_path, error=str(exc_sec))
         raise
     except Exception as exc_cs:  # noqa: BLE001
-        log.warning("evaluate.checksum_check_failed", path=model_path, error=str(exc_cs))
+        log.warning("agent.strategy.rl.runner.evaluate.checksum_check_failed", path=model_path, error=str(exc_cs))
     model = PPO.load(model_path)
 
     # Build a single test-split environment.
@@ -314,7 +314,7 @@ def _evaluate_model_sync(model_path: str, config: Any) -> dict[str, float | None
             roi = (end - start) / start * 100.0
 
     log.info(
-        "evaluate.complete",
+        "agent.strategy.rl.runner.evaluate.complete",
         model_path=model_path,
         sharpe=sharpe,
         roi_pct=roi,
@@ -359,17 +359,17 @@ def _tune_config(base_config: Any, attempt: int) -> Any:
     if attempt >= 1:
         # More entropy encourages exploration when the agent collapses to HOLD.
         updates["ent_coef"] = 0.05
-        log.info("tune.ent_coef", new_value=updates["ent_coef"])
+        log.info("agent.strategy.rl.runner.tune.ent_coef", new_value=updates["ent_coef"])
 
     if attempt >= 2:
         # A lower learning rate reduces gradient step noise in volatile markets.
         updates["learning_rate"] = 1e-4
-        log.info("tune.learning_rate", new_value=updates["learning_rate"])
+        log.info("agent.strategy.rl.runner.tune.learning_rate", new_value=updates["learning_rate"])
 
     if attempt >= 3:
         # 50% more steps gives the agent more rollout data to improve from.
         updates["total_timesteps"] = int(base_config.total_timesteps * 1.5)
-        log.info("tune.total_timesteps", new_value=updates["total_timesteps"])
+        log.info("agent.strategy.rl.runner.tune.total_timesteps", new_value=updates["total_timesteps"])
 
     if attempt >= 4:
         # All three combined for a final best-effort run.
@@ -438,7 +438,7 @@ class TrainingRunner:
         from agent.strategies.rl.data_prep import validate_data as _validate  # noqa: PLC0415
 
         log.info(
-            "validate_data.start",
+            "agent.strategy.rl.runner.validate_data.start",
             assets=self._config.env_symbols,
             interval=self._config.timeframe,
             base_url=self._config.platform_base_url,
@@ -456,22 +456,22 @@ class TrainingRunner:
                 )
             )
         except Exception as exc:
-            log.error("validate_data.failed", error=str(exc))
+            log.error("agent.strategy.rl.runner.validate_data.failed", error=str(exc))
             return False
 
         report_path = self._results_dir / "data_readiness.json"
         report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-        log.info("validate_data.report_saved", path=str(report_path))
+        log.info("agent.strategy.rl.runner.validate_data.report_saved", path=str(report_path))
 
         if report.unready_assets:
             log.error(
-                "validate_data.insufficient_data",
+                "agent.strategy.rl.runner.validate_data.insufficient_data",
                 unready=report.unready_assets,
                 hint="Run python -m agent.strategies.rl.data_prep --json for details.",
             )
             return False
 
-        log.info("validate_data.ok", ready_assets=report.ready_assets)
+        log.info("agent.strategy.rl.runner.validate_data.ok", ready_assets=report.ready_assets)
         return True
 
     def train_seed(self, seed: int, tuned_config: Any | None = None) -> SeedMetrics:
@@ -498,7 +498,7 @@ class TrainingRunner:
         tuned = tuned_config is not None
 
         model_path = str(effective_config.models_dir / f"ppo_seed{seed}.zip")
-        log.info("train_seed.start", seed=seed, tuned=tuned, model_path=model_path)
+        log.info("agent.strategy.rl.runner.train_seed.start", seed=seed, tuned=tuned, model_path=model_path)
 
         monitor = _ConvergenceMonitor(
             patience=5,
@@ -526,7 +526,7 @@ class TrainingRunner:
                 final_default.rename(seed_target)
                 saved_path = seed_target
                 log.info(
-                    "train_seed.model_renamed",
+                    "agent.strategy.rl.runner.train_seed.model_renamed",
                     from_path=str(final_default),
                     to_path=str(seed_target),
                 )
@@ -538,10 +538,10 @@ class TrainingRunner:
                 saved_path = seed_target
 
         except KeyboardInterrupt:
-            log.info("train_seed.interrupted", seed=seed)
+            log.info("agent.strategy.rl.runner.train_seed.interrupted", seed=seed)
             error = "KeyboardInterrupt"
         except Exception as exc:
-            log.exception("train_seed.failed", seed=seed, error=str(exc))
+            log.exception("agent.strategy.rl.runner.train_seed.failed", seed=seed, error=str(exc))
             error = str(exc)
 
         # Save a SHA-256 checksum sidecar for the model artifact so that
@@ -554,14 +554,14 @@ class TrainingRunner:
                 save_checksum(Path(str(saved_path)))
             except Exception as exc_cs:  # noqa: BLE001
                 log.warning(
-                    "train_seed.checksum_save_failed",
+                    "agent.strategy.rl.runner.train_seed.checksum_save_failed",
                     path=str(saved_path),
                     error=str(exc_cs),
                 )
 
         wall_time = time.monotonic() - t_start
         log.info(
-            "train_seed.finished",
+            "agent.strategy.rl.runner.train_seed.finished",
             seed=seed,
             wall_time_sec=round(wall_time, 1),
             error=error,
@@ -611,7 +611,7 @@ class TrainingRunner:
             Writes ``results/training_log.json`` and
             ``results/comparison.json`` after each seed completes.
         """
-        log.info("train_multi_seed.start", seeds=seeds, n_seeds=len(seeds))
+        log.info("agent.strategy.rl.runner.train_multi_seed.start", seeds=seeds, n_seeds=len(seeds))
         all_metrics: list[SeedMetrics] = []
         t_start = time.monotonic()
 
@@ -621,7 +621,7 @@ class TrainingRunner:
             # Persist log incrementally so a crash mid-run does not lose data.
             self._save_training_log(all_metrics)
             log.info(
-                "train_multi_seed.seed_done",
+                "agent.strategy.rl.runner.train_multi_seed.seed_done",
                 seed=seed,
                 sharpe=metrics.sharpe_ratio,
                 roi_pct=metrics.roi_pct,
@@ -650,7 +650,7 @@ class TrainingRunner:
             to 0.0, and ``converged`` to ``True`` (assumption for pre-trained).
         """
         config = test_config or self._config
-        log.info("evaluate_model.start", model_path=model_path)
+        log.info("agent.strategy.rl.runner.evaluate_model.start", model_path=model_path)
         eval_metrics = _evaluate_model_sync(model_path, config)
         return SeedMetrics(
             seed=0,
@@ -685,7 +685,7 @@ class TrainingRunner:
             Appends each attempt to ``results/training_log.json``.
         """
         log.info(
-            "tune_hyperparams.start",
+            "agent.strategy.rl.runner.tune_hyperparams.start",
             seed=seed,
             target_sharpe=self._target_sharpe,
             max_attempts=self._max_tune_attempts,
@@ -694,7 +694,7 @@ class TrainingRunner:
         best: SeedMetrics | None = None
 
         for attempt in range(1, self._max_tune_attempts + 1):
-            log.info("tune_hyperparams.attempt", attempt=attempt)
+            log.info("agent.strategy.rl.runner.tune_hyperparams.attempt", attempt=attempt)
             tuned_config = _tune_config(self._config, attempt)
             metrics = self.train_seed(seed, tuned_config=tuned_config)
 
@@ -709,14 +709,14 @@ class TrainingRunner:
                 and metrics.sharpe_ratio >= self._target_sharpe
             ):
                 log.info(
-                    "tune_hyperparams.target_reached",
+                    "agent.strategy.rl.runner.tune_hyperparams.target_reached",
                     attempt=attempt,
                     sharpe=metrics.sharpe_ratio,
                 )
                 break
         else:
             log.warning(
-                "tune_hyperparams.target_not_reached",
+                "agent.strategy.rl.runner.tune_hyperparams.target_not_reached",
                 best_sharpe=best.sharpe_ratio if best else None,
                 target=self._target_sharpe,
             )
@@ -779,7 +779,7 @@ class TrainingRunner:
         log_path = self._results_dir / "training_log.json"
         data = [m.model_dump() for m in metrics]
         log_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        log.debug("training_log.saved", path=str(log_path), n_seeds=len(metrics))
+        log.debug("agent.strategy.rl.runner.training_log.saved", path=str(log_path), n_seeds=len(metrics))
 
     def _save_comparison(self, comparison: MultiSeedComparison) -> None:
         """Persist the multi-seed comparison to ``results/comparison.json``.
@@ -790,7 +790,7 @@ class TrainingRunner:
         comp_path = self._results_dir / "comparison.json"
         comp_path.write_text(comparison.model_dump_json(indent=2), encoding="utf-8")
         log.info(
-            "comparison.saved",
+            "agent.strategy.rl.runner.comparison.saved",
             path=str(comp_path),
             best_seed=comparison.best_seed,
             mean_sharpe=comparison.mean_sharpe,
@@ -807,23 +807,9 @@ def _configure_logging(verbose: bool) -> None:
     Args:
         verbose: When ``True``, enable DEBUG-level output.
     """
-    import logging  # noqa: PLC0415
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
 
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(message)s",
-    )
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer(),
-        ],
-        wrapper_class=structlog.BoundLogger,
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-    )
+    configure_agent_logging(log_level="DEBUG" if verbose else "INFO")
 
 
 def _parse_seeds(raw: str) -> list[int]:
@@ -955,7 +941,7 @@ def main() -> None:
     try:
         config = RLConfig()
     except Exception as exc:
-        log.error("config.load_failed", error=str(exc))
+        log.error("agent.strategy.rl.runner.config.load_failed", error=str(exc))
         sys.exit(1)
 
     # Apply CLI overrides.
@@ -976,7 +962,7 @@ def main() -> None:
     # Guard: API key required for everything except --evaluate.
     if not args.evaluate and not config.platform_api_key:
         log.error(
-            "config.missing_api_key",
+            "agent.strategy.rl.runner.config.missing_api_key",
             hint=(
                 "Set RL_PLATFORM_API_KEY in agent/.env or as environment variable"
             ),
@@ -993,31 +979,31 @@ def main() -> None:
     if args.evaluate:
         model_path = args.evaluate
         if not Path(model_path).exists():
-            log.error("evaluate.model_not_found", path=model_path)
+            log.error("agent.strategy.rl.runner.evaluate.model_not_found", path=model_path)
             sys.exit(1)
         result = runner.evaluate_model(model_path)
-        print(json.dumps(result.model_dump(), indent=2))
+        print(json.dumps(result.model_dump(), indent=2))  # noqa: T201
         return
 
     # ── Validation step ───────────────────────────────────────────────────────
     if not args.no_validate:
         if not runner.validate_data():
             log.error(
-                "pipeline.data_not_ready",
+                "agent.strategy.rl.runner.pipeline.data_not_ready",
                 hint="Use --no-validate to skip, or fix data coverage first.",
             )
             sys.exit(1)
 
     # ── Training ──────────────────────────────────────────────────────────────
     seeds: list[int] = args.seeds
-    log.info("pipeline.starting", seeds=seeds, timesteps=config.total_timesteps)
+    log.info("agent.strategy.rl.runner.pipeline.starting", seeds=seeds, timesteps=config.total_timesteps)
 
     comparison = runner.train_multi_seed(seeds)
 
     # ── Tuning (optional) ─────────────────────────────────────────────────────
     if args.tune and not comparison.target_sharpe_met:
         log.info(
-            "pipeline.tuning_triggered",
+            "agent.strategy.rl.runner.pipeline.tuning_triggered",
             best_sharpe=comparison.mean_sharpe,
             target=args.target_sharpe,
         )
@@ -1033,7 +1019,7 @@ def main() -> None:
 
     # ── Final report ─────────────────────────────────────────────────────────
     log.info(
-        "pipeline.complete",
+        "agent.strategy.rl.runner.pipeline.complete",
         best_seed=comparison.best_seed,
         mean_sharpe=comparison.mean_sharpe,
         target_sharpe_met=comparison.target_sharpe_met,
@@ -1042,7 +1028,7 @@ def main() -> None:
 
     if not comparison.target_sharpe_met:
         log.warning(
-            "pipeline.target_not_met",
+            "agent.strategy.rl.runner.pipeline.target_not_met",
             target_sharpe=args.target_sharpe,
             hint="Consider --tune or increasing --timesteps.",
         )

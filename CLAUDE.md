@@ -104,6 +104,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `development/CLAUDE.md` | Development planning docs, Obsidian vault structure, progress tracking, archived phase plans |
 | `development/code-reviews/CLAUDE.md` | Code review reports from code-reviewer agent |
 | `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 4 rewards, 3 wrappers) for agent training |
+| `monitoring/CLAUDE.md` | 6 Grafana dashboards + 11 Prometheus alert rules for agent ecosystem observability |
 | `.claude/agents/CLAUDE.md` | 16 sub-agent definitions — inventory, config fields, memory, pipelines |
 | `.claude/skills/CLAUDE.md` | 6 slash-command skill workflows — inventory, patterns, gotchas |
 | `.claude/agent-memory/CLAUDE.md` | Agent memory storage — 16 per-agent MEMORY.md directories, file format |

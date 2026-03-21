@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import statistics
 import sys
 from collections import Counter
@@ -172,7 +171,7 @@ class EvolutionAnalyzer:
     # Data loading
     # ------------------------------------------------------------------
 
-    def load_log(self, path: str | Path) -> "EvolutionAnalyzer":
+    def load_log(self, path: str | Path) -> EvolutionAnalyzer:
         """Parse the evolution log JSON file and store it internally.
 
         Args:
@@ -201,7 +200,7 @@ class EvolutionAnalyzer:
             raise ValueError(f"Evolution log is missing required keys: {missing}")
 
         self._log = data
-        logger.info("analyze.log_loaded", path=str(resolved), generations=len(data["generations"]))
+        logger.info("agent.strategy.evolutionary.analyze.log_loaded", path=str(resolved), generations=len(data["generations"]))
         return self
 
     # ------------------------------------------------------------------
@@ -571,7 +570,7 @@ class EvolutionAnalyzer:
             }
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning("analyze.baseline_comparison_failed", error=str(exc))
+            logger.warning("agent.strategy.evolutionary.analyze.baseline_comparison_failed", error=str(exc))
             return {"error": str(exc)}
 
     async def trade_behavior(
@@ -596,7 +595,7 @@ class EvolutionAnalyzer:
         try:
             replay = await rest_client._get(f"/api/v1/battles/{battle_id}/replay")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("analyze.replay_fetch_failed", battle_id=battle_id, error=str(exc))
+            logger.warning("agent.strategy.evolutionary.analyze.replay_fetch_failed", battle_id=battle_id, error=str(exc))
             return {"error": str(exc)}
 
         trades: list[dict[str, Any]] = replay.get("trades", [])
@@ -782,25 +781,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _configure_logging() -> None:
     """Configure structlog to mirror the rest of the agent package."""
-    structlog.configure(
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.stdlib.BoundLogger,
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
-    logging.basicConfig(
-        stream=sys.stderr,
-        level=logging.INFO,
-        format="%(message)s",
-    )
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
+
+    configure_agent_logging()
 
 
 async def _main(argv: list[str] | None = None) -> int:
@@ -821,10 +804,10 @@ async def _main(argv: list[str] | None = None) -> int:
     try:
         analyzer.load_log(args.log_path)
     except (FileNotFoundError, ValueError) as exc:
-        print(f"[error] {exc}", file=sys.stderr)
+        print(f"[error] {exc}", file=sys.stderr)  # noqa: T201
         return 1
 
-    print(f"[analyze] loaded log from {args.log_path}")
+    logger.info("agent.strategy.evolutionary.analyze.log_loaded", log_path=str(args.log_path))
 
     # --- Offline analyses (always run) ---
     baseline_comparison: dict[str, Any] | None = None
@@ -838,7 +821,7 @@ async def _main(argv: list[str] | None = None) -> int:
             from agent.tools.rest_tools import PlatformRESTClient  # noqa: PLC0415
 
             agent_cfg = AgentConfig()
-            print("[analyze] running champion vs baseline battle comparison...")
+            logger.info("agent.strategy.evolutionary.analyze.baseline_comparison_starting")
             async with PlatformRESTClient(agent_cfg) as rest_client:
                 champion_genome = analyzer._log["champion"]["genome"]
                 baseline_comparison = await analyzer.run_baseline_comparison(
@@ -851,17 +834,15 @@ async def _main(argv: list[str] | None = None) -> int:
                     battle_id_for_replay = baseline_comparison.get("battle_id")
 
                 if battle_id_for_replay:
-                    print(
-                        f"[analyze] analysing trade behaviour for battle {battle_id_for_replay}..."
-                    )
+                    logger.info("agent.strategy.evolutionary.analyze.trade_behavior_starting", battle_id=battle_id_for_replay)
                     trade_behavior_data = await analyzer.trade_behavior(
                         battle_id=battle_id_for_replay,
                         rest_client=rest_client,
                     )
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning("analyze.online_analysis_failed", error=str(exc))
-            print(
+            logger.warning("agent.strategy.evolutionary.analyze.online_analysis_failed", error=str(exc))
+            print(  # noqa: T201
                 f"[analyze] WARNING: online analysis failed ({exc}). "
                 "Producing offline-only report.",
                 file=sys.stderr,
@@ -873,18 +854,18 @@ async def _main(argv: list[str] | None = None) -> int:
             from agent.tools.rest_tools import PlatformRESTClient  # noqa: PLC0415
 
             agent_cfg = AgentConfig()
-            print(f"[analyze] analysing trade behaviour for battle {args.battle_id}...")
+            logger.info("agent.strategy.evolutionary.analyze.trade_behavior_starting", battle_id=args.battle_id)
             async with PlatformRESTClient(agent_cfg) as rest_client:
                 trade_behavior_data = await analyzer.trade_behavior(
                     battle_id=args.battle_id,
                     rest_client=rest_client,
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("analyze.trade_behavior_failed", error=str(exc))
-            print(f"[analyze] WARNING: trade behaviour analysis failed: {exc}", file=sys.stderr)
+            logger.warning("agent.strategy.evolutionary.analyze.trade_behavior_failed", error=str(exc))
+            print(f"[analyze] WARNING: trade behaviour analysis failed: {exc}", file=sys.stderr)  # noqa: T201
 
     # Build report.
-    print("[analyze] generating report...")
+    logger.info("agent.strategy.evolutionary.analyze.report_generating")
     report = analyzer.generate_report(
         baseline_comparison=baseline_comparison,
         trade_behavior_data=trade_behavior_data,
@@ -902,17 +883,21 @@ async def _main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
 
-    print(f"[analyze] report written to {report_path}")
+    logger.info("agent.strategy.evolutionary.analyze.report_written", report_path=str(report_path))
 
-    # Print a brief summary to stdout.
+    # Log a brief summary.
     curve = report.fitness_curve
     if curve:
         first = curve[0]
         last = curve[-1]
-        print(
-            f"\n[analyze] fitness trajectory:\n"
-            f"  gen 1  — best: {first.best_fitness:.4f}, avg: {first.avg_fitness:.4f}\n"
-            f"  gen {last.generation}  — best: {last.best_fitness:.4f}, avg: {last.avg_fitness:.4f}"
+        logger.info(
+            "agent.strategy.evolutionary.analyze.fitness_trajectory",
+            gen_first=1,
+            best_first=round(first.best_fitness, 4),
+            avg_first=round(first.avg_fitness, 4),
+            gen_last=last.generation,
+            best_last=round(last.best_fitness, 4),
+            avg_last=round(last.avg_fitness, 4),
         )
 
     converged_params = [
@@ -921,21 +906,21 @@ async def _main(argv: list[str] | None = None) -> int:
     variable_params = [
         name for name, c in report.convergence.items() if not c.converged
     ]
-    print(
-        f"\n[analyze] parameter convergence:\n"
-        f"  converged ({len(converged_params)}): {', '.join(converged_params) or 'none'}\n"
-        f"  variable  ({len(variable_params)}): {', '.join(variable_params) or 'none'}"
+    logger.info(
+        "agent.strategy.evolutionary.analyze.parameter_convergence",
+        converged=converged_params,
+        variable=variable_params,
     )
 
     champ_gen = report.champion.get("generation", "?")
     champ_fit = report.champion.get("fitness", "?")
-    print(f"\n[analyze] champion: generation {champ_gen}, fitness {champ_fit}")
+    logger.info("agent.strategy.evolutionary.analyze.champion", generation=champ_gen, fitness=champ_fit)
 
     if report.baseline_comparison and "error" not in report.baseline_comparison:
-        print(f"[analyze] baseline: {report.baseline_comparison.get('verdict', '')}")
+        logger.info("agent.strategy.evolutionary.analyze.baseline_verdict", verdict=report.baseline_comparison.get("verdict", ""))
 
     logger.info(
-        "analyze.complete",
+        "agent.strategy.evolutionary.analyze.complete",
         report_path=str(report_path),
         generations=len(curve),
         converged_params=len(converged_params),

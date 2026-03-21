@@ -58,6 +58,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+import time
 from uuid import UUID
 
 from sqlalchemy import select
@@ -231,8 +232,13 @@ class OrderEngine:
         if reference_price is None:
             raise PriceNotAvailableError(symbol=order.symbol)
 
+        from src.monitoring.metrics import platform_order_latency, platform_orders_total  # noqa: PLC0415
+
+        _t0 = time.monotonic()
+        agent_id_label = str(agent_id) if agent_id is not None else "none"
+
         if order.type == "market":
-            return await self._place_market_order(
+            result = await self._place_market_order(
                 account_id=account_id,
                 order=order,
                 base_asset=pair.base_asset,
@@ -240,16 +246,26 @@ class OrderEngine:
                 reference_price=reference_price,
                 agent_id=agent_id,
             )
+        else:
+            # limit / stop_loss / take_profit
+            result = await self._place_queued_order(
+                account_id=account_id,
+                order=order,
+                base_asset=pair.base_asset,
+                quote_asset=pair.quote_asset,
+                market_price=reference_price,
+                agent_id=agent_id,
+            )
 
-        # limit / stop_loss / take_profit
-        return await self._place_queued_order(
-            account_id=account_id,
-            order=order,
-            base_asset=pair.base_asset,
-            quote_asset=pair.quote_asset,
-            market_price=reference_price,
-            agent_id=agent_id,
-        )
+        latency_seconds = time.monotonic() - _t0
+        platform_orders_total.labels(
+            agent_id=agent_id_label,
+            side=order.side,
+            order_type=order.type,
+        ).inc()
+        platform_order_latency.labels(order_type=order.type).observe(latency_seconds)
+
+        return result
 
     async def cancel_order(self, account_id: UUID, order_id: UUID, *, agent_id: UUID | None = None) -> bool:
         """Cancel a single pending order and release its locked funds.

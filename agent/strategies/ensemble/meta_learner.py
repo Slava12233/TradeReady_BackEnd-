@@ -126,7 +126,7 @@ class MetaLearner:
         self._min_agreement_rate = min_agreement_rate
 
         log.debug(
-            "meta_learner.initialised",
+            "agent.strategy.ensemble.meta_learner.initialised",
             weights={s.value: round(w, 4) for s, w in self._weights.items()},
             confidence_threshold=confidence_threshold,
             min_agreement_rate=min_agreement_rate,
@@ -255,7 +255,7 @@ class MetaLearner:
 
         if combined_confidence < self._confidence_threshold:
             log.debug(
-                "meta_learner.hold_low_confidence",
+                "agent.strategy.ensemble.meta_learner.hold_low_confidence",
                 symbol=symbol,
                 combined_confidence=round(combined_confidence, 4),
                 threshold=self._confidence_threshold,
@@ -264,7 +264,7 @@ class MetaLearner:
 
         elif rate < self._min_agreement_rate:
             log.debug(
-                "meta_learner.hold_low_agreement",
+                "agent.strategy.ensemble.meta_learner.hold_low_agreement",
                 symbol=symbol,
                 agreement_rate=round(rate, 4),
                 min_agreement_rate=self._min_agreement_rate,
@@ -272,7 +272,7 @@ class MetaLearner:
             final_action = TradeAction.HOLD
 
         log.debug(
-            "meta_learner.consensus",
+            "agent.strategy.ensemble.meta_learner.consensus",
             symbol=symbol,
             action=final_action.value,
             combined_confidence=round(combined_confidence, 4),

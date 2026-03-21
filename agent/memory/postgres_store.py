@@ -143,17 +143,28 @@ class PostgresMemoryStore(MemoryStore):
         )
         try:
             saved = await self._repo.create(orm_row)
+            result_id = saved.id
             logger.info(
-                "memory.saved",
-                memory_id=str(saved.id),
-                agent_id=memory.agent_id,
-                memory_type=memory.memory_type.value,
+                "agent.memory.saved",
+                memory_type=str(memory.memory_type),
+                source=memory.source,
+                memory_id=str(result_id),
             )
-            return str(saved.id)
+            try:
+                from agent.logging import get_agent_id  # noqa: PLC0415
+                from agent.metrics import agent_memory_ops_total  # noqa: PLC0415
+
+                agent_memory_ops_total.labels(
+                    agent_id=get_agent_id() or memory.agent_id,
+                    operation="save",
+                ).inc()
+            except Exception:  # noqa: BLE001
+                pass
+            return str(result_id)
         except DatabaseError:
             raise
         except Exception as exc:
-            logger.exception("memory.save.unexpected_error", agent_id=memory.agent_id, error=str(exc))
+            logger.exception("agent.memory.save.unexpected_error", agent_id=memory.agent_id, error=str(exc))
             raise DatabaseError("Failed to save memory.") from exc
 
     async def get(self, memory_id: str) -> Memory | None:
@@ -182,14 +193,27 @@ class PostgresMemoryStore(MemoryStore):
         except DatabaseError:
             raise
         except Exception as exc:
-            logger.exception("memory.get.unexpected_error", memory_id=memory_id, error=str(exc))
+            logger.exception("agent.memory.get.unexpected_error", memory_id=memory_id, error=str(exc))
             raise DatabaseError("Failed to retrieve memory.") from exc
+
+        logger.debug("agent.memory.fetched", memory_id=memory_id)
+
+        try:
+            from agent.logging import get_agent_id  # noqa: PLC0415
+            from agent.metrics import agent_memory_ops_total  # noqa: PLC0415
+
+            agent_memory_ops_total.labels(
+                agent_id=get_agent_id(),
+                operation="retrieve",
+            ).inc()
+        except Exception:  # noqa: BLE001
+            pass
 
         # Touch last_accessed_at as a background side-effect; ignore failures.
         try:
             await self._repo.touch(UUID(memory_id))
         except DatabaseError as exc:
-            logger.warning("memory.get.touch_failed", memory_id=memory_id, error=str(exc))
+            logger.warning("agent.memory.get.touch_failed", memory_id=memory_id, error=str(exc))
 
         return _orm_to_memory(row)
 
@@ -237,10 +261,16 @@ class PostgresMemoryStore(MemoryStore):
         except DatabaseError:
             raise
         except Exception as exc:
-            logger.exception("memory.search.unexpected_error", agent_id=agent_id, error=str(exc))
+            logger.exception("agent.memory.search.unexpected_error", agent_id=agent_id, error=str(exc))
             raise DatabaseError("Failed to search memories.") from exc
 
-        return [_orm_to_memory(row) for row in rows]
+        results = [_orm_to_memory(row) for row in rows]
+        logger.info(
+            "agent.memory.searched",
+            query=query[:50] if query else "",
+            results=len(results),
+        )
+        return results
 
     async def reinforce(self, memory_id: str) -> None:
         """Atomically increment the reinforcement counter for a memory.
@@ -258,7 +288,17 @@ class PostgresMemoryStore(MemoryStore):
         """
         try:
             await self._repo.reinforce(UUID(memory_id))
-            logger.info("memory.reinforced", memory_id=memory_id)
+            logger.info("agent.memory.reinforced", memory_id=memory_id)
+            try:
+                from agent.logging import get_agent_id  # noqa: PLC0415
+                from agent.metrics import agent_memory_ops_total  # noqa: PLC0415
+
+                agent_memory_ops_total.labels(
+                    agent_id=get_agent_id(),
+                    operation="reinforce",
+                ).inc()
+            except Exception:  # noqa: BLE001
+                pass
         except AgentLearningNotFoundError:
             raise MemoryNotFoundError(
                 f"Cannot reinforce: memory {memory_id!r} not found.",
@@ -267,7 +307,7 @@ class PostgresMemoryStore(MemoryStore):
         except DatabaseError:
             raise
         except Exception as exc:
-            logger.exception("memory.reinforce.unexpected_error", memory_id=memory_id, error=str(exc))
+            logger.exception("agent.memory.reinforce.unexpected_error", memory_id=memory_id, error=str(exc))
             raise DatabaseError("Failed to reinforce memory.") from exc
 
     async def forget(self, memory_id: str) -> None:
@@ -299,7 +339,7 @@ class PostgresMemoryStore(MemoryStore):
         except DatabaseError:
             raise
         except Exception as exc:
-            logger.exception("memory.forget.get_error", memory_id=memory_id, error=str(exc))
+            logger.exception("agent.memory.forget.get_error", memory_id=memory_id, error=str(exc))
             raise DatabaseError("Failed to forget memory.") from exc
 
         # Set expires_at to now to trigger soft-delete semantics.
@@ -307,10 +347,20 @@ class PostgresMemoryStore(MemoryStore):
             row.expires_at = datetime.now(tz=UTC)
             self._repo._session.add(row)
             await self._repo._session.flush()
-            logger.info("memory.forgotten", memory_id=memory_id)
+            logger.info("agent.memory.forgotten", memory_id=memory_id)
+            try:
+                from agent.logging import get_agent_id  # noqa: PLC0415
+                from agent.metrics import agent_memory_ops_total  # noqa: PLC0415
+
+                agent_memory_ops_total.labels(
+                    agent_id=get_agent_id(),
+                    operation="forget",
+                ).inc()
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as exc:
             await self._repo._session.rollback()
-            logger.exception("memory.forget.update_error", memory_id=memory_id, error=str(exc))
+            logger.exception("agent.memory.forget.update_error", memory_id=memory_id, error=str(exc))
             raise DatabaseError("Failed to set expiry on memory.") from exc
 
     async def get_recent(
@@ -372,7 +422,12 @@ class PostgresMemoryStore(MemoryStore):
         except DatabaseError:
             raise
         except Exception as exc:
-            logger.exception("memory.get_recent.unexpected_error", agent_id=agent_id, error=str(exc))
+            logger.exception("agent.memory.get_recent.unexpected_error", agent_id=agent_id, error=str(exc))
             raise DatabaseError("Failed to retrieve recent memories.") from exc
 
+        logger.debug(
+            "agent.memory.get_recent",
+            memory_type=str(memory_type) if memory_type else "all",
+            results=len(memories),
+        )
         return memories

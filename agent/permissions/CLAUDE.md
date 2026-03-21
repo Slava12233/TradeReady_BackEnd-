@@ -1,6 +1,6 @@
 # agent/permissions/ — Roles, Capabilities, Budget Limits, and Enforcement
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-21 (metrics instrumentation) -->
 
 > Four-layer permission system for trading agents: role definitions, capability management, per-agent budget tracking, and enforcement with audit logging.
 
@@ -289,3 +289,8 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 - **Audit flush is not guaranteed on process exit**: The in-memory audit buffer may have unsent entries when the process terminates. Add an explicit `await enforcer.flush_audit_log()` in shutdown hooks for production deployments where audit completeness is required.
 - **Redis outage degrades to Postgres-only**: Both `CapabilityManager` and `BudgetManager` fall back to Postgres when Redis is unavailable. This is slower but functionally correct. The 5-minute flush interval means budget counters may be slightly stale after a Redis restart.
 - **`role_from_string()` is case-insensitive**: `role_from_string("live_trader")`, `"LIVE_TRADER"`, and `"Live_Trader"` all return `AgentRole.LIVE_TRADER`. Use it when parsing role strings from user input or config files.
+
+## Recent Changes
+
+- `2026-03-21` — Initial CLAUDE.md created (agent ecosystem Phase 2).
+- `2026-03-21` — Metrics instrumentation added: `enforcement.py` increments a `permission_denials_total` Prometheus counter (labeled by `agent_id` and `action`) on every `PermissionDenied` event. `budget.py` emits `budget_usage_ratio` gauge metrics on each `check_and_record()` call. All metrics via `agent.metrics.AGENT_REGISTRY`.

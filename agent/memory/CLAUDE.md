@@ -1,6 +1,6 @@
 # agent/memory/ — Memory Store, Postgres Persistence, Redis Cache, and Retrieval
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-21 (logging instrumentation) -->
 
 > Four-layer memory system for agent learning: an abstract store interface, a Postgres-backed production store, a Redis hot cache, and a scored retrieval engine.
 
@@ -245,3 +245,8 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 - **`RedisMemoryCache` never raises**: All methods catch `RedisError` and return safe defaults (`None`, `[]`, `{}`). A Redis outage degrades to DB-only retrieval without crashing the agent.
 - **Working memory survives crashes**: Because there is no TTL, a crash mid-session leaves working memory in Redis. The next session start should call `clear_working_memory()` before populating new state.
 - **Confidence is `Decimal`, not `float`**: Always pass `Decimal("0.85")` not `0.85`. The model validator rejects values outside `[0, 1]`.
+
+## Recent Changes
+
+- `2026-03-21` — Initial CLAUDE.md created (agent ecosystem Phase 1).
+- `2026-03-21` — Logging instrumentation added: `postgres_store.py` emits structlog events and increments Prometheus metrics on every save/get/search/reinforce/forget operation. `redis_cache.py` records cache hit/miss metrics. `retrieval.py` logs retrieval latency and result counts. All via `agent.metrics.AGENT_REGISTRY`.

@@ -37,6 +37,18 @@ Then read the CLAUDE.md files for every module your review touches. Key security
 | Exceptions/error exposure | `src/utils/CLAUDE.md` |
 | Frontend security | `Frontend/CLAUDE.md` |
 
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
+
 ## Core Responsibilities
 
 1. **Vulnerability Detection** — Identify OWASP Top 10 and common security issues

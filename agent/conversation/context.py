@@ -161,7 +161,7 @@ class ContextBuilder:
             else max(1000, self._config.context_max_tokens - _RESPONSE_RESERVE_TOKENS)
         )
 
-        log.debug("context.build.start", max_tokens=effective_max)
+        log.debug("agent.session.context.build.start", max_tokens=effective_max)
 
         messages: list[dict[str, Any]] = []
         tokens_used = 0
@@ -173,7 +173,7 @@ class ContextBuilder:
         system_tokens = _estimate_tokens(system_content)
         messages.append({"role": "system", "content": system_content})
         tokens_used += system_tokens
-        log.debug("context.section.system", tokens=system_tokens)
+        log.debug("agent.session.context.section.system", tokens=system_tokens)
 
         # ------------------------------------------------------------------
         # 2. Portfolio state
@@ -187,9 +187,9 @@ class ContextBuilder:
                     "content": portfolio_block,
                 })
                 tokens_used += portfolio_tokens
-                log.debug("context.section.portfolio", tokens=portfolio_tokens)
+                log.debug("agent.session.context.section.portfolio", tokens=portfolio_tokens)
             else:
-                log.debug("context.section.portfolio.skipped_budget")
+                log.debug("agent.session.context.section.portfolio.skipped_budget")
 
         # ------------------------------------------------------------------
         # 3. Active strategy info
@@ -203,9 +203,9 @@ class ContextBuilder:
                     "content": strategy_block,
                 })
                 tokens_used += strategy_tokens
-                log.debug("context.section.strategy", tokens=strategy_tokens)
+                log.debug("agent.session.context.section.strategy", tokens=strategy_tokens)
             else:
-                log.debug("context.section.strategy.skipped_budget")
+                log.debug("agent.session.context.section.strategy.skipped_budget")
 
         # ------------------------------------------------------------------
         # 4. Current permissions and budget
@@ -218,7 +218,7 @@ class ContextBuilder:
                 "content": permissions_block,
             })
             tokens_used += permissions_tokens
-            log.debug("context.section.permissions", tokens=permissions_tokens)
+            log.debug("agent.session.context.section.permissions", tokens=permissions_tokens)
 
         # ------------------------------------------------------------------
         # 5. Recent learnings from memory store
@@ -232,9 +232,9 @@ class ContextBuilder:
                     "content": learnings_block,
                 })
                 tokens_used += learnings_tokens
-                log.debug("context.section.learnings", tokens=learnings_tokens)
+                log.debug("agent.session.context.section.learnings", tokens=learnings_tokens)
             else:
-                log.debug("context.section.learnings.skipped_budget")
+                log.debug("agent.session.context.section.learnings.skipped_budget")
 
         # ------------------------------------------------------------------
         # 6. Recent conversation messages
@@ -250,15 +250,15 @@ class ContextBuilder:
                 )
                 tokens_used += added_tokens
                 log.debug(
-                    "context.section.conversation",
+                    "agent.session.context.section.conversation",
                     message_count=len(conversation_msgs),
                     tokens=added_tokens,
                 )
             except Exception as exc:  # noqa: BLE001
-                log.warning("context.section.conversation.failed", error=str(exc))
+                log.warning("agent.session.context.section.conversation.failed", error=str(exc))
 
         log.debug(
-            "context.build.complete",
+            "agent.session.context.build.complete",
             total_sections=len(messages),
             total_tokens=tokens_used,
             max_tokens=effective_max,
@@ -292,12 +292,12 @@ class ContextBuilder:
                 if skill_text:
                     base = base + "\n\n## Platform API Reference\n\n" + skill_text[:4000]
             except Exception as exc:  # noqa: BLE001
-                logger.debug("context.system.skill_context_skipped", error=str(exc))
+                logger.debug("agent.session.context.system.skill_context_skipped", error=str(exc))
 
             return base
 
         except ImportError:
-            logger.warning("context.system.prompt_import_failed")
+            logger.warning("agent.session.context.system.prompt_import_failed")
             return (
                 "You are the TradeReady AI trading agent. "
                 "Help the user with trading decisions and platform operations."
@@ -353,7 +353,7 @@ class ContextBuilder:
             return "\n".join(lines)
 
         except Exception as exc:  # noqa: BLE001
-            logger.debug("context.portfolio.fetch_failed", error=str(exc))
+            logger.debug("agent.session.context.portfolio.fetch_failed", error=str(exc))
             return ""
 
     async def _fetch_strategy_section(self, agent_id: str) -> str:
@@ -402,7 +402,7 @@ class ContextBuilder:
             )
 
         except Exception as exc:  # noqa: BLE001
-            logger.debug("context.strategy.fetch_failed", error=str(exc))
+            logger.debug("agent.session.context.strategy.fetch_failed", error=str(exc))
             return ""
 
     def _build_permissions_section(self) -> str:
@@ -482,5 +482,5 @@ class ContextBuilder:
             return "\n".join(lines)
 
         except Exception as exc:  # noqa: BLE001
-            logger.debug("context.learnings.fetch_failed", agent_id=agent_id, error=str(exc))
+            logger.debug("agent.session.context.learnings.fetch_failed", agent_id=agent_id, error=str(exc))
             return ""

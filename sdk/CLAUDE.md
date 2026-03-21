@@ -130,6 +130,7 @@ await ws.connect()  # blocks with auto-reconnect
 | `api_secret` | required (REST only) | `sk_live_...` format |
 | `base_url` | `http://localhost:8000` (REST) / `ws://localhost:8000` (WS) | Platform URL |
 | `timeout` | `30.0` (REST only) | HTTP timeout in seconds |
+| `trace_id_provider` | `None` (async REST only) | Zero-arg callable returning a trace ID string; injected as `X-Trace-Id` header on every request when non-empty |
 
 ## Common Tasks
 
@@ -181,3 +182,4 @@ cd sdk && ruff check . && mypy agentexchange/
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Fixed model count: 12 -> 13 frozen dataclasses (AccountInfo was undercounted)
 - `2026-03-19` -- Synced with codebase: confirmed 6 Python files and all documented items exist. No changes needed.
+- `2026-03-21` -- Added `trace_id_provider: Callable[[], str] | None = None` to `AsyncAgentExchangeClient.__init__`. When provided and the returned string is non-empty, `X-Trace-Id` is injected into every outbound request header. `agent/tools/sdk_tools.py` passes `get_trace_id` from `agent.logging` as the provider.

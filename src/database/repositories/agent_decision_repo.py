@@ -232,6 +232,117 @@ class AgentDecisionRepository:
             logger.exception("agent_decision.list_by_agent.db_error", agent_id=str(agent_id), error=str(exc))
             raise DatabaseError("Failed to list agent decisions.") from exc
 
+    async def get_by_trace(
+        self,
+        agent_id: UUID,
+        trace_id: str,
+    ) -> AgentDecision | None:
+        """Return the decision belonging to a specific trace for an agent.
+
+        Args:
+            agent_id: The owning agent's UUID — scopes the query so one agent
+                cannot read another agent's decisions.
+            trace_id: The hex trace identifier assigned to the decision cycle.
+
+        Returns:
+            The matching :class:`AgentDecision` instance, or ``None`` if no
+            decision with the given ``trace_id`` exists for this agent.
+
+        Raises:
+            DatabaseError: On any SQLAlchemy / database error.
+        """
+        try:
+            stmt = (
+                select(AgentDecision)
+                .where(
+                    AgentDecision.agent_id == agent_id,
+                    AgentDecision.trace_id == trace_id,
+                )
+                .limit(1)
+            )
+            result = await self._session.execute(stmt)
+            return result.scalars().first()
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "agent_decision.get_by_trace.db_error",
+                agent_id=str(agent_id),
+                trace_id=trace_id,
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to fetch agent decision by trace.") from exc
+
+    async def analyze(
+        self,
+        agent_id: UUID,
+        *,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        min_confidence: Decimal | None = None,
+        direction: str | None = None,
+        pnl_outcome: str | None = None,
+        limit: int = 200,
+    ) -> Sequence[AgentDecision]:
+        """Return decisions matching analysis filters for an agent.
+
+        All parameters are optional filters that narrow the result set.
+        Results are ordered newest-first.
+
+        Args:
+            agent_id: The owning agent's UUID.
+            start: Inclusive lower bound on ``created_at`` (UTC). ``None``
+                means no lower bound.
+            end: Exclusive upper bound on ``created_at`` (UTC). ``None``
+                means no upper bound.
+            min_confidence: When provided, only decisions with
+                ``confidence >= min_confidence`` are returned.
+            direction: When provided, only decisions with this ``direction``
+                value are returned (e.g. ``"buy"``, ``"sell"``, ``"hold"``).
+            pnl_outcome: One of ``"positive"``, ``"negative"``, or ``"all"``
+                (default ``"all"``). Filters decisions by the sign of
+                ``outcome_pnl``; ``"positive"`` requires ``outcome_pnl > 0``,
+                ``"negative"`` requires ``outcome_pnl < 0``.
+            limit: Maximum rows to return (default 200, hard cap in the
+                route handler).
+
+        Returns:
+            A (possibly empty) sequence of :class:`AgentDecision` instances.
+
+        Raises:
+            DatabaseError: On any SQLAlchemy / database error.
+        """
+        from sqlalchemy import and_  # noqa: PLC0415
+
+        try:
+            conditions = [AgentDecision.agent_id == agent_id]
+            if start is not None:
+                conditions.append(AgentDecision.created_at >= start)
+            if end is not None:
+                conditions.append(AgentDecision.created_at < end)
+            if min_confidence is not None:
+                conditions.append(AgentDecision.confidence >= min_confidence)
+            if direction is not None:
+                conditions.append(AgentDecision.direction == direction)
+            if pnl_outcome == "positive":
+                conditions.append(AgentDecision.outcome_pnl > 0)
+            elif pnl_outcome == "negative":
+                conditions.append(AgentDecision.outcome_pnl < 0)
+
+            stmt = (
+                select(AgentDecision)
+                .where(and_(*conditions))
+                .order_by(AgentDecision.created_at.desc())
+                .limit(limit)
+            )
+            result = await self._session.execute(stmt)
+            return result.scalars().all()
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "agent_decision.analyze.db_error",
+                agent_id=str(agent_id),
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to analyze agent decisions.") from exc
+
     async def find_unresolved(
         self,
         agent_id: UUID,

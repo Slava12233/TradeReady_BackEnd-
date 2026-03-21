@@ -3,6 +3,7 @@ name: deploy-checker
 description: "Comprehensive deployment readiness checker for backend AND frontend. Validates lint, types, tests, migrations, Docker builds, env vars, security, API health, frontend build, and GitHub Actions CI/CD pipeline before deploying to production."
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
+memory: project
 effort: high
 ---
 
@@ -31,6 +32,18 @@ The GitHub Actions deploy pipeline does this:
 Your job is to simulate and validate ALL of these steps locally before they hit CI.
 
 ---
+
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
 
 ## Full Checklist (Run ALL Steps)
 

@@ -861,3 +861,73 @@ try:
     TrainingRunServiceDep: TypeAlias = Annotated[_TrainingRunService, Depends(get_training_run_service)]
 except ImportError:
     TrainingRunServiceDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Agent decision repository
+# ---------------------------------------------------------------------------
+
+
+async def get_agent_decision_repo(
+    db: DbSessionDep,
+) -> AgentDecisionRepoDep:
+    """Return an ``AgentDecisionRepository`` wired to the current session."""
+    from src.database.repositories.agent_decision_repo import AgentDecisionRepository  # noqa: PLC0415
+
+    return AgentDecisionRepository(db)
+
+
+try:
+    from src.database.repositories.agent_decision_repo import AgentDecisionRepository as _AgentDecisionRepo
+
+    AgentDecisionRepoDep: TypeAlias = Annotated[_AgentDecisionRepo, Depends(get_agent_decision_repo)]
+except ImportError:
+    AgentDecisionRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Agent API call repository
+# ---------------------------------------------------------------------------
+
+
+async def get_agent_api_call_repo(
+    db: DbSessionDep,
+) -> AgentApiCallRepoDep:
+    """Return an ``AgentApiCallRepository`` wired to the current session."""
+    from src.database.repositories.agent_api_call_repo import AgentApiCallRepository  # noqa: PLC0415
+
+    return AgentApiCallRepository(db)
+
+
+try:
+    from src.database.repositories.agent_api_call_repo import AgentApiCallRepository as _AgentApiCallRepo
+
+    AgentApiCallRepoDep: TypeAlias = Annotated[_AgentApiCallRepo, Depends(get_agent_api_call_repo)]
+except ImportError:
+    AgentApiCallRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]
+
+
+# ---------------------------------------------------------------------------
+# Agent strategy signal repository
+# ---------------------------------------------------------------------------
+
+
+async def get_agent_strategy_signal_repo(
+    db: DbSessionDep,
+) -> AgentStrategySignalRepoDep:
+    """Return an ``AgentStrategySignalRepository`` wired to the current session."""
+    from src.database.repositories.agent_strategy_signal_repo import AgentStrategySignalRepository  # noqa: PLC0415
+
+    return AgentStrategySignalRepository(db)
+
+
+try:
+    from src.database.repositories.agent_strategy_signal_repo import (
+        AgentStrategySignalRepository as _AgentStrategySignalRepo,
+    )
+
+    AgentStrategySignalRepoDep: TypeAlias = Annotated[
+        _AgentStrategySignalRepo, Depends(get_agent_strategy_signal_repo)
+    ]
+except ImportError:
+    AgentStrategySignalRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]

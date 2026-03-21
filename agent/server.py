@@ -42,6 +42,7 @@ import structlog
 
 from agent.config import AgentConfig
 from agent.conversation.session import AgentSession, SessionError
+from agent.logging import set_agent_id
 from agent.memory.redis_cache import RedisMemoryCache
 from agent.memory.store import Memory, MemoryStore
 
@@ -123,6 +124,11 @@ class AgentServer:
 
         self._log = logger.bind(agent_id=agent_id)
 
+        # Bind agent_id into the asyncio context so every log line on this
+        # context automatically carries the agent_id correlation field via the
+        # add_correlation_context processor in agent.logging.
+        set_agent_id(agent_id)
+
     # ------------------------------------------------------------------
     # Public lifecycle
     # ------------------------------------------------------------------
@@ -164,6 +170,7 @@ class AgentServer:
         background_tasks = [
             asyncio.create_task(self._health_check_loop(), name="health_check_loop"),
             asyncio.create_task(self._scheduled_task_loop(), name="scheduled_task_loop"),
+            asyncio.create_task(self._metrics_server_loop(), name="metrics_server_loop"),
         ]
 
         try:
@@ -526,6 +533,106 @@ class AgentServer:
     # ------------------------------------------------------------------
     # Background loops
     # ------------------------------------------------------------------
+
+    async def _metrics_server_loop(self) -> None:
+        """Serve Prometheus metrics and a JSON health endpoint on the agent HTTP port.
+
+        Listens on ``config.agent_server_host:config.agent_server_port`` (default
+        ``0.0.0.0:8001``).  Responds to:
+
+        - ``GET /metrics`` — Prometheus text exposition format (``AGENT_REGISTRY``
+          only; does not expose the platform-default Prometheus registry).
+        - ``GET /health`` — JSON health snapshot from :meth:`health_check`.
+
+        All other paths receive a ``404 Not Found`` response.
+
+        The server runs until the shutdown event fires, then stops accepting new
+        connections.  Any ``asyncio.CancelledError`` is re-raised so the parent
+        task-group can clean up correctly.
+        """
+        from prometheus_client import generate_latest  # noqa: PLC0415
+
+        from agent.metrics import AGENT_REGISTRY  # noqa: PLC0415
+
+        host = self._config.agent_server_host
+        port = self._config.agent_server_port
+
+        async def _handle_connection(
+            reader: asyncio.StreamReader,
+            writer: asyncio.StreamWriter,
+        ) -> None:
+            """Handle one HTTP connection and write a response."""
+            import json as _json  # noqa: PLC0415
+
+            try:
+                raw = await asyncio.wait_for(reader.read(4096), timeout=5.0)
+                if not raw:
+                    return
+
+                # Parse the request line — first line, e.g. "GET /metrics HTTP/1.1".
+                first_line = raw.split(b"\r\n", 1)[0].decode("utf-8", errors="replace")
+                parts = first_line.split(" ")
+                path = parts[1] if len(parts) >= 2 else "/"
+
+                if path == "/metrics":
+                    body = generate_latest(AGENT_REGISTRY)
+                    status = "200 OK"
+                    content_type = "text/plain; version=0.0.4; charset=utf-8"
+                    response_body = body
+                elif path == "/health":
+                    health = await self.health_check()
+                    response_body = _json.dumps(health).encode("utf-8")
+                    status = "200 OK"
+                    content_type = "application/json"
+                else:
+                    response_body = b"Not Found\n"
+                    status = "404 Not Found"
+                    content_type = "text/plain"
+
+                headers = (
+                    f"HTTP/1.1 {status}\r\n"
+                    f"Content-Type: {content_type}\r\n"
+                    f"Content-Length: {len(response_body)}\r\n"
+                    f"Connection: close\r\n"
+                    "\r\n"
+                )
+                writer.write(headers.encode("utf-8"))
+                writer.write(response_body)
+                await writer.drain()
+            except (TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
+                pass
+            except Exception as exc:  # noqa: BLE001
+                self._log.debug("metrics_server.handler_error", error=str(exc))
+            finally:
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        try:
+            tcp_server = await asyncio.start_server(
+                _handle_connection, host=host, port=port
+            )
+            self._log.info(
+                "agent_server.metrics_server.started",
+                host=host,
+                port=port,
+                paths=["/metrics", "/health"],
+            )
+            async with tcp_server:
+                await self._shutdown_event.wait()
+
+        except asyncio.CancelledError:
+            self._log.info("metrics_server.cancelled")
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._log.warning(
+                "agent_server.metrics_server.failed",
+                host=host,
+                port=port,
+                error=str(exc),
+            )
 
     async def _health_check_loop(self) -> None:
         """Run a periodic health-check and state-persistence cycle.

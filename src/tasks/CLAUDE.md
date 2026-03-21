@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -20,6 +20,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `backtest_cleanup.py` | Auto-cancel idle backtests (>1h), delete old backtest detail data (>90d) |
 | `battle_snapshots.py` | Capture battle equity snapshots every 5s; auto-complete expired battles every 10s |
 | `strategy_tasks.py` | Strategy test episodes: `run_strategy_episode` (5min limit), `aggregate_test_results` (1min limit) |
+| `agent_analytics.py` | 3 agent analytics tasks: `agent_strategy_attribution` (daily), `agent_memory_effectiveness` (weekly), `agent_platform_health_report` (daily) |
 | `__init__.py` | Package docstring (no exports) |
 
 ## Architecture & Patterns
@@ -50,6 +51,9 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `cleanup-backtest-detail-data` | `backtest_cleanup.cleanup_backtest_detail_data` | Crontab 02:00 UTC | default |
 | `capture-battle-snapshots` | `battle_snapshots.capture_battle_snapshots` | Every 5s | default |
 | `check-battle-completion` | `battle_snapshots.check_battle_completion` | Every 10s | default |
+| `agent-strategy-attribution` | `agent_analytics.agent_strategy_attribution` | Crontab 02:00 UTC | default |
+| `agent-memory-effectiveness` | `agent_analytics.agent_memory_effectiveness` | Crontab Sunday 03:00 UTC | default |
+| `agent-platform-health-report` | `agent_analytics.agent_platform_health_report` | Crontab 06:00 UTC | default |
 
 ### Async Bridge Pattern
 
@@ -169,4 +173,5 @@ celery -A src.tasks.celery_app beat --loglevel=info
 
 ## Recent Changes
 
+- `2026-03-21` — Added `agent_analytics.py` with 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC — queries `agent_strategy_signals` to compute per-strategy PnL attribution), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC — measures memory retrieval hit rate), `agent_platform_health_report` (daily 06:00 UTC — aggregates agent API call latency and error rates). Beat schedule count: 11 → 14.
 - `2026-03-17` -- Initial CLAUDE.md created

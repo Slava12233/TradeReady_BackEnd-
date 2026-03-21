@@ -148,9 +148,9 @@ class TerminalUI:
             )
             self._console.print(_RichPanel(banner_text, border_style="cyan"))
         else:
-            print(f"TradeReady Agent v{_AGENT_VERSION} — Type /help for commands, /quit to exit")
-            print(f"Session: {session_label} ({action})")
-            print()
+            print(f"TradeReady Agent v{_AGENT_VERSION} — Type /help for commands, /quit to exit")  # noqa: T201
+            print(f"Session: {session_label} ({action})")  # noqa: T201
+            print()  # noqa: T201
 
     # ------------------------------------------------------------------
     # User / agent turns
@@ -173,19 +173,19 @@ class TerminalUI:
             words = reply.split()
             line: list[str] = []
             col = len(prefix)
-            print(prefix, end="")
+            print(prefix, end="")  # noqa: T201
             for word in words:
                 if col + len(word) + 1 > _PLAIN_WRAP_WIDTH and line:
-                    print(" ".join(line))
-                    print("       ", end="")
+                    print(" ".join(line))  # noqa: T201
+                    print("       ", end="")  # noqa: T201
                     line = [word]
                     col = 7 + len(word)
                 else:
                     line.append(word)
                     col += len(word) + 1
             if line:
-                print(" ".join(line))
-            print()
+                print(" ".join(line))  # noqa: T201
+            print()  # noqa: T201
 
     def print_error(self, message: str) -> None:
         """Render an error message.
@@ -196,7 +196,7 @@ class TerminalUI:
         if self._rich:
             self._console.print(f"[bold red]Error:[/bold red] {message}")
         else:
-            print(f"Error: {message}", file=sys.stderr)
+            print(f"Error: {message}", file=sys.stderr)  # noqa: T201
 
     def print_info(self, message: str) -> None:
         """Render an informational message (not an agent reply).
@@ -207,7 +207,7 @@ class TerminalUI:
         if self._rich:
             self._console.print(f"[dim]{message}[/dim]")
         else:
-            print(message)
+            print(message)  # noqa: T201
 
     def print_command_output(self, title: str, content: str) -> None:
         """Render structured command output in a panel.
@@ -219,9 +219,9 @@ class TerminalUI:
         if self._rich:
             self._console.print(_RichPanel(content, title=title, border_style="blue"))
         else:
-            print(f"--- {title} ---")
-            print(content)
-            print("-" * (len(title) + 8))
+            print(f"--- {title} ---")  # noqa: T201
+            print(content)  # noqa: T201
+            print("-" * (len(title) + 8))  # noqa: T201
 
     def print_table(self, headers: list[str], rows: list[list[str]], title: str = "") -> None:
         """Render a data table.
@@ -241,18 +241,18 @@ class TerminalUI:
             self._console.print(table)
         else:
             if title:
-                print(f"  {title}")
+                print(f"  {title}")  # noqa: T201
             col_widths = [
                 max(len(headers[i]), max((len(r[i]) for r in rows), default=0))
                 for i in range(len(headers))
             ]
             header_line = "  ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
             sep_line = "  ".join("-" * w for w in col_widths)
-            print(header_line)
-            print(sep_line)
+            print(header_line)  # noqa: T201
+            print(sep_line)  # noqa: T201
             for row in rows:
-                print("  ".join(row[i].ljust(col_widths[i]) for i in range(len(row))))
-            print()
+                print("  ".join(row[i].ljust(col_widths[i]) for i in range(len(row))))  # noqa: T201
+            print()  # noqa: T201
 
     def prompt(self) -> str:
         """Display the input prompt and read one line from stdin.
@@ -410,7 +410,7 @@ async def _list_sessions_text(agent_id: str, config: AgentConfig) -> str:
         return "\n".join(lines)
 
     except Exception as exc:  # noqa: BLE001
-        logger.warning("cli.list_sessions.failed", error=str(exc))
+        logger.warning("agent.server.cli.list_sessions.failed", error=str(exc))
         return f"(Could not load session list — DB unavailable: {exc})"
 
 
@@ -461,7 +461,7 @@ async def run_chat(
         try:
             config = AgentConfig()
         except Exception as exc:  # noqa: BLE001
-            print(
+            print(  # noqa: T201
                 f"ERROR: Failed to load agent configuration.\n"
                 f"  Make sure agent/.env exists and contains OPENROUTER_API_KEY.\n"
                 f"  Details: {exc}",
@@ -487,7 +487,7 @@ async def run_chat(
         await server._init_pydantic_agent()
     except Exception as exc:  # noqa: BLE001
         ui.print_error(f"Server initialisation failed: {exc}")
-        logger.warning("cli.server_init_failed", error=str(exc))
+        logger.warning("agent.server.cli.server_init_failed", error=str(exc))
         # Continue in degraded mode — session will be None.
 
     # ── Create or resume the conversation session ────────────────────────────
@@ -510,7 +510,7 @@ async def run_chat(
             ag_session = None
             is_resumed = False
     except Exception as exc:  # noqa: BLE001
-        logger.warning("cli.session_start_failed", error=str(exc))
+        logger.warning("agent.server.cli.session_start_failed", error=str(exc))
         ag_session = None
         is_resumed = False
 
@@ -547,7 +547,7 @@ async def run_chat(
 
             # ── Natural language — intent route then LLM ──────────────────
             intent = router.classify(stripped)
-            logger.debug("cli.intent_classified", intent=intent.value, message_preview=stripped[:60])
+            logger.debug("agent.server.cli.intent_classified", intent=intent.value, message_preview=stripped[:60])
 
             # For all intents we forward the message to the server reasoning
             # loop which handles the LLM call and session persistence.
@@ -564,7 +564,7 @@ async def run_chat(
             ui.print_agent_reply(reply)
 
     except KeyboardInterrupt:
-        print()  # newline after ^C
+        print()  # noqa: T201  # newline after ^C
         ui.print_info("Interrupted. Closing session…")
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
@@ -574,7 +574,7 @@ async def run_chat(
 
                 await ag_session.end()
             except Exception as exc:  # noqa: BLE001
-                logger.warning("cli.session_end_failed", error=str(exc))
+                logger.warning("agent.server.cli.session_end_failed", error=str(exc))
         ui.print_info("Session closed. Goodbye.")
 
 
@@ -726,7 +726,7 @@ async def _dispatch_to_server(
             reply = await server._reasoning_loop([], message)
     except Exception as exc:  # noqa: BLE001
         reply = f"(Error processing request: {exc})"
-        logger.warning("cli.dispatch_failed", error=str(exc))
+        logger.warning("agent.server.cli.dispatch_failed", error=str(exc))
 
     ui.print_agent_reply(reply)
 

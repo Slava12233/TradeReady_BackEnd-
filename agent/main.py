@@ -25,6 +25,7 @@ from pathlib import Path
 import structlog
 
 from agent.config import AgentConfig
+from agent.logging import configure_agent_logging
 from agent.models.report import PlatformValidationReport, WorkflowResult
 from agent.workflows import (
     run_backtest_workflow,
@@ -48,33 +49,6 @@ _ALL_ORDER: list[str] = ["smoke", "trade", "backtest", "strategy"]
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 log = structlog.get_logger(__name__)
-
-
-def _configure_structlog() -> None:
-    """Configure structlog for JSON output with ISO timestamps.
-
-    Must be called once at process start, before any workflow code runs.
-    Processors applied in order:
-
-    1. Add log level to the event dict.
-    2. Add ISO-8601 timestamp.
-    3. Render the final dict as JSON (one object per line).
-    """
-    structlog.configure(
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            structlog.stdlib.NAME_TO_LEVEL.get("info", 20)
-        ),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
 
 
 def _timestamp_slug() -> str:
@@ -258,6 +232,17 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help=(
+            "Minimum log level to emit (case-insensitive).  "
+            "Defaults to INFO."
+        ),
+    )
+
     return parser
 
 
@@ -333,10 +318,11 @@ async def main() -> None:
     - ``1`` — configuration error (missing .env or API key), platform
               unreachable, or at least one workflow reached ``"fail"`` status
     """
-    _configure_structlog()
-
     parser = _build_parser()
     args = parser.parse_args()
+
+    log_level: str = args.log_level.upper()
+    configure_agent_logging(log_level)
 
     # ── Resolve output directory ───────────────────────────────────────────────
     if args.output_dir is not None:

@@ -38,6 +38,8 @@ Agent ecosystem tables:
 - ``AgentBudget``         — daily/weekly trade limits (unique per agent)
 - ``AgentPerformance``    — rolling strategy stats by period
 - ``AgentObservation``    — market snapshots at decision points (TimescaleDB hypertable)
+- ``AgentApiCall``        — outbound API call log for observability
+- ``AgentStrategySignal`` — per-strategy signals before ensemble combination
 
 All models inherit from the shared ``Base`` declarative base.
 """
@@ -60,6 +62,7 @@ from sqlalchemy import (
     Integer,
     Interval,
     Numeric,
+    SmallInteger,
     Text,
     UniqueConstraint,
     func,
@@ -448,6 +451,12 @@ class Agent(Base):
     )
 
     account: Mapped[Account] = relationship("Account", back_populates="agents")
+    api_calls: Mapped[list[AgentApiCall]] = relationship(
+        "AgentApiCall", back_populates="agent", cascade="all, delete-orphan"
+    )
+    strategy_signals: Mapped[list[AgentStrategySignal]] = relationship(
+        "AgentStrategySignal", back_populates="agent", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'paused', 'archived')", name="ck_agents_status"),
@@ -2326,6 +2335,10 @@ class AgentDecision(Base):
         ForeignKey("agents.id", ondelete="CASCADE"),
         nullable=False,
     )
+    trace_id: Mapped[str | None] = mapped_column(
+        VARCHAR(32),
+        nullable=True,
+    )
     session_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("agent_sessions.id", ondelete="SET NULL"),
@@ -2622,9 +2635,11 @@ class AgentFeedback(Base):
         description:      Full description (TEXT).
         priority:         Urgency level: ``low``, ``medium``, ``high``, or
                           ``critical``.
-        status:           Lifecycle state: ``new``, ``acknowledged``,
+        status:           Lifecycle state: ``submitted``, ``acknowledged``,
                           ``in_progress``, ``resolved``, or ``wont_fix``.
         resolution_notes: Operator notes explaining the resolution (nullable).
+        resolution:       Short resolution summary set when status changes to
+                          ``resolved`` or ``wont_fix`` (nullable).
         created_at:       UTC timestamp of submission.
         resolved_at:      UTC timestamp of resolution (nullable).
     """
@@ -2661,9 +2676,13 @@ class AgentFeedback(Base):
     status: Mapped[str] = mapped_column(
         VARCHAR(20),
         nullable=False,
-        server_default="'new'",
+        server_default="'submitted'",
     )
     resolution_notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    resolution: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
@@ -2690,7 +2709,7 @@ class AgentFeedback(Base):
             name="ck_agent_feedback_priority",
         ),
         CheckConstraint(
-            "status IN ('new', 'acknowledged', 'in_progress', 'resolved', 'wont_fix')",
+            "status IN ('submitted', 'new', 'acknowledged', 'in_progress', 'resolved', 'wont_fix')",
             name="ck_agent_feedback_status",
         ),
         Index("idx_agent_feedback_agent_created", "agent_id", "created_at"),
@@ -3079,3 +3098,195 @@ class AgentObservation(Base):
 
     def __repr__(self) -> str:
         return f"<AgentObservation agent={self.agent_id} time={self.time} regime={self.regime!r}>"
+
+
+# ── AgentApiCall ──────────────────────────────────────────────────────────────
+
+
+class AgentApiCall(Base):
+    """Records every outbound API call made by an agent for observability.
+
+    Each row captures one external call (SDK, MCP, REST, or DB) including
+    the latency, HTTP status, payload sizes, and any error message.  The
+    ``trace_id`` groups all calls belonging to a single agent decision cycle.
+
+    Attributes:
+        id:            Primary key (UUID v4, server-generated).
+        trace_id:      Hex trace identifier grouping related calls.
+        agent_id:      Foreign key → ``agents.id`` (cascade delete).
+        channel:       Transport layer: ``sdk``, ``mcp``, ``rest``, or ``db``.
+        endpoint:      URL path or tool name that was called.
+        method:        HTTP verb (``GET``, ``POST``, etc.); nullable for non-HTTP channels.
+        status_code:   HTTP response code; nullable for non-HTTP channels.
+        latency_ms:    Round-trip latency in milliseconds (2 decimal places).
+        request_size:  Request body size in bytes (nullable).
+        response_size: Response body size in bytes (nullable).
+        error:         Error message if the call failed (nullable).
+        created_at:    UTC timestamp of the call.
+    """
+
+    __tablename__ = "agent_api_calls"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    trace_id: Mapped[str] = mapped_column(
+        VARCHAR(32),
+        nullable=False,
+        index=True,
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+    )
+    endpoint: Mapped[str] = mapped_column(
+        VARCHAR(200),
+        nullable=False,
+    )
+    method: Mapped[str | None] = mapped_column(
+        VARCHAR(10),
+        nullable=True,
+    )
+    status_code: Mapped[int | None] = mapped_column(
+        SmallInteger,
+        nullable=True,
+    )
+    latency_ms: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+    )
+    request_size: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    response_size: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent", back_populates="api_calls")
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('sdk', 'mcp', 'rest', 'db')",
+            name="ck_agent_api_calls_channel",
+        ),
+        Index("ix_agent_api_calls_agent_trace", "agent_id", "trace_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentApiCall id={self.id} agent={self.agent_id} "
+            f"channel={self.channel!r} endpoint={self.endpoint!r} status={self.status_code}>"
+        )
+
+
+# ── AgentStrategySignal ───────────────────────────────────────────────────────
+
+
+class AgentStrategySignal(Base):
+    """Records per-strategy signals before ensemble combination.
+
+    Each row captures what a single strategy component recommended for a
+    given symbol within one decision cycle identified by ``trace_id``.
+    The ensemble combiner reads these rows to compute weighted votes.
+
+    Attributes:
+        id:            Primary key (UUID v4, server-generated).
+        trace_id:      Hex trace identifier linking signals to one decision cycle.
+        agent_id:      Foreign key → ``agents.id`` (cascade delete).
+        strategy_name: Name of the strategy component (e.g. ``"ppo_rl"``, ``"genetic"``).
+        symbol:        Trading pair this signal applies to (e.g. ``"BTCUSDT"``).
+        action:        Recommended action: ``buy``, ``sell``, or ``hold``.
+        confidence:    Strategy-reported confidence score in [0, 1] (nullable).
+        weight:        Ensemble weight assigned to this strategy (nullable).
+        signal_data:   JSONB bag of strategy-specific indicator values and metadata.
+        created_at:    UTC timestamp of the signal.
+    """
+
+    __tablename__ = "agent_strategy_signals"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    trace_id: Mapped[str] = mapped_column(
+        VARCHAR(32),
+        nullable=False,
+        index=True,
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy_name: Mapped[str] = mapped_column(
+        VARCHAR(50),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        VARCHAR(20),
+        nullable=False,
+    )
+    action: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+    )
+    confidence: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True,
+    )
+    weight: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True,
+    )
+    signal_data: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    agent: Mapped[Agent] = relationship("Agent", back_populates="strategy_signals")
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('buy', 'sell', 'hold')",
+            name="ck_agent_strategy_signals_action",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="ck_agent_strategy_signals_confidence",
+        ),
+        CheckConstraint(
+            "weight IS NULL OR (weight >= 0 AND weight <= 1)",
+            name="ck_agent_strategy_signals_weight",
+        ),
+        Index("ix_agent_signals_agent_created", "agent_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentStrategySignal id={self.id} agent={self.agent_id} "
+            f"strategy={self.strategy_name!r} symbol={self.symbol!r} action={self.action!r}>"
+        )

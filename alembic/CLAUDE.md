@@ -1,6 +1,6 @@
 # Alembic Migrations
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Async Alembic migrations for TimescaleDB/PostgreSQL schema management.
 
@@ -37,8 +37,11 @@ Manages all database schema changes for the AI Agent Crypto Trading Platform. Mi
 | 014 | `014_enforce_backtest_agent_id_not_null.py` | Set `agent_id` NOT NULL on `backtest_sessions` (run after backfill) |
 | 015 | `015_add_historical_battle_support.py` | `battle_mode`, `backtest_config` on `battles`; `backtest_session_id` FK on `battle_participants` |
 | 016 | `016_strategy_and_training_tables.py` | `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes` |
+| 017 | `017_agent_ecosystem_tables.py` | Agent ecosystem: `agent_sessions`, `agent_decisions`, `agent_journal`, `agent_learning`, `agent_observations`, `agent_performance`, `agent_feedback`, `agent_permissions`, `agent_budget_limits`, `agent_budget_history` |
+| 018 | `018_add_agent_logging_tables.py` | Agent logging: `agent_api_calls`, `agent_strategy_signals`; adds `trace_id` column to `agent_decisions` |
+| 019 | `019_add_feedback_lifecycle_columns.py` | `agent_feedback.status` CHECK constraint + default; adds `agent_feedback.resolution` column |
 
-**Current head:** `016`
+**Current head:** `019`
 
 **Note:** Migration `011` (drop legacy account trading columns) is missing from the versions directory but is referenced in the chain. The chain skips from `010` directly to `012` via `down_revision`.
 
@@ -94,8 +97,8 @@ alembic revision -m "description of change"
 ```
 
 After generating, you must:
-1. Set `revision` to the next sequential number (e.g., `"017"`)
-2. Set `down_revision` to the current head (e.g., `"016"`)
+1. Set `revision` to the next sequential number (e.g., `"020"`)
+2. Set `down_revision` to the current head (e.g., `"019"`)
 3. Write both `upgrade()` and `downgrade()` functions
 4. Run `ruff check` on the generated file (post-write hook handles formatting)
 
@@ -134,4 +137,5 @@ alembic downgrade 010      # Roll back to specific revision
 - `2026-03-17` -- Migrations 013-015 added: agent-scoped backtests and historical battle support
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Migration 016 added: strategy and training tables (strategies, strategy_versions, strategy_test_runs, strategy_test_episodes, training_runs, training_episodes)
+- `2026-03-21` — Migrations 018-019 added: agent_api_calls + agent_strategy_signals tables; trace_id on agent_decisions; feedback lifecycle columns. Head: 016 → 019.
 - `2026-03-19` -- Synced with codebase: confirmed 15 numbered migration files (001-016, no 011), head at 016. All inventory entries match files on disk.

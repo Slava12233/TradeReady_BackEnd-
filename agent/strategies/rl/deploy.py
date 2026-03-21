@@ -307,7 +307,7 @@ def _weights_to_orders(
         price_f = float(price_dec)
 
         if price_f <= 0:
-            log.debug("order.skip_zero_price", symbol=symbol)
+            log.debug("agent.strategy.rl.deploy.order.skip_zero_price", symbol=symbol)
             continue
 
         pos = position_map.get(symbol, {})
@@ -534,18 +534,18 @@ class PPODeployBridge:
                 "Install it with: pip install stable-baselines3"
             ) from None
 
-        log.info("model.loading", path=self._model_path)
+        log.info("agent.strategy.rl.deploy.model_loading", path=self._model_path)
         try:
             from agent.strategies.checksum import SecurityError, verify_checksum  # noqa: PLC0415
 
             verify_checksum(Path(self._model_path))
         except SecurityError as exc_sec:
-            log.error("model.checksum_mismatch", path=self._model_path, error=str(exc_sec))
+            log.error("agent.strategy.rl.deploy.model.checksum_mismatch", path=self._model_path, error=str(exc_sec))
             raise
         except Exception as exc_cs:  # noqa: BLE001
-            log.warning("model.checksum_check_failed", path=self._model_path, error=str(exc_cs))
+            log.warning("agent.strategy.rl.deploy.model.checksum_check_failed", path=self._model_path, error=str(exc_cs))
         self._model = PPO.load(self._model_path)
-        log.info("model.loaded", path=self._model_path)
+        log.info("agent.strategy.rl.deploy.model_loaded", path=self._model_path)
 
     # ── Backtest mode ─────────────────────────────────────────────────────────
 
@@ -584,7 +584,7 @@ class PPODeployBridge:
         headers = {"X-API-Key": self._config.platform_api_key}
 
         async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=30.0) as client:
-            log.info("deploy.backtest.start", session_id=session_id, n_steps=n_steps)
+            log.info("agent.strategy.rl.deploy.backtest.start", session_id=session_id, n_steps=n_steps)
 
             for step_idx in range(n_steps):
                 step_error: str | None = None
@@ -668,7 +668,7 @@ class PPODeployBridge:
                             _order_resp.raise_for_status()
                             updated_orders.append(order)
                             log.debug(
-                                "order.placed",
+                                "agent.strategy.rl.deploy.order.placed",
                                 step=step_idx,
                                 symbol=order.symbol,
                                 side=order.side,
@@ -682,7 +682,7 @@ class PPODeployBridge:
                                 )
                             )
                             log.warning(
-                                "order.failed",
+                                "agent.strategy.rl.deploy.order.failed",
                                 step=step_idx,
                                 symbol=order.symbol,
                                 side=order.side,
@@ -717,7 +717,7 @@ class PPODeployBridge:
                     )
 
                 except Exception as exc:  # noqa: BLE001
-                    log.exception("step.failed", step=step_idx, error=str(exc))
+                    log.exception("agent.strategy.rl.deploy.step.failed", step=step_idx, error=str(exc))
                     step_error = str(exc)
                     equity = final_equity
                     weights_before = {s: 0.0 for s in self._config.env_symbols}
@@ -739,7 +739,7 @@ class PPODeployBridge:
                 )
 
                 if done:
-                    log.info("deploy.backtest.terminated", step=step_idx)
+                    log.info("agent.strategy.rl.deploy.backtest.terminated", step=step_idx)
                     break
 
         total_placed = sum(1 for sr in step_records for o in sr.orders if o.placed)
@@ -804,7 +804,7 @@ class PPODeployBridge:
             final_equity = start_equity
 
             log.info(
-                "deploy.live.start",
+                "agent.strategy.rl.deploy.live.start",
                 n_steps=n_steps,
                 symbols=self._config.env_symbols,
                 start_equity=str(start_equity),
@@ -894,7 +894,7 @@ class PPODeployBridge:
                             )
                             updated_orders.append(order)
                             log.info(
-                                "order.placed",
+                                "agent.strategy.rl.deploy.order.placed",
                                 step=step_idx,
                                 symbol=order.symbol,
                                 side=order.side,
@@ -908,7 +908,7 @@ class PPODeployBridge:
                                 )
                             )
                             log.warning(
-                                "order.failed",
+                                "agent.strategy.rl.deploy.order.failed",
                                 step=step_idx,
                                 symbol=order.symbol,
                                 side=order.side,
@@ -935,7 +935,7 @@ class PPODeployBridge:
                     )
 
                 except Exception as exc:  # noqa: BLE001
-                    log.exception("step.failed", step=step_idx, error=str(exc))
+                    log.exception("agent.strategy.rl.deploy.step.failed", step=step_idx, error=str(exc))
                     step_error = str(exc)
                     equity = final_equity
                     weights_before = {s: 0.0 for s in self._config.env_symbols}
@@ -994,7 +994,7 @@ def _save_deploy_log(deploy_log: DeployLog, output_dir: Path) -> Path:
     filename = f"deploy-log-{deploy_log.mode}-{ts}.json"
     path = output_dir / filename
     path.write_text(deploy_log.model_dump_json(indent=2), encoding="utf-8")
-    log.info("deploy_log.saved", path=str(path))
+    log.info("agent.strategy.rl.deploy.log_saved", path=str(path))
     return path
 
 
@@ -1007,23 +1007,9 @@ def _configure_logging(verbose: bool) -> None:
     Args:
         verbose: When ``True``, enable DEBUG-level output.
     """
-    import logging  # noqa: PLC0415
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
 
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(message)s",
-    )
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer(),
-        ],
-        wrapper_class=structlog.BoundLogger,
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-    )
+    configure_agent_logging(log_level="DEBUG" if verbose else "INFO")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -1122,7 +1108,7 @@ def main() -> None:
     try:
         config = RLConfig()
     except Exception as exc:
-        log.error("config.load_failed", error=str(exc))
+        log.error("agent.strategy.rl.deploy.config.load_failed", error=str(exc))
         sys.exit(1)
 
     overrides: dict[str, Any] = {}
@@ -1133,7 +1119,7 @@ def main() -> None:
 
     if not config.platform_api_key:
         log.error(
-            "config.missing_api_key",
+            "agent.strategy.rl.deploy.config.missing_api_key",
             hint="Set RL_PLATFORM_API_KEY in agent/.env or as environment variable",
         )
         sys.exit(1)
@@ -1152,7 +1138,7 @@ def main() -> None:
 
     if model_path is None or not Path(model_path).exists():
         log.error(
-            "deploy.model_not_found",
+            "agent.strategy.rl.deploy.model_not_found",
             path=model_path,
             hint="Train a model first with: python -m agent.strategies.rl.runner",
         )
@@ -1175,7 +1161,7 @@ def main() -> None:
         if args.mode == "backtest":
             if args.session_id is None:
                 log.error(
-                    "deploy.missing_session_id",
+                    "agent.strategy.rl.deploy.missing_session_id",
                     hint="Provide --session-id <uuid> for backtest mode.",
                 )
                 sys.exit(1)
@@ -1190,26 +1176,28 @@ def main() -> None:
                 )
             )
     except KeyboardInterrupt:
-        log.info("deploy.interrupted")
+        log.info("agent.strategy.rl.deploy.interrupted")
         sys.exit(0)
     except Exception as exc:
-        log.exception("deploy.failed", error=str(exc))
+        log.exception("agent.strategy.rl.deploy.failed", error=str(exc))
         sys.exit(1)
 
     saved_path = _save_deploy_log(deploy_log, output_dir)
 
-    # Print summary.
-    print("\n=== PPO Deploy Summary ===")
-    print(f"Mode        : {deploy_log.mode}")
-    print(f"Session ID  : {deploy_log.session_id}")
-    print(f"Model       : {deploy_log.model_path}")
-    print(f"Steps       : {deploy_log.total_steps}")
-    print(f"Orders placed  : {deploy_log.total_orders_placed}")
-    print(f"Orders skipped : {deploy_log.total_orders_skipped}")
-    print(f"Start equity   : {deploy_log.start_equity} USDT")
-    print(f"Final equity   : {deploy_log.final_equity} USDT")
-    print(f"Wall time   : {deploy_log.wall_time_sec:.1f}s")
-    print(f"Log file    : {saved_path}")
+    # Log deploy summary.
+    log.info(
+        "agent.strategy.rl.deploy.summary",
+        mode=deploy_log.mode,
+        session_id=deploy_log.session_id,
+        model_path=deploy_log.model_path,
+        total_steps=deploy_log.total_steps,
+        orders_placed=deploy_log.total_orders_placed,
+        orders_skipped=deploy_log.total_orders_skipped,
+        start_equity=str(deploy_log.start_equity),
+        final_equity=str(deploy_log.final_equity),
+        wall_time_sec=round(deploy_log.wall_time_sec, 1),
+        log_file=str(saved_path),
+    )
 
 
 if __name__ == "__main__":

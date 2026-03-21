@@ -1,6 +1,6 @@
 # Database Repositories
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Async repository layer providing typed CRUD methods for all database models; the sole interface between service code and SQLAlchemy/TimescaleDB.
 
@@ -26,6 +26,8 @@ Every database table has a corresponding repository class that encapsulates all 
 | `test_run_repo.py` | `TestRunRepository` (extends `StrategyRepository`) -- focused interface for test orchestrator and Celery tasks |
 | `training_repo.py` | `TrainingRunRepository` -- CRUD for `training_runs` and `training_episodes`, episode tracking, run comparison |
 | `waitlist_repo.py` | Single-method repository for the `waitlist_entries` table -- add email to waitlist with duplicate detection |
+| `agent_api_call_repo.py` | `AgentApiCallRepository` -- insert and query `agent_api_calls` rows: bulk save, list by agent/trace_id, aggregate latency/cost stats |
+| `agent_strategy_signal_repo.py` | `AgentStrategySignalRepository` -- insert and query `agent_strategy_signals` rows: bulk save, list by agent/source/action, daily attribution query |
 
 ## Architecture & Patterns
 
@@ -199,4 +201,5 @@ Repositories are instantiated by FastAPI dependency functions in `src/dependenci
 
 ## Recent Changes
 
+- `2026-03-21` — Added `AgentApiCallRepository` (`agent_api_call_repo.py`) and `AgentStrategySignalRepository` (`agent_strategy_signal_repo.py`) for the Agent Logging System. Both support bulk save (used by `LogBatchWriter`) and analytics queries (used by Celery attribution tasks).
 - `2026-03-17` -- Initial CLAUDE.md created

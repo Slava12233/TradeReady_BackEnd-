@@ -287,7 +287,7 @@ def _run_episode(
             )
 
         log.info(
-            "episode.complete",
+            "agent.strategy.rl.evaluate.episode.complete",
             name=name,
             sharpe=result.sharpe_ratio,
             roi_pct=result.roi_pct,
@@ -298,7 +298,7 @@ def _run_episode(
         return result
 
     except Exception as exc:  # noqa: BLE001
-        log.exception("episode.failed", name=name, error=str(exc))
+        log.exception("agent.strategy.rl.evaluate.episode.failed", name=name, error=str(exc))
         return StrategyMetrics(name=name, is_benchmark=is_benchmark, error=str(exc))
 
 
@@ -372,7 +372,7 @@ class ModelEvaluator:
         try:
             from stable_baselines3 import PPO  # noqa: PLC0415
         except ImportError:
-            log.error("evaluate.sb3_not_installed")
+            log.error("agent.strategy.rl.evaluate.sb3_not_installed")
             return {}
 
         from agent.strategies.checksum import SecurityError, verify_checksum  # noqa: PLC0415
@@ -386,7 +386,7 @@ class ModelEvaluator:
                     verify_checksum(path)
                 except SecurityError as exc_sec:
                     log.error(
-                        "model.checksum_mismatch",
+                        "agent.strategy.rl.evaluate.model.checksum_mismatch",
                         label=label,
                         path=str(path),
                         error=str(exc_sec),
@@ -394,15 +394,15 @@ class ModelEvaluator:
                     continue  # skip tampered model; do not load it
                 except Exception as exc_cs:  # noqa: BLE001
                     log.warning(
-                        "model.checksum_check_failed",
+                        "agent.strategy.rl.evaluate.model.checksum_check_failed",
                         label=label,
                         path=str(path),
                         error=str(exc_cs),
                     )
                 models[label] = PPO.load(str(path))
-                log.info("model.loaded", label=label, path=str(path))
+                log.info("agent.strategy.rl.evaluate.model.loaded", label=label, path=str(path))
             except Exception as exc:  # noqa: BLE001
-                log.warning("model.load_failed", label=label, error=str(exc))
+                log.warning("agent.strategy.rl.evaluate.model.load_failed", label=label, error=str(exc))
         return models
 
     def _make_test_env_factory(self) -> Any:
@@ -523,15 +523,15 @@ class ModelEvaluator:
             if key in all_models:
                 all_models = {key: all_models[key]}
             else:
-                log.warning("evaluate.seed_not_found", seed=seed_filter, available=list(all_models))
+                log.warning("agent.strategy.rl.evaluate.seed_not_found", seed=seed_filter, available=list(all_models))
                 all_models = {}
 
-        log.info("evaluate.start", n_models=len(all_models), symbols=self._config.env_symbols)
+        log.info("agent.strategy.rl.evaluate.start", n_models=len(all_models), symbols=self._config.env_symbols)
 
         # ── Evaluate individual PPO models ─────────────────────────────────────
         ppo_results: list[StrategyMetrics] = []
         for label, model in all_models.items():
-            log.info("evaluate.model", label=label)
+            log.info("agent.strategy.rl.evaluate.model", label=label)
             result = _run_episode(
                 make_env=make_env,
                 action_fn=lambda obs, m=model: m.predict(obs, deterministic=True)[0],
@@ -548,7 +548,7 @@ class ModelEvaluator:
         ]
         benchmark_results: list[StrategyMetrics] = []
         for bname, baction in benchmark_defs:
-            log.info("evaluate.benchmark", name=bname)
+            log.info("agent.strategy.rl.evaluate.benchmark", name=bname)
             result = _run_episode(
                 make_env=make_env,
                 action_fn=baction,
@@ -561,7 +561,7 @@ class ModelEvaluator:
         # ── Ensemble (>= 3 models) ─────────────────────────────────────────────
         ensemble: StrategyMetrics | None = None
         if len(all_models) >= 3:
-            log.info("evaluate.ensemble", n_models=len(all_models))
+            log.info("agent.strategy.rl.evaluate.ensemble", n_models=len(all_models))
             ensemble = _run_ensemble_episode(
                 make_env=make_env,
                 models=list(all_models.values()),
@@ -590,7 +590,7 @@ class ModelEvaluator:
         )
 
         log.info(
-            "evaluate.done",
+            "agent.strategy.rl.evaluate.done",
             n_ppo=len(ppo_results),
             n_benchmarks=len(benchmark_results),
             ensemble=ensemble is not None,
@@ -619,7 +619,7 @@ def _save_report(report: EvaluationReport, output_dir: Path) -> Path:
     filename = f"ppo-evaluation-{ts}.json"
     path = output_dir / filename
     path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    log.info("report.saved", path=str(path))
+    log.info("agent.strategy.rl.evaluate.report_saved", path=str(path))
     return path
 
 
@@ -632,23 +632,9 @@ def _configure_logging(verbose: bool) -> None:
     Args:
         verbose: When ``True``, enable DEBUG-level output.
     """
-    import logging  # noqa: PLC0415
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
 
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(message)s",
-    )
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer(),
-        ],
-        wrapper_class=structlog.BoundLogger,
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-    )
+    configure_agent_logging(log_level="DEBUG" if verbose else "INFO")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -733,7 +719,7 @@ def main() -> None:
     try:
         config = RLConfig()
     except Exception as exc:
-        log.error("config.load_failed", error=str(exc))
+        log.error("agent.strategy.rl.evaluate.config_load_failed", error=str(exc))
         sys.exit(1)
 
     # Apply CLI overrides.
@@ -749,7 +735,7 @@ def main() -> None:
 
     if not config.platform_api_key:
         log.error(
-            "config.missing_api_key",
+            "agent.strategy.rl.evaluate.config_missing_api_key",
             hint="Set RL_PLATFORM_API_KEY in agent/.env or as environment variable",
         )
         sys.exit(1)
@@ -763,39 +749,41 @@ def main() -> None:
     )
 
     if not model_dir.exists():
-        log.error("evaluate.model_dir_not_found", path=str(model_dir))
+        log.error("agent.strategy.rl.evaluate.model_dir_not_found", path=str(model_dir))
         sys.exit(1)
 
     evaluator = ModelEvaluator(config)
     report = evaluator.evaluate(model_dir=model_dir, seed_filter=args.seed)
     saved_path = _save_report(report, output_dir)
 
-    # Print a summary table to stdout.
-    print("\n=== PPO Evaluation Report ===")
-    print(f"Test period : {report.test_start} -> {report.test_end}")
-    print(f"Assets      : {', '.join(report.symbols)}")
-    print(f"Best model  : {report.best_strategy or 'N/A'}")
-    print(f"Report file : {saved_path}")
-    print()
-
-    header = f"{'Strategy':<35} {'Sharpe':>8} {'ROI%':>8} {'MaxDD%':>8} {'WinRate':>8} {'Trades':>7}"
-    print(header)
-    print("-" * len(header))
+    # Log a summary.
     all_entries = list(report.strategies)
     if report.ensemble is not None:
         all_entries.insert(len([s for s in all_entries if not s.is_benchmark]), report.ensemble)
-    for s in all_entries:
-        marker = " [B]" if s.is_benchmark else ("  [E]" if s.name == "ensemble_mean" else "")
-        sharpe_str = f"{s.sharpe_ratio:.3f}" if s.sharpe_ratio is not None else "N/A"
-        roi_str = f"{s.roi_pct:.2f}" if s.roi_pct is not None else "N/A"
-        dd_str = f"{s.max_drawdown_pct:.2f}" if s.max_drawdown_pct is not None else "N/A"
-        wr_str = f"{s.win_rate:.3f}" if s.win_rate is not None else "N/A"
-        print(
-            f"{s.name + marker:<35} {sharpe_str:>8} {roi_str:>8} {dd_str:>8} {wr_str:>8} {s.total_trades:>7}"
-        )
 
-    print()
-    print(f"Wall time   : {report.total_wall_time_sec:.1f}s")
+    strategy_rows = []
+    for s in all_entries:
+        kind = "benchmark" if s.is_benchmark else ("ensemble" if s.name == "ensemble_mean" else "strategy")
+        strategy_rows.append({
+            "name": s.name,
+            "kind": kind,
+            "sharpe": round(s.sharpe_ratio, 3) if s.sharpe_ratio is not None else None,
+            "roi_pct": round(s.roi_pct, 2) if s.roi_pct is not None else None,
+            "max_drawdown_pct": round(s.max_drawdown_pct, 2) if s.max_drawdown_pct is not None else None,
+            "win_rate": round(s.win_rate, 3) if s.win_rate is not None else None,
+            "total_trades": s.total_trades,
+        })
+
+    log.info(
+        "agent.strategy.rl.evaluate.report_summary",
+        test_start=str(report.test_start),
+        test_end=str(report.test_end),
+        assets=report.symbols,
+        best_model=report.best_strategy or "N/A",
+        report_file=str(saved_path),
+        strategies=strategy_rows,
+        wall_time_sec=round(report.total_wall_time_sec, 1),
+    )
 
 
 if __name__ == "__main__":

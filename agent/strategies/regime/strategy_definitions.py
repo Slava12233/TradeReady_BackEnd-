@@ -278,7 +278,7 @@ async def create_regime_strategies(
         name, description = _REGIME_METADATA[regime]
 
         logger.info(
-            "regime_strategy.creating",
+            "agent.strategy.regime.strategy.creating",
             regime=regime.value,
             name=name,
             agent_id=agent_id,
@@ -310,14 +310,14 @@ async def create_regime_strategies(
 
         strategy_ids[regime] = strategy_id
         logger.info(
-            "regime_strategy.created",
+            "agent.strategy.regime.strategy.created",
             regime=regime.value,
             strategy_id=strategy_id,
             agent_id=agent_id,
         )
 
     logger.info(
-        "regime_strategy.all_created",
+        "agent.strategy.regime.strategy.all_created",
         agent_id=agent_id,
         count=len(strategy_ids),
         strategy_ids={r.value: sid for r, sid in strategy_ids.items()},

@@ -190,14 +190,14 @@ class PositionMonitor:
             no positions are open or the SDK is unavailable.
         """
         if self._sdk_client is None:
-            self._log.debug("position_monitor.check.no_sdk_client")
+            self._log.debug("agent.trade.monitor.check.no_sdk_client")
             return []
 
         # ── Fetch open positions ─────────────────────────────────────────
         positions = await self._fetch_positions()
         if not positions:
             self._log.debug(
-                "position_monitor.check.no_positions",
+                "agent.trade.monitor.check.no_positions",
                 agent_id=agent_id,
             )
             return []
@@ -211,7 +211,7 @@ class PositionMonitor:
 
         non_hold = [a for a in actions if a.action != "hold"]
         self._log.info(
-            "position_monitor.check.complete",
+            "agent.trade.monitor.check.complete",
             agent_id=agent_id,
             total_positions=len(positions),
             exit_actions=len(non_hold),
@@ -259,7 +259,7 @@ class PositionMonitor:
                 )
             except Exception as exc:  # noqa: BLE001
                 self._log.error(
-                    "position_monitor.exit.permission_error",
+                    "agent.trade.monitor.exit.permission_error",
                     symbol=action.symbol,
                     error=str(exc),
                 )
@@ -267,7 +267,7 @@ class PositionMonitor:
 
             if not enforcement.allowed:
                 self._log.info(
-                    "position_monitor.exit.permission_denied",
+                    "agent.trade.monitor.exit.permission_denied",
                     symbol=action.symbol,
                     reason=enforcement.reason,
                 )
@@ -297,7 +297,7 @@ class PositionMonitor:
             )
 
             self._log.info(
-                "position_monitor.exit.executing",
+                "agent.trade.monitor.exit.executing",
                 symbol=action.symbol,
                 action=action.action,
                 exit_pct=action.exit_pct,
@@ -310,14 +310,14 @@ class PositionMonitor:
 
             if result.success:
                 self._log.info(
-                    "position_monitor.exit.success",
+                    "agent.trade.monitor.exit.success",
                     symbol=action.symbol,
                     order_id=result.order_id,
                     fill_price=str(result.fill_price) if result.fill_price else None,
                 )
             else:
                 self._log.error(
-                    "position_monitor.exit.failed",
+                    "agent.trade.monitor.exit.failed",
                     symbol=action.symbol,
                     error=result.error_message,
                 )
@@ -342,14 +342,14 @@ class PositionMonitor:
                 return raw
             if isinstance(raw, dict) and "error" in raw:
                 self._log.warning(
-                    "position_monitor.fetch_positions.sdk_error",
+                    "agent.trade.monitor.fetch_positions.sdk_error",
                     error=raw.get("error"),
                 )
                 return []
             return []
         except Exception as exc:  # noqa: BLE001
             self._log.warning(
-                "position_monitor.fetch_positions.exception",
+                "agent.trade.monitor.fetch_positions.exception",
                 error=str(exc),
             )
             return []
@@ -443,7 +443,7 @@ class PositionMonitor:
 
         # ── 4. Hold ──────────────────────────────────────────────────────
         self._log.debug(
-            "position_monitor.evaluate.hold",
+            "agent.trade.monitor.evaluate.hold",
             symbol=symbol,
             pnl_pct=f"{pnl_pct:.4f}",
             hold_seconds=int(hold_seconds),

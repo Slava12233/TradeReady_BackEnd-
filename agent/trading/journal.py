@@ -206,7 +206,7 @@ class TradingJournal:
             from src.database.session import get_session_factory  # noqa: PLC0415
         except ImportError as exc:
             self._log.warning(
-                "journal.record_decision.import_failed",
+                "agent.trade.journal.record_decision.import_failed",
                 error=str(exc),
                 hint="DB unavailable — skipping decision persistence.",
             )
@@ -233,7 +233,7 @@ class TradingJournal:
             agent_uuid = UUID(agent_id)
         except (ValueError, AttributeError) as exc:
             self._log.error(
-                "journal.record_decision.invalid_agent_id",
+                "agent.trade.journal.record_decision.invalid_agent_id",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -261,7 +261,7 @@ class TradingJournal:
                 decision_id = str(row.id)
 
             self._log.info(
-                "journal.record_decision.success",
+                "agent.trade.journal.record_decision.success",
                 decision_id=decision_id,
                 agent_id=agent_id,
                 symbol=decision.symbol,
@@ -272,7 +272,7 @@ class TradingJournal:
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "journal.record_decision.db_error",
+                "agent.trade.journal.record_decision.db_error",
                 agent_id=agent_id,
                 symbol=decision.symbol,
                 error=str(exc),
@@ -310,7 +310,7 @@ class TradingJournal:
             from src.database.session import get_session_factory  # noqa: PLC0415
         except ImportError as exc:
             self._log.warning(
-                "journal.record_outcome.import_failed",
+                "agent.trade.journal.record_outcome.import_failed",
                 error=str(exc),
                 hint="DB unavailable — skipping outcome persistence.",
             )
@@ -320,7 +320,7 @@ class TradingJournal:
             decision_uuid = UUID(decision_id)
         except (ValueError, AttributeError) as exc:
             self._log.error(
-                "journal.record_outcome.invalid_decision_id",
+                "agent.trade.journal.record_outcome.invalid_decision_id",
                 decision_id=decision_id,
                 error=str(exc),
             )
@@ -352,7 +352,7 @@ class TradingJournal:
                 await session.flush()
 
             self._log.info(
-                "journal.record_outcome.success",
+                "agent.trade.journal.record_outcome.success",
                 decision_id=decision_id,
                 pnl=str(pnl),
                 hold_duration=hold_duration,
@@ -360,7 +360,7 @@ class TradingJournal:
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "journal.record_outcome.db_error",
+                "agent.trade.journal.record_outcome.db_error",
                 decision_id=decision_id,
                 error=str(exc),
             )
@@ -392,7 +392,7 @@ class TradingJournal:
 
         if decision_row is None:
             self._log.warning(
-                "journal.generate_reflection.decision_not_found",
+                "agent.trade.journal.generate_reflection.decision_not_found",
                 decision_id=decision_id,
             )
             return self._empty_journal_entry("reflection")
@@ -439,7 +439,7 @@ class TradingJournal:
         )
 
         self._log.info(
-            "journal.generate_reflection.success",
+            "agent.trade.journal.generate_reflection.success",
             decision_id=decision_id,
             entry_id=entry_id,
             pnl=pnl_str,
@@ -476,7 +476,7 @@ class TradingJournal:
             from src.database.session import get_session_factory  # noqa: PLC0415
         except ImportError as exc:
             self._log.warning(
-                "journal.get_entries.import_failed",
+                "agent.trade.journal.get_entries.import_failed",
                 error=str(exc),
             )
             return []
@@ -485,7 +485,7 @@ class TradingJournal:
             agent_uuid = UUID(agent_id)
         except (ValueError, AttributeError) as exc:
             self._log.error(
-                "journal.get_entries.invalid_agent_id",
+                "agent.trade.journal.get_entries.invalid_agent_id",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -495,7 +495,7 @@ class TradingJournal:
         safe_type: str | None = entry_type
         if entry_type is not None and entry_type not in _VALID_ENTRY_TYPES:
             self._log.warning(
-                "journal.get_entries.unknown_entry_type",
+                "agent.trade.journal.get_entries.unknown_entry_type",
                 entry_type=entry_type,
             )
             safe_type = None
@@ -525,7 +525,7 @@ class TradingJournal:
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "journal.get_entries.db_error",
+                "agent.trade.journal.get_entries.db_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -598,7 +598,7 @@ class TradingJournal:
         )
 
         self._log.info(
-            "journal.daily_summary.success",
+            "agent.trade.journal.daily_summary.success",
             agent_id=agent_id,
             date=str(today_start.date()),
             decisions=len(decisions),
@@ -698,7 +698,7 @@ class TradingJournal:
         )
 
         self._log.info(
-            "journal.weekly_review.success",
+            "agent.trade.journal.weekly_review.success",
             agent_id=agent_id,
             decisions=len(decisions),
             entry_id=entry_id,
@@ -766,7 +766,7 @@ class TradingJournal:
                 }
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "journal.fetch_decision.error",
+                "agent.trade.journal.fetch_decision.error",
                 decision_id=decision_id,
                 error=str(exc),
             )
@@ -842,7 +842,7 @@ class TradingJournal:
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "journal.fetch_decisions_range.error",
+                "agent.trade.journal.fetch_decisions_range.error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -905,7 +905,7 @@ class TradingJournal:
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "journal.persist_journal_entry.error",
+                "agent.trade.journal.persist_journal_entry.error",
                 agent_id=agent_id,
                 entry_type=entry_type,
                 error=str(exc),
@@ -936,7 +936,7 @@ class TradingJournal:
             from pydantic_ai import Agent as PydanticAIAgent  # noqa: PLC0415
         except ImportError:
             self._log.debug(
-                "journal.llm_reflection.pydantic_ai_unavailable",
+                "agent.trade.journal.llm_reflection.pydantic_ai_unavailable",
                 hint="Falling back to template reflection.",
             )
             return None
@@ -965,6 +965,10 @@ class TradingJournal:
         )
 
         try:
+            import time as _time  # noqa: PLC0415
+
+            from agent.logging_middleware import estimate_llm_cost  # noqa: PLC0415
+
             reflection_agent = PydanticAIAgent(
                 model=self._config.agent_cheap_model,
                 output_type=TradeReflection,
@@ -974,10 +978,32 @@ class TradingJournal:
                     "and concrete lessons. Be specific and quantitative where possible."
                 ),
             )
+            _llm_start = _time.monotonic()
             result = await reflection_agent.run(prompt)
+            _latency_ms = round((_time.monotonic() - _llm_start) * 1000, 2)
+
             reflection: TradeReflection = result.output
+            _input_tokens: int | None = getattr(
+                getattr(result, "usage", None), "input_tokens", None
+            )
+            _output_tokens: int | None = getattr(
+                getattr(result, "usage", None), "output_tokens", None
+            )
+            self._log.info(
+                "agent.llm.completed",
+                model=self._config.agent_cheap_model,
+                purpose="trade_reflection",
+                input_tokens=_input_tokens,
+                output_tokens=_output_tokens,
+                latency_ms=_latency_ms,
+                cost_estimate_usd=estimate_llm_cost(
+                    self._config.agent_cheap_model,
+                    _input_tokens or 0,
+                    _output_tokens or 0,
+                ),
+            )
             self._log.debug(
-                "journal.llm_reflection.success",
+                "agent.trade.journal.llm_reflection.success",
                 symbol=symbol,
                 pnl=pnl_str,
                 learnings_count=len(reflection.learnings),
@@ -986,10 +1012,16 @@ class TradingJournal:
 
         except Exception as exc:  # noqa: BLE001
             self._log.warning(
-                "journal.llm_reflection.llm_error",
+                "agent.trade.journal.llm_reflection.llm_error",
                 symbol=symbol,
                 error=str(exc),
                 hint="Falling back to template reflection.",
+            )
+            self._log.error(
+                "agent.llm.failed",
+                model=self._config.agent_cheap_model,
+                purpose="trade_reflection",
+                error=str(exc),
             )
             return None
 
@@ -1096,7 +1128,7 @@ class TradingJournal:
 
         if self._memory_store is None:
             self._log.debug(
-                "journal.save_learnings.no_store",
+                "agent.trade.journal.save_learnings.no_store",
                 hint="No memory store injected — skipping learning persistence.",
             )
             return
@@ -1104,7 +1136,7 @@ class TradingJournal:
         try:
             from agent.memory.store import Memory, MemoryType  # noqa: PLC0415
         except ImportError:
-            self._log.debug("journal.save_learnings.import_failed")
+            self._log.debug("agent.trade.journal.save_learnings.import_failed")
             return
 
         now = datetime.now(UTC)
@@ -1125,7 +1157,7 @@ class TradingJournal:
                 await self._memory_store.save(mem)
             except Exception as exc:  # noqa: BLE001
                 self._log.warning(
-                    "journal.save_learnings.save_error",
+                    "agent.trade.journal.save_learnings.save_error",
                     content_preview=content[:60],
                     error=str(exc),
                 )
@@ -1134,7 +1166,7 @@ class TradingJournal:
         await asyncio.gather(*[_save_one(item) for item in learnings])
 
         self._log.debug(
-            "journal.save_learnings.success",
+            "agent.trade.journal.save_learnings.success",
             agent_id=agent_id,
             count=len(learnings),
             source=source,

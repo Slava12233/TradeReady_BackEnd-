@@ -47,7 +47,6 @@ import asyncio
 import json
 from collections import deque
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +54,7 @@ import httpx
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent.logging_writer import LogBatchWriter
 from agent.strategies.ensemble.config import EnsembleConfig
 from agent.strategies.ensemble.meta_learner import MetaLearner
 from agent.strategies.ensemble.signals import (
@@ -129,7 +129,7 @@ class StepResult(BaseModel):
 
     step_number: int
     timestamp: str
-    symbol_results: list["SymbolStepResult"]
+    symbol_results: list[SymbolStepResult]
     total_signals: int
     signals_acted_on: int
     orders_placed: int
@@ -346,6 +346,16 @@ class EnsembleRunner:
         rest_client: An ``httpx.AsyncClient`` pointed at the platform REST API.
             Used for backtest session management (create, start, step, results)
             and candle fetching.  Can be ``None`` in live mode.
+        batch_writer: Optional :class:`~agent.logging_writer.LogBatchWriter`
+            for persisting per-strategy signal records.  When provided, every
+            :class:`WeightedSignal` produced during :meth:`step` is recorded
+            via :meth:`~agent.logging_writer.LogBatchWriter.add_signal` with
+            the current trace ID from ``contextvars``.  Pass ``None`` (the
+            default) to disable signal logging without affecting any other
+            behaviour.
+        agent_id: UUID string of the owning agent.  Required when
+            *batch_writer* is set so that signal rows carry a valid
+            ``agent_id`` FK.  Ignored when *batch_writer* is ``None``.
 
     Example::
 
@@ -363,10 +373,14 @@ class EnsembleRunner:
         config: EnsembleConfig,
         sdk_client: Any,
         rest_client: Any,
+        batch_writer: LogBatchWriter | None = None,
+        agent_id: str | None = None,
     ) -> None:
         self._config = config
         self._sdk = sdk_client
         self._rest = rest_client
+        self._batch_writer = batch_writer
+        self._agent_id_str = agent_id or ""
 
         # Parsed weights keyed by SignalSource enum for MetaLearner.
         self._signal_source_weights: dict[SignalSource, float] = {}
@@ -400,7 +414,7 @@ class EnsembleRunner:
                 fallback is available.
         """
         log.info(
-            "ensemble_runner.initialize",
+            "agent.strategy.ensemble.runner.initialize",
             mode=self._config.mode,
             enable_rl=self._config.enable_rl_signal,
             enable_evolved=self._config.enable_evolved_signal,
@@ -422,7 +436,7 @@ class EnsembleRunner:
             min_agreement_rate=self._config.min_agreement_rate,
         )
         log.info(
-            "ensemble_runner.meta_learner_ready",
+            "agent.strategy.ensemble.runner.meta_learner_ready",
             weights={s.value: round(w, 4) for s, w in self._signal_source_weights.items()},
         )
 
@@ -442,7 +456,7 @@ class EnsembleRunner:
         if self._config.enable_risk_overlay and self._sdk is not None:
             self._risk_middleware = self._build_risk_middleware()
 
-        log.info("ensemble_runner.initialized")
+        log.info("agent.strategy.ensemble.runner.initialized")
 
     async def _load_rl_model(self) -> Any:
         """Load the SB3 PPO model from disk.
@@ -457,7 +471,7 @@ class EnsembleRunner:
             from stable_baselines3 import PPO  # noqa: PLC0415
         except ImportError:
             log.warning(
-                "ensemble_runner.rl_model_skipped",
+                "agent.strategy.ensemble.runner.rl_model_skipped",
                 reason="stable-baselines3 not installed",
             )
             return None
@@ -477,12 +491,12 @@ class EnsembleRunner:
 
         if not model_path_str or not Path(model_path_str).exists():
             log.warning(
-                "ensemble_runner.rl_model_not_found",
+                "agent.strategy.ensemble.runner.rl_model_not_found",
                 hint="Train a model with: python -m agent.strategies.rl.runner",
             )
             return None
 
-        log.info("ensemble_runner.loading_rl_model", path=model_path_str)
+        log.info("agent.strategy.ensemble.runner.loading_rl_model", path=model_path_str)
         # Verify SHA-256 integrity before deserializing the pickle-based .zip.
         try:
             from agent.strategies.checksum import SecurityError, verify_checksum  # noqa: PLC0415
@@ -490,19 +504,19 @@ class EnsembleRunner:
             verify_checksum(Path(model_path_str))
         except SecurityError as exc_sec:
             log.error(
-                "ensemble_runner.rl_model_checksum_mismatch",
+                "agent.strategy.ensemble.runner.rl_model_checksum_mismatch",
                 path=model_path_str,
                 error=str(exc_sec),
             )
             return None
         except Exception as exc_cs:  # noqa: BLE001
             log.warning(
-                "ensemble_runner.rl_model_checksum_check_failed",
+                "agent.strategy.ensemble.runner.rl_model_checksum_check_failed",
                 path=model_path_str,
                 error=str(exc_cs),
             )
         model = PPO.load(model_path_str)
-        log.info("ensemble_runner.rl_model_loaded", path=model_path_str)
+        log.info("agent.strategy.ensemble.runner.rl_model_loaded", path=model_path_str)
         return model
 
     def _load_evolved_genome(self) -> Any:
@@ -517,22 +531,22 @@ class EnsembleRunner:
         genome_path_str = self._config.evolved_genome_path.strip()
 
         if genome_path_str and Path(genome_path_str).exists():
-            log.info("ensemble_runner.loading_evolved_genome", path=genome_path_str)
+            log.info("agent.strategy.ensemble.runner.loading_evolved_genome", path=genome_path_str)
             try:
                 genome_data = json.loads(Path(genome_path_str).read_text(encoding="utf-8"))
                 genome = StrategyGenome(**genome_data)
-                log.info("ensemble_runner.evolved_genome_loaded", path=genome_path_str)
+                log.info("agent.strategy.ensemble.runner.evolved_genome_loaded", path=genome_path_str)
                 return genome
             except Exception as exc:  # noqa: BLE001
                 log.warning(
-                    "ensemble_runner.evolved_genome_load_failed",
+                    "agent.strategy.ensemble.runner.evolved_genome_load_failed",
                     path=genome_path_str,
                     error=str(exc),
                     fallback="random_seed42",
                 )
 
         # Fallback: deterministic default genome with seed 42.
-        log.info("ensemble_runner.evolved_genome_fallback", seed=42)
+        log.info("agent.strategy.ensemble.runner.evolved_genome_fallback", seed=42)
         return StrategyGenome.from_random(seed=42)
 
     async def _load_regime_switcher(self) -> Any:
@@ -563,13 +577,13 @@ class EnsembleRunner:
         clf: RegimeClassifier | None = None
 
         if regime_path_str and Path(regime_path_str).exists():
-            log.info("ensemble_runner.loading_regime_classifier", path=regime_path_str)
+            log.info("agent.strategy.ensemble.runner.loading_regime_classifier", path=regime_path_str)
             try:
                 clf = RegimeClassifier.load(Path(regime_path_str))
-                log.info("ensemble_runner.regime_classifier_loaded", path=regime_path_str)
+                log.info("agent.strategy.ensemble.runner.regime_classifier_loaded", path=regime_path_str)
             except Exception as exc:  # noqa: BLE001
                 log.warning(
-                    "ensemble_runner.regime_classifier_load_failed",
+                    "agent.strategy.ensemble.runner.regime_classifier_load_failed",
                     path=regime_path_str,
                     error=str(exc),
                     fallback="synthetic_training",
@@ -579,7 +593,7 @@ class EnsembleRunner:
             # Fallback: train on synthetic data.  This is adequate for
             # smoke-testing the pipeline without a pre-trained model.
             log.info(
-                "ensemble_runner.regime_classifier_fallback",
+                "agent.strategy.ensemble.runner.regime_classifier_fallback",
                 reason="no model file found or load failed",
             )
             clf = await self._train_fallback_regime_classifier()
@@ -607,7 +621,7 @@ class EnsembleRunner:
         from agent.strategies.regime.labeler import generate_training_data  # noqa: PLC0415
         from agent.strategies.regime.switcher import _make_synthetic_candles  # noqa: PLC0415
 
-        log.info("ensemble_runner.training_fallback_regime_classifier")
+        log.info("agent.strategy.ensemble.runner.training_fallback_regime_classifier")
         candles = _make_synthetic_candles(n=600, seed=42)
         features, labels = generate_training_data(candles, window=20)
 
@@ -618,7 +632,7 @@ class EnsembleRunner:
             features.iloc[:split_idx].reset_index(drop=True),
             labels.iloc[:split_idx].reset_index(drop=True),
         )
-        log.info("ensemble_runner.fallback_regime_classifier_trained")
+        log.info("agent.strategy.ensemble.runner.fallback_regime_classifier_trained")
         return clf
 
     def _build_risk_middleware(self) -> Any:
@@ -644,7 +658,7 @@ class EnsembleRunner:
             dynamic_sizer=DynamicSizer(config=sizer_config),
             sdk_client=self._sdk,
         )
-        log.info("ensemble_runner.risk_middleware_ready")
+        log.info("agent.strategy.ensemble.runner.risk_middleware_ready")
         return middleware
 
     # ── Signal generation ─────────────────────────────────────────────────────
@@ -707,7 +721,7 @@ class EnsembleRunner:
                 self._rl_model.predict, obs, deterministic=True
             )
         except Exception as exc:  # noqa: BLE001
-            log.warning("ensemble_runner.rl_predict_failed", error=str(exc))
+            log.warning("agent.strategy.ensemble.runner.rl_predict_failed", error=str(exc))
             return [
                 WeightedSignal(
                     source=SignalSource.RL,
@@ -841,7 +855,7 @@ class EnsembleRunner:
         try:
             regime, confidence = self._regime_switcher.detect_regime(reference_candles)
         except Exception as exc:  # noqa: BLE001
-            log.warning("ensemble_runner.regime_detect_failed", error=str(exc))
+            log.warning("agent.strategy.ensemble.runner.regime_detect_failed", error=str(exc))
             return [
                 WeightedSignal(
                     source=SignalSource.REGIME,
@@ -898,7 +912,7 @@ class EnsembleRunner:
         self._step_counter += 1
 
         log.debug(
-            "ensemble_runner.step.start",
+            "agent.strategy.ensemble.runner.step.start",
             step=step_num,
             symbols=self._config.symbols,
         )
@@ -950,6 +964,32 @@ class EnsembleRunner:
                 )
                 for sym in self._config.symbols
             )
+
+        # ── 3b. Record per-source signals via batch writer ─────────────────
+        if self._batch_writer is not None:
+            from agent.logging import get_trace_id  # noqa: PLC0415
+
+            _trace_id = get_trace_id()
+            for _sig in all_signals:
+                try:
+                    await self._batch_writer.add_signal(
+                        {
+                            "trace_id": _trace_id,
+                            "agent_id": self._agent_id_str,
+                            "strategy_name": _sig.source.value,
+                            "symbol": _sig.symbol,
+                            "action": _sig.action.value,
+                            "confidence": float(_sig.confidence),
+                            "signal_data": _sig.metadata,
+                        }
+                    )
+                except Exception:  # noqa: BLE001
+                    # Non-fatal — do not let signal logging block execution.
+                    log.warning(
+                        "agent.strategy.ensemble.runner.signal_record_failed",
+                        symbol=_sig.symbol,
+                        source=_sig.source.value,
+                    )
 
         # ── 4. Combine signals via MetaLearner ─────────────────────────────
         consensus_signals: list[ConsensusSignal] = self._meta_learner.combine_all(all_signals)
@@ -1036,7 +1076,7 @@ class EnsembleRunner:
         self._step_history.append(result)
 
         log.info(
-            "ensemble_runner.step.complete",
+            "agent.strategy.ensemble.runner.step.complete",
             step=step_num,
             acted_on=signals_acted_on,
             placed=total_placed,
@@ -1073,7 +1113,7 @@ class EnsembleRunner:
             decision = await self._risk_middleware.process_signal(signal)
         except Exception as exc:  # noqa: BLE001
             log.error(
-                "ensemble_runner.risk_process_failed",
+                "agent.strategy.ensemble.runner.risk_process_failed",
                 symbol=consensus.symbol,
                 error=str(exc),
             )
@@ -1087,7 +1127,7 @@ class EnsembleRunner:
             final_decision = await self._risk_middleware.execute_if_approved(decision)
         except Exception as exc:  # noqa: BLE001
             log.error(
-                "ensemble_runner.risk_execute_failed",
+                "agent.strategy.ensemble.runner.risk_execute_failed",
                 symbol=consensus.symbol,
                 error=str(exc),
             )
@@ -1107,7 +1147,7 @@ class EnsembleRunner:
         self,
         start: str,
         end: str,
-    ) -> "EnsembleReport":
+    ) -> EnsembleReport:
         """Drive a complete backtest using the ensemble pipeline.
 
         Creates and starts a backtest session, iterates through up to
@@ -1135,7 +1175,7 @@ class EnsembleRunner:
         self._step_counter = 0
 
         log.info(
-            "ensemble_runner.backtest.start",
+            "agent.strategy.ensemble.runner.backtest.start",
             start=start,
             end=end,
             symbols=self._config.symbols,
@@ -1158,7 +1198,7 @@ class EnsembleRunner:
             create_resp.raise_for_status()
             session_id = create_resp.json().get("session_id")
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            log.error("ensemble_runner.backtest.create_failed", error=str(exc))
+            log.error("agent.strategy.ensemble.runner.backtest.create_failed", error=str(exc))
             return self._build_report(
                 session_id="error",
                 start_time=session_start_ts,
@@ -1166,7 +1206,7 @@ class EnsembleRunner:
             )
 
         if not session_id:
-            log.error("ensemble_runner.backtest.no_session_id")
+            log.error("agent.strategy.ensemble.runner.backtest.no_session_id")
             return self._build_report(
                 session_id="error",
                 start_time=session_start_ts,
@@ -1178,7 +1218,7 @@ class EnsembleRunner:
             start_resp.raise_for_status()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             log.error(
-                "ensemble_runner.backtest.start_failed",
+                "agent.strategy.ensemble.runner.backtest.start_failed",
                 session_id=session_id,
                 error=str(exc),
             )
@@ -1188,7 +1228,7 @@ class EnsembleRunner:
                 end_time=datetime.now(UTC).isoformat(),
             )
 
-        log.info("ensemble_runner.backtest.session_started", session_id=session_id)
+        log.info("agent.strategy.ensemble.runner.backtest.session_started", session_id=session_id)
 
         # ── Trading loop ───────────────────────────────────────────────────
         loop_done = False
@@ -1220,7 +1260,7 @@ class EnsembleRunner:
                 # exceptions; inner tuple exceptions are returned by the coroutine.
                 if isinstance(fetch_result, Exception):
                     log.warning(
-                        "ensemble_runner.backtest.candle_gather_error",
+                        "agent.strategy.ensemble.runner.backtest.candle_gather_error",
                         error=str(fetch_result),
                     )
                     continue
@@ -1231,13 +1271,13 @@ class EnsembleRunner:
                         loop_done = True
                         break
                     log.warning(
-                        "ensemble_runner.backtest.candle_fetch_failed",
+                        "agent.strategy.ensemble.runner.backtest.candle_fetch_failed",
                         sym=sym,
                         error=str(payload),
                     )
                 elif isinstance(payload, httpx.RequestError):
                     log.warning(
-                        "ensemble_runner.backtest.candle_request_failed",
+                        "agent.strategy.ensemble.runner.backtest.candle_request_failed",
                         sym=sym,
                         error=str(payload),
                     )
@@ -1269,21 +1309,21 @@ class EnsembleRunner:
                     loop_done = True
                 else:
                     log.warning(
-                        "ensemble_runner.backtest.step_failed",
+                        "agent.strategy.ensemble.runner.backtest.step_failed",
                         session_id=session_id,
                         error=str(exc),
                     )
                     break
             except httpx.RequestError as exc:
                 log.warning(
-                    "ensemble_runner.backtest.step_request_failed",
+                    "agent.strategy.ensemble.runner.backtest.step_request_failed",
                     session_id=session_id,
                     error=str(exc),
                 )
                 break
 
         log.info(
-            "ensemble_runner.backtest.complete",
+            "agent.strategy.ensemble.runner.backtest.complete",
             session_id=session_id,
             steps=self._step_counter,
         )
@@ -1328,14 +1368,14 @@ class EnsembleRunner:
                 )
                 resp.raise_for_status()
                 log.debug(
-                    "ensemble_runner.backtest.order_placed",
+                    "agent.strategy.ensemble.runner.backtest.order_placed",
                     symbol=sr.symbol,
                     side=sr.consensus_action,
                     qty=qty,
                 )
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 log.warning(
-                    "ensemble_runner.backtest.order_failed",
+                    "agent.strategy.ensemble.runner.backtest.order_failed",
                     symbol=sr.symbol,
                     side=sr.consensus_action,
                     error=str(exc),
@@ -1343,7 +1383,7 @@ class EnsembleRunner:
 
     # ── Reporting ─────────────────────────────────────────────────────────────
 
-    def generate_report(self) -> "EnsembleReport":
+    def generate_report(self) -> EnsembleReport:
         """Build an EnsembleReport from the accumulated step history.
 
         Can be called at any time after at least one call to :meth:`step`.
@@ -1363,7 +1403,7 @@ class EnsembleRunner:
         session_id: str,
         start_time: str,
         end_time: str,
-    ) -> "EnsembleReport":
+    ) -> EnsembleReport:
         """Internal: assemble an EnsembleReport from step history.
 
         Args:
@@ -1540,16 +1580,9 @@ async def _cli_main(
         no_regime: Disable the REGIME signal source.
         no_risk: Disable the risk overlay.
     """
-    import logging  # noqa: PLC0415
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
 
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.add_log_level,
-            structlog.dev.ConsoleRenderer(),
-        ]
-    )
+    configure_agent_logging()
 
     config = EnsembleConfig(
         mode=mode,  # type: ignore[arg-type]
@@ -1565,7 +1598,7 @@ async def _cli_main(
 
     if mode == "backtest":
         start, end = await _resolve_backtest_dates(base_url, api_key, days)
-        log.info("cli.ensemble_run.backtest_period", start=start, end=end)
+        log.info("agent.strategy.ensemble.run.cli.backtest_period", start=start, end=end)
 
         async with httpx.AsyncClient(
             base_url=base_url,
@@ -1596,21 +1629,26 @@ async def _cli_main(
     output_path = output_dir / f"ensemble-report-{mode}-{ts}.json"
     output_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
-    print(f"\n=== Ensemble Run Report ===")
-    print(f"Mode              : {report.mode}")
-    print(f"Session           : {report.session_id}")
-    print(f"Steps             : {report.total_steps}")
-    print(f"Orders placed     : {report.total_orders_placed}")
-    print(f"Orders vetoed     : {report.total_orders_vetoed}")
-    print(f"Agreement rate    : {report.overall_agreement_rate:.2%}")
-    print(f"\nPer-source stats:")
-    for stats in report.source_stats:
-        print(
-            f"  {stats.source:<10}  buy={stats.buy_signals:>4}  "
-            f"sell={stats.sell_signals:>4}  hold={stats.hold_signals:>4}  "
-            f"agreement={stats.agreement_with_consensus:.2%}"
-        )
-    print(f"\nReport saved to: {output_path}")
+    log.info(
+        "agent.strategy.ensemble.run.report",
+        mode=report.mode,
+        session_id=report.session_id,
+        total_steps=report.total_steps,
+        orders_placed=report.total_orders_placed,
+        orders_vetoed=report.total_orders_vetoed,
+        agreement_rate=round(report.overall_agreement_rate, 4),
+        source_stats=[
+            {
+                "source": s.source,
+                "buy": s.buy_signals,
+                "sell": s.sell_signals,
+                "hold": s.hold_signals,
+                "agreement": round(s.agreement_with_consensus, 4),
+            }
+            for s in report.source_stats
+        ],
+        output_path=str(output_path),
+    )
 
 
 def main() -> None:

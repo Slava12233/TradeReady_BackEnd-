@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 import logging
 import signal
 import sys
@@ -182,6 +183,12 @@ async def run() -> None:
 
             # a. Update current price in Redis
             await price_cache.set_price(tick.symbol, tick.price, tick.timestamp)
+
+            # Record price ingestion lag (staleness of the tick relative to now).
+            from src.monitoring.metrics import platform_price_ingestion_lag  # noqa: PLC0415
+
+            staleness = (datetime.now(tz=UTC) - tick.timestamp).total_seconds()
+            platform_price_ingestion_lag.set(staleness)
 
             # b. Update rolling 24-h ticker stats
             await price_cache.update_ticker(tick)

@@ -19,6 +19,7 @@ completed results and propose improvements.
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -202,17 +203,17 @@ async def run_backtest_workflow(
 
     async with PlatformRESTClient(config) as client:
         # ── Step 1: Health check ──────────────────────────────────────────────
-        log.info("step.health_check")
+        log.info("agent.workflow.backtest.step.health_check")
         try:
             health_response = await client._get("/api/v1/health")
             status_val = health_response.get("status", "unknown")
             findings.append(f"Platform health: {status_val}")
-            log.info("health_check.ok", status=status_val)
+            log.info("agent.workflow.backtest.health_check.ok", status=status_val)
             steps_completed += 1
         except httpx.HTTPStatusError as exc:
             bug = f"Health check HTTP error {exc.response.status_code}: {exc.response.text[:200]}"
             bugs_found.append(bug)
-            log.error("health_check.failed", error=bug)
+            log.error("agent.workflow.backtest.health_check.failed", error=bug)
             return WorkflowResult(
                 workflow_name=_WORKFLOW_NAME,
                 status="fail",
@@ -226,7 +227,7 @@ async def run_backtest_workflow(
         except httpx.RequestError as exc:
             bug = f"Health check network error: {exc}"
             bugs_found.append(bug)
-            log.error("health_check.network_error", error=bug)
+            log.error("agent.workflow.backtest.health_check.network_error", error=bug)
             return WorkflowResult(
                 workflow_name=_WORKFLOW_NAME,
                 status="fail",
@@ -239,7 +240,7 @@ async def run_backtest_workflow(
             )
 
         # ── Step 2: Discover available data range ─────────────────────────────
-        log.info("step.data_range")
+        log.info("agent.workflow.backtest.step.data_range")
         end_time: datetime | None = None
         start_time: datetime | None = None
 
@@ -257,10 +258,10 @@ async def run_backtest_workflow(
                 findings.append(
                     f"Data range: earliest={earliest_str} latest={latest_str}"
                 )
-                log.info("data_range.ok", earliest=earliest_str, latest=latest_str)
+                log.info("agent.workflow.backtest.data_range.ok", earliest=earliest_str, latest=latest_str)
             else:
                 findings.append("Data range endpoint returned no 'latest' timestamp; using fallback dates.")
-                log.warning("data_range.no_latest")
+                log.warning("agent.workflow.backtest.data_range.no_latest")
 
             steps_completed += 1
         except httpx.HTTPStatusError as exc:
@@ -269,11 +270,11 @@ async def run_backtest_workflow(
                 f"{exc.response.text[:200]}"
             )
             bugs_found.append(bug)
-            log.warning("data_range.http_error", error=bug)
+            log.warning("agent.workflow.backtest.data_range.http_error", error=bug)
             # Non-fatal — fall through to use a hard-coded fallback window
         except httpx.RequestError as exc:
             bugs_found.append(f"Data-range network error: {exc}")
-            log.warning("data_range.network_error", error=str(exc))
+            log.warning("agent.workflow.backtest.data_range.network_error", error=str(exc))
 
         # Fallback dates if the data-range call failed or returned no data
         if end_time is None or start_time is None:
@@ -287,7 +288,7 @@ async def run_backtest_workflow(
         end_iso = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # ── Step 3: Create backtest session ───────────────────────────────────
-        log.info("step.create_backtest", start=start_iso, end=end_iso)
+        log.info("agent.workflow.backtest.step.create", start=start_iso, end=end_iso)
         try:
             create_resp = await client.create_backtest(
                 start_time=start_iso,
@@ -305,7 +306,7 @@ async def run_backtest_workflow(
                 bugs_found.append(
                     f"create_backtest returned no session_id: {create_resp}"
                 )
-                log.error("create_backtest.no_session_id", response=create_resp)
+                log.error("agent.workflow.backtest.create.no_session_id", response=create_resp)
                 return WorkflowResult(
                     workflow_name=_WORKFLOW_NAME,
                     status="fail",
@@ -322,7 +323,7 @@ async def run_backtest_workflow(
                 f"total_steps={total_steps_api} estimated_pairs={estimated_pairs}"
             )
             metrics["session_id"] = session_id
-            log.info("create_backtest.ok", session_id=session_id, total_steps=total_steps_api)
+            log.info("agent.workflow.backtest.create.ok", session_id=session_id, total_steps=total_steps_api)
             steps_completed += 1
         except httpx.HTTPStatusError as exc:
             bug = (
@@ -330,7 +331,7 @@ async def run_backtest_workflow(
                 f"{exc.response.text[:200]}"
             )
             bugs_found.append(bug)
-            log.error("create_backtest.failed", error=bug)
+            log.error("agent.workflow.backtest.create.failed", error=bug)
             return WorkflowResult(
                 workflow_name=_WORKFLOW_NAME,
                 status="fail",
@@ -343,12 +344,12 @@ async def run_backtest_workflow(
             )
 
         # ── Step 4: Start backtest session ────────────────────────────────────
-        log.info("step.start_backtest", session_id=session_id)
+        log.info("agent.workflow.backtest.step.start", session_id=session_id)
         try:
             start_resp = await client.start_backtest(session_id)
             session_status = start_resp.get("status", "unknown")
             findings.append(f"Backtest session started: status={session_status}")
-            log.info("start_backtest.ok", status=session_status)
+            log.info("agent.workflow.backtest.start.ok", status=session_status)
 
             if session_status != "running":
                 bugs_found.append(
@@ -373,7 +374,7 @@ async def run_backtest_workflow(
                 f"{exc.response.text[:200]}"
             )
             bugs_found.append(bug)
-            log.error("start_backtest.failed", error=bug)
+            log.error("agent.workflow.backtest.start.failed", error=bug)
             return WorkflowResult(
                 workflow_name=_WORKFLOW_NAME,
                 status="partial",
@@ -387,7 +388,7 @@ async def run_backtest_workflow(
 
         # ── Step 5: Trading loop ──────────────────────────────────────────────
         log.info(
-            "step.trading_loop",
+            "agent.workflow.backtest.step.trading_loop",
             session_id=session_id,
             max_iterations=max_iterations,
             batch_size=batch_size,
@@ -396,7 +397,7 @@ async def run_backtest_workflow(
         loop_complete = False
 
         for iteration in range(max_iterations):
-            log.debug("loop.iteration", iteration=iteration, session_id=session_id)
+            log.debug("agent.workflow.backtest.loop.iteration", iteration=iteration, session_id=session_id)
 
             # ── 5a: Fetch candles for each symbol and decide ──────────────────
             for symbol in _BACKTEST_SYMBOLS:
@@ -412,7 +413,7 @@ async def run_backtest_workflow(
                     # 404 / 409 after completion is expected — treat as terminal
                     if status_code in (404, 409, 410):
                         log.info(
-                            "loop.candles_not_found",
+                            "agent.workflow.backtest.loop.candles_not_found",
                             symbol=symbol,
                             status_code=status_code,
                         )
@@ -431,7 +432,7 @@ async def run_backtest_workflow(
                 signal = _ma_signal(closes)
 
                 log.debug(
-                    "loop.signal",
+                    "agent.workflow.backtest.loop.signal",
                     symbol=symbol,
                     signal=signal,
                     closes_count=len(closes),
@@ -443,7 +444,7 @@ async def run_backtest_workflow(
                     current_side = open_positions.get(symbol)
                     if current_side == signal:
                         log.debug(
-                            "loop.skip_duplicate",
+                            "agent.workflow.backtest.loop.skip_duplicate",
                             symbol=symbol,
                             signal=signal,
                         )
@@ -451,7 +452,7 @@ async def run_backtest_workflow(
                     # If we hold the opposite side, also skip (keep it simple)
                     if current_side is not None and current_side != signal:
                         log.debug(
-                            "loop.skip_opposite",
+                            "agent.workflow.backtest.loop.skip_opposite",
                             symbol=symbol,
                             current_side=current_side,
                             signal=signal,
@@ -476,7 +477,7 @@ async def run_backtest_workflow(
                         open_positions[symbol] = signal
                         trades_placed += 1
                         log.info(
-                            "loop.order_placed",
+                            "agent.workflow.backtest.loop.order_placed",
                             symbol=symbol,
                             side=signal,
                             qty=qty,
@@ -518,7 +519,7 @@ async def run_backtest_workflow(
                 step_num = step_resp.get("step", "?")
 
                 log.debug(
-                    "loop.stepped",
+                    "agent.workflow.backtest.loop.stepped",
                     step=step_num,
                     progress_pct=progress_pct,
                     is_complete=is_complete,
@@ -555,7 +556,7 @@ async def run_backtest_workflow(
         steps_completed += 1  # count the trading loop as one composite step
 
         # ── Step 6: Fetch results ─────────────────────────────────────────────
-        log.info("step.get_results", session_id=session_id)
+        log.info("agent.workflow.backtest.step.get_results", session_id=session_id)
         results: dict[str, Any] = {}
         try:
             results = await client.get_backtest_results(session_id)
@@ -598,7 +599,7 @@ async def run_backtest_workflow(
                 )
 
             log.info(
-                "get_results.ok",
+                "agent.workflow.backtest.get_results.ok",
                 status=result_status,
                 roi_pct=roi_pct,
                 total_trades=total_trades,
@@ -610,11 +611,11 @@ async def run_backtest_workflow(
                 f"{exc.response.text[:200]}"
             )
             bugs_found.append(bug)
-            log.error("get_results.failed", error=bug)
+            log.error("agent.workflow.backtest.get_results.failed", error=bug)
             # Fall through to analysis with empty results dict
 
     # ── Step 7: LLM analysis ──────────────────────────────────────────────────
-    log.info("step.llm_analysis", session_id=session_id)
+    log.info("agent.workflow.backtest.step.llm_analysis", session_id=session_id)
     analysis: BacktestAnalysis | None = None
     try:
         from pydantic_ai import Agent as PydanticAIAgent  # noqa: PLC0415
@@ -636,8 +637,32 @@ async def run_backtest_workflow(
             + "\n\nProvide a BacktestAnalysis with a concrete improvement_plan."
         )
 
+        from agent.logging_middleware import estimate_llm_cost  # noqa: PLC0415
+
+        _llm_start = time.monotonic()
         ai_result = await analysis_agent.run(prompt)
+        _llm_latency_ms = round((time.monotonic() - _llm_start) * 1000, 2)
+
         analysis = ai_result.output
+        _input_tokens: int | None = getattr(
+            getattr(ai_result, "usage", None), "input_tokens", None
+        )
+        _output_tokens: int | None = getattr(
+            getattr(ai_result, "usage", None), "output_tokens", None
+        )
+        log.info(
+            "agent.llm.completed",
+            model=config.agent_model,
+            purpose="backtest_analysis",
+            input_tokens=_input_tokens,
+            output_tokens=_output_tokens,
+            latency_ms=_llm_latency_ms,
+            cost_estimate_usd=estimate_llm_cost(
+                config.agent_model,
+                _input_tokens or 0,
+                _output_tokens or 0,
+            ),
+        )
 
         metrics["llm_sharpe"] = analysis.sharpe_ratio
         metrics["llm_max_drawdown"] = analysis.max_drawdown
@@ -651,7 +676,7 @@ async def run_backtest_workflow(
             f"win_rate={analysis.win_rate:.2%} pnl={analysis.pnl}"
         )
         log.info(
-            "llm_analysis.ok",
+            "agent.workflow.backtest.llm_analysis.ok",
             sharpe=analysis.sharpe_ratio,
             win_rate=analysis.win_rate,
         )
@@ -659,7 +684,13 @@ async def run_backtest_workflow(
     except Exception as exc:  # noqa: BLE001
         # LLM errors should not kill the overall workflow — record and continue
         bugs_found.append(f"LLM analysis failed: {type(exc).__name__}: {exc}")
-        log.error("llm_analysis.failed", error=str(exc))
+        log.error("agent.workflow.backtest.llm_analysis.failed", error=str(exc))
+        log.error(
+            "agent.llm.failed",
+            model=config.agent_model,
+            purpose="backtest_analysis",
+            error=str(exc),
+        )
 
     # ── Determine overall status ──────────────────────────────────────────────
     if bugs_found:
@@ -669,7 +700,7 @@ async def run_backtest_workflow(
         overall_status = "pass" if steps_completed == steps_total else "partial"
 
     log.info(
-        "workflow.complete",
+        "agent.workflow.backtest.complete",
         status=overall_status,
         steps_completed=steps_completed,
         steps_total=steps_total,

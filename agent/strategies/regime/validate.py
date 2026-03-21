@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -52,10 +51,6 @@ import structlog
 
 from agent.strategies.regime.classifier import RegimeClassifier
 from agent.strategies.regime.labeler import RegimeType, generate_training_data
-from agent.strategies.regime.strategy_definitions import (
-    STRATEGY_BY_REGIME,
-    _REGIME_METADATA,
-)
 from agent.strategies.regime.switcher import (
     CONFIDENCE_THRESHOLD,
     MIN_CANDLES_REQUIRED,
@@ -485,15 +480,15 @@ class RegimeValidator:
                 if resp.status_code == 200:
                     data = resp.json()
                     status = data.get("status", "unknown")
-                    self._log.info("health_check.ok", status=status)
+                    self._log.info("agent.strategy.regime.validate.health_check.ok", status=status)
                 else:
                     self._log.info(
-                        "health_check.reachable_with_error",
+                        "agent.strategy.regime.validate.health_check.reachable_with_error",
                         status_code=resp.status_code,
                     )
                 return True
         except httpx.RequestError as exc:
-            self._log.error("health_check.failed", error=str(exc))
+            self._log.error("agent.strategy.regime.validate.health_check.failed", error=str(exc))
             return False
 
     async def _get_data_range(self) -> tuple[datetime | None, datetime | None]:
@@ -525,11 +520,11 @@ class RegimeValidator:
                     latest_str.replace("Z", "+00:00")
                 ).astimezone(UTC)
 
-            self._log.info("data_range.fetched", earliest=earliest_str, latest=latest_str)
+            self._log.info("agent.strategy.regime.validate.data_range.fetched", earliest=earliest_str, latest=latest_str)
             return earliest, latest
 
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            self._log.warning("data_range.fetch_failed", error=str(exc))
+            self._log.warning("agent.strategy.regime.validate.data_range.fetch_failed", error=str(exc))
             return None, None
 
     # ------------------------------------------------------------------
@@ -600,12 +595,12 @@ class RegimeValidator:
         if model_path.exists():
             try:
                 self._classifier = RegimeClassifier.load(model_path)
-                self._log.info("classifier.loaded_from_disk", path=str(model_path))
+                self._log.info("agent.strategy.regime.validate.classifier.loaded_from_disk", path=str(model_path))
                 return self._classifier
             except Exception as exc:  # noqa: BLE001
-                self._log.warning("classifier.load_failed", path=str(model_path), error=str(exc))
+                self._log.warning("agent.strategy.regime.validate.classifier.load_failed", path=str(model_path), error=str(exc))
 
-        self._log.info("classifier.training_synthetic")
+        self._log.info("agent.strategy.regime.validate.classifier.training_synthetic")
         self._classifier = _build_synthetic_classifier(seed=self._seed)
         return self._classifier
 
@@ -680,7 +675,7 @@ class RegimeValidator:
                 session_id = create_data.get("session_id")
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 err = f"[{month_label}/{strategy_label}] create_backtest failed: {exc}"
-                log.error("create_backtest.failed", error=err)
+                log.error("agent.strategy.regime.validate.create_backtest.failed", error=err)
                 self._errors.append(err)
                 return MonthlyResult(
                     month_label=month_label,
@@ -691,7 +686,7 @@ class RegimeValidator:
 
             if not session_id:
                 err = f"[{month_label}/{strategy_label}] no session_id in create response: {create_data}"
-                log.error("create_backtest.no_session_id")
+                log.error("agent.strategy.regime.validate.create_backtest.no_session_id")
                 self._errors.append(err)
                 return MonthlyResult(
                     month_label=month_label,
@@ -700,7 +695,7 @@ class RegimeValidator:
                     error=err,
                 )
 
-            log.info("session.created", session_id=session_id)
+            log.info("agent.strategy.regime.validate.session.created", session_id=session_id)
 
             # ── Start session ─────────────────────────────────────────────────
             try:
@@ -713,7 +708,7 @@ class RegimeValidator:
                         f"[{month_label}/{strategy_label}] start_backtest returned "
                         f"status='{session_status}' (expected 'running')"
                     )
-                    log.error("start_backtest.unexpected_status", status=session_status)
+                    log.error("agent.strategy.regime.validate.start_backtest.unexpected_status", status=session_status)
                     self._errors.append(err)
                     return MonthlyResult(
                         month_label=month_label,
@@ -721,10 +716,10 @@ class RegimeValidator:
                         strategy_label=strategy_label,
                         error=err,
                     )
-                log.info("session.started", status=session_status)
+                log.info("agent.strategy.regime.validate.session.started", status=session_status)
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 err = f"[{month_label}/{strategy_label}] start_backtest failed: {exc}"
-                log.error("start_backtest.failed", error=err)
+                log.error("agent.strategy.regime.validate.start_backtest.failed", error=err)
                 self._errors.append(err)
                 return MonthlyResult(
                     month_label=month_label,
@@ -757,15 +752,15 @@ class RegimeValidator:
                         trades_placed += 1
                         open_position = True
                         open_side = "buy"
-                        log.info("buyhold.initial_buy.placed")
+                        log.info("agent.strategy.regime.validate.buyhold.initial_buy.placed")
                     else:
                         log.warning(
-                            "buyhold.initial_buy.rejected",
+                            "agent.strategy.regime.validate.buyhold.initial_buy.rejected",
                             status=order_resp.status_code,
                             body=order_resp.text[:200],
                         )
                 except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                    log.warning("buyhold.initial_buy.failed", error=str(exc))
+                    log.warning("agent.strategy.regime.validate.buyhold.initial_buy.failed", error=str(exc))
 
             for iteration in range(_MAX_ITERATIONS):
                 iterations += 1
@@ -788,13 +783,13 @@ class RegimeValidator:
                             loop_complete = True
                             break
                         log.warning(
-                            "loop.candles.http_error",
+                            "agent.strategy.regime.validate.loop.candles.http_error",
                             status=exc.response.status_code,
                             iteration=iteration,
                         )
                         raw_candles = []
                     except httpx.RequestError as exc:
-                        log.warning("loop.candles.request_error", error=str(exc))
+                        log.warning("agent.strategy.regime.validate.loop.candles.request_error", error=str(exc))
                         raw_candles = []
 
                     # ── Determine signal ──────────────────────────────────────
@@ -806,7 +801,7 @@ class RegimeValidator:
                         if switched:
                             regime_switches += 1
                             log.info(
-                                "regime.switched",
+                                "agent.strategy.regime.validate.regime.switched",
                                 new_regime=regime.value,
                                 iteration=iteration,
                                 month=month_label,
@@ -875,7 +870,7 @@ class RegimeValidator:
                         break
                     if step_resp.status_code >= 400:
                         log.warning(
-                            "loop.step.http_error",
+                            "agent.strategy.regime.validate.loop.step.http_error",
                             status=step_resp.status_code,
                             iteration=iteration,
                         )
@@ -888,14 +883,14 @@ class RegimeValidator:
                     if exc.response.status_code in (404, 409, 410):
                         loop_complete = True
                         break
-                    log.warning("loop.step.exception", error=str(exc))
+                    log.warning("agent.strategy.regime.validate.loop.step.exception", error=str(exc))
                     break
                 except httpx.RequestError as exc:
-                    log.warning("loop.step.request_error", error=str(exc))
+                    log.warning("agent.strategy.regime.validate.loop.step.request_error", error=str(exc))
                     break
 
             log.info(
-                "loop.finished",
+                "agent.strategy.regime.validate.loop.finished",
                 iterations=iterations,
                 trades=trades_placed,
                 regime_switches=regime_switches,
@@ -909,7 +904,7 @@ class RegimeValidator:
                 results = results_resp.json()
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 err = f"[{month_label}/{strategy_label}] get_results failed: {exc}"
-                log.error("get_results.failed", error=err)
+                log.error("agent.strategy.regime.validate.get_results.failed", error=err)
                 self._errors.append(err)
                 return MonthlyResult(
                     month_label=month_label,
@@ -939,7 +934,7 @@ class RegimeValidator:
             )
 
         log.info(
-            "result.parsed",
+            "agent.strategy.regime.validate.result.parsed",
             roi_pct=roi_pct,
             sharpe=sharpe,
             trades=total_trades_result,
@@ -982,14 +977,14 @@ class RegimeValidator:
             ``self._regime_results`` for later access.
         """
         n = months if months is not None else self._months
-        self._log.info("regime_backtest.starting", months=n)
+        self._log.info("agent.strategy.regime.validate.regime_backtest.starting", months=n)
 
         # Discover data range.
         _, latest = await self._get_data_range()
         if latest is None:
             # Fallback: use a known historical range.
             latest = datetime(2024, 3, 1, tzinfo=UTC)
-            self._log.warning("data_range.fallback", latest=latest.isoformat())
+            self._log.warning("agent.strategy.regime.validate.data_range.fallback", latest=latest.isoformat())
 
         windows = self._build_month_windows(latest)
         # Use only the last *n* windows.
@@ -998,7 +993,12 @@ class RegimeValidator:
 
         results: list[MonthlyResult] = []
         for start_dt, end_dt, month_label in windows:
-            print(f"  [REGIME ] {month_label} {start_dt.date()} -> {end_dt.date()}")
+            logger.info(
+                "agent.strategy.regime.validate.regime_backtest_starting",
+                month=month_label,
+                start=str(start_dt.date()),
+                end=str(end_dt.date()),
+            )
             result = await self._run_one_backtest(
                 month_label=month_label,
                 start_dt=start_dt,
@@ -1007,8 +1007,15 @@ class RegimeValidator:
                 use_regime_switcher=True,
             )
             results.append(result)
-            status = "OK" if result.error is None else f"ERR: {result.error[:60]}"
-            print(f"         ROI={result.roi_pct}%  switches={result.regime_switches}  {status}")
+            status = "ok" if result.error is None else "error"
+            logger.info(
+                "agent.strategy.regime.validate.regime_backtest_complete",
+                month=month_label,
+                roi_pct=str(result.roi_pct),
+                regime_switches=result.regime_switches,
+                status=status,
+                error=result.error,
+            )
 
         self._regime_results = results
         return results
@@ -1030,7 +1037,7 @@ class RegimeValidator:
             the static MACD benchmark.  Also stored in ``self._static_results``.
         """
         n = months if months is not None else self._months
-        self._log.info("static_backtest.starting", months=n)
+        self._log.info("agent.strategy.regime.validate.static_backtest.starting", months=n)
 
         if not self._month_windows:
             _, latest = await self._get_data_range()
@@ -1041,7 +1048,12 @@ class RegimeValidator:
         windows = self._month_windows[-n:]
         results: list[MonthlyResult] = []
         for start_dt, end_dt, month_label in windows:
-            print(f"  [STATIC ] {month_label} {start_dt.date()} -> {end_dt.date()}")
+            logger.info(
+                "agent.strategy.regime.validate.static_backtest_starting",
+                month=month_label,
+                start=str(start_dt.date()),
+                end=str(end_dt.date()),
+            )
             result = await self._run_one_backtest(
                 month_label=month_label,
                 start_dt=start_dt,
@@ -1050,8 +1062,15 @@ class RegimeValidator:
                 use_regime_switcher=False,
             )
             results.append(result)
-            status = "OK" if result.error is None else f"ERR: {result.error[:60]}"
-            print(f"         ROI={result.roi_pct}%  trades={result.total_trades}  {status}")
+            status = "ok" if result.error is None else "error"
+            logger.info(
+                "agent.strategy.regime.validate.static_backtest_complete",
+                month=month_label,
+                roi_pct=str(result.roi_pct),
+                total_trades=result.total_trades,
+                status=status,
+                error=result.error,
+            )
 
         self._static_results = results
         return results
@@ -1072,7 +1091,7 @@ class RegimeValidator:
             buy-and-hold benchmark.  Also stored in ``self._buyhold_results``.
         """
         n = months if months is not None else self._months
-        self._log.info("buyhold_backtest.starting", months=n)
+        self._log.info("agent.strategy.regime.validate.buyhold_backtest.starting", months=n)
 
         if not self._month_windows:
             _, latest = await self._get_data_range()
@@ -1083,7 +1102,12 @@ class RegimeValidator:
         windows = self._month_windows[-n:]
         results: list[MonthlyResult] = []
         for start_dt, end_dt, month_label in windows:
-            print(f"  [BUYHOLD] {month_label} {start_dt.date()} -> {end_dt.date()}")
+            logger.info(
+                "agent.strategy.regime.validate.buyhold_backtest_starting",
+                month=month_label,
+                start=str(start_dt.date()),
+                end=str(end_dt.date()),
+            )
             result = await self._run_one_backtest(
                 month_label=month_label,
                 start_dt=start_dt,
@@ -1092,8 +1116,14 @@ class RegimeValidator:
                 use_buyhold=True,
             )
             results.append(result)
-            status = "OK" if result.error is None else f"ERR: {result.error[:60]}"
-            print(f"         ROI={result.roi_pct}%  {status}")
+            status = "ok" if result.error is None else "error"
+            logger.info(
+                "agent.strategy.regime.validate.buyhold_backtest_complete",
+                month=month_label,
+                roi_pct=str(result.roi_pct),
+                status=status,
+                error=result.error,
+            )
 
         self._buyhold_results = results
         return results
@@ -1252,103 +1282,86 @@ async def run_full_validation(
     """
     validator = RegimeValidator(base_url=base_url, api_key=api_key, months=months, seed=seed)
 
-    print("\n" + "=" * 70)
-    print("  REGIME STRATEGY VALIDATION HARNESS")
-    print("=" * 70)
-    print(f"  Platform : {base_url}")
-    print(f"  Months   : {months}")
-    print(f"  Seed     : {seed}")
-    print("=" * 70 + "\n")
+    logger.info(
+        "agent.strategy.regime.validate.harness_starting",
+        base_url=base_url,
+        months=months,
+        seed=seed,
+    )
 
     # Health check.
-    print("  Phase 0: Health Check")
-    print("  " + "-" * 50)
+    logger.info("agent.strategy.regime.validate.health_check_starting")
     healthy = await validator._health_check()
     if not healthy:
-        print("  [FAIL] Platform is unreachable. Cannot run validation.")
-        print("  Ensure the API is running at:", base_url)
+        logger.error("agent.strategy.regime.validate.platform_unreachable", base_url=base_url)
         return None
-    print("  [PASS] Platform is healthy.\n")
+    logger.info("agent.strategy.regime.validate.health_check_passed")
 
     if health_check_only:
-        print("  Health-check-only mode — exiting.")
+        logger.info("agent.strategy.regime.validate.health_check_only_exit")
         return None
 
     # Phase 1: Regime-adaptive.
-    print("  Phase 1: Regime-Adaptive Backtests")
-    print("  " + "-" * 50)
+    logger.info("agent.strategy.regime.validate.phase1_starting")
     t0 = time.monotonic()
     await validator.run_monthly_backtests(months=months)
-    print(f"  Done in {time.monotonic() - t0:.1f}s\n")
+    logger.info("agent.strategy.regime.validate.phase1_complete", elapsed_sec=round(time.monotonic() - t0, 1))
 
     # Phase 2: Static MACD.
-    print("  Phase 2: Static MACD Benchmark")
-    print("  " + "-" * 50)
+    logger.info("agent.strategy.regime.validate.phase2_starting")
     t0 = time.monotonic()
     await validator.run_static_benchmark(months=months)
-    print(f"  Done in {time.monotonic() - t0:.1f}s\n")
+    logger.info("agent.strategy.regime.validate.phase2_complete", elapsed_sec=round(time.monotonic() - t0, 1))
 
     # Phase 3: Buy-and-hold.
-    print("  Phase 3: Buy-and-Hold Benchmark")
-    print("  " + "-" * 50)
+    logger.info("agent.strategy.regime.validate.phase3_starting")
     t0 = time.monotonic()
     await validator.run_buyhold_benchmark(months=months)
-    print(f"  Done in {time.monotonic() - t0:.1f}s\n")
+    logger.info("agent.strategy.regime.validate.phase3_complete", elapsed_sec=round(time.monotonic() - t0, 1))
 
     # Phase 4: Report.
-    print("  Phase 4: Generating Report")
-    print("  " + "-" * 50)
+    logger.info("agent.strategy.regime.validate.phase4_generating")
     report = validator.generate_report()
 
-    _print_summary(report)
+    _log_summary(report)
     return report
 
 
-def _print_summary(report: RegimeValidationReport) -> None:
-    """Print a human-readable summary table of the validation report.
+def _log_summary(report: RegimeValidationReport) -> None:
+    """Log validation summary via structlog.
 
     Args:
         report: The completed :class:`RegimeValidationReport`.
     """
     s = report.summary
-    print("\n" + "=" * 70)
-    print("  RESULTS SUMMARY")
-    print("=" * 70)
-    print(f"  Months run      : {s.total_months}  (completed: {s.months_completed})")
-    print(f"  Errors          : {len(report.errors)}")
-    print()
-    print(f"  {'Strategy':<24}  {'Avg ROI%':>9}  {'Avg Sharpe':>10}")
-    print(f"  {'-'*24}  {'-'*9}  {'-'*10}")
-    print(f"  {'Regime-Adaptive':<24}  {str(s.regime_avg_roi or 'n/a'):>9}  {str(s.regime_avg_sharpe or 'n/a'):>10}")
-    print(f"  {'Static MACD':<24}  {str(s.static_avg_roi or 'n/a'):>9}  {str(s.static_avg_sharpe or 'n/a'):>10}")
-    print(f"  {'Buy-and-Hold':<24}  {str(s.buyhold_avg_roi or 'n/a'):>9}  {'n/a':>10}")
-    print()
-    print(f"  Alpha months (regime > static) : {s.alpha_months} / {s.months_completed}")
-    print(f"  Alpha rate                     : {s.alpha_rate or 'n/a'}")
-    print(f"  Regime > buy-and-hold months   : {s.regime_better_than_buyhold_months}")
-    print(f"  Total regime switches          : {s.total_regime_switches}")
-    print(f"  Avg switches / month           : {s.avg_switches_per_month or 'n/a'}")
-    print()
-
-    if report.per_month:
-        print(f"  {'Month':<8}  {'Regime ROI':>10}  {'Static ROI':>10}  {'BH ROI':>8}  {'Switches':>8}  {'Alpha?':>6}")
-        print(f"  {'-'*8}  {'-'*10}  {'-'*10}  {'-'*8}  {'-'*8}  {'-'*6}")
-        for ms in report.per_month:
-            r_roi = f"{ms.regime.roi_pct:.2f}%" if ms.regime.roi_pct is not None else "n/a"
-            s_roi = f"{ms.static.roi_pct:.2f}%" if ms.static.roi_pct is not None else "n/a"
-            b_roi = f"{ms.buyhold.roi_pct:.2f}%" if ms.buyhold.roi_pct is not None else "n/a"
-            sw = str(ms.regime.regime_switches)
-            alpha = "YES" if ms.regime_wins else "no"
-            print(f"  {ms.month_label:<8}  {r_roi:>10}  {s_roi:>10}  {b_roi:>8}  {sw:>8}  {alpha:>6}")
-
-    print("=" * 70)
-
-    if report.errors:
-        print("\n  Errors encountered:")
-        for i, err in enumerate(report.errors[:10], 1):
-            print(f"  {i:>2}. {err[:100]}")
-        if len(report.errors) > 10:
-            print(f"  ... and {len(report.errors) - 10} more. See the JSON report for details.")
+    logger.info(
+        "agent.strategy.regime.validate.results_summary",
+        total_months=s.total_months,
+        months_completed=s.months_completed,
+        error_count=len(report.errors),
+        regime_avg_roi=str(s.regime_avg_roi or "n/a"),
+        regime_avg_sharpe=str(s.regime_avg_sharpe or "n/a"),
+        static_avg_roi=str(s.static_avg_roi or "n/a"),
+        static_avg_sharpe=str(s.static_avg_sharpe or "n/a"),
+        buyhold_avg_roi=str(s.buyhold_avg_roi or "n/a"),
+        alpha_months=s.alpha_months,
+        alpha_rate=str(s.alpha_rate or "n/a"),
+        regime_better_than_buyhold=s.regime_better_than_buyhold_months,
+        total_regime_switches=s.total_regime_switches,
+        avg_switches_per_month=str(s.avg_switches_per_month or "n/a"),
+        per_month=[
+            {
+                "month": ms.month_label,
+                "regime_roi": str(ms.regime.roi_pct) if ms.regime.roi_pct is not None else "n/a",
+                "static_roi": str(ms.static.roi_pct) if ms.static.roi_pct is not None else "n/a",
+                "bh_roi": str(ms.buyhold.roi_pct) if ms.buyhold.roi_pct is not None else "n/a",
+                "switches": ms.regime.regime_switches,
+                "alpha": ms.regime_wins,
+            }
+            for ms in (report.per_month or [])
+        ],
+        errors=report.errors[:10] if report.errors else [],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1405,10 +1418,11 @@ async def _main() -> int:
     api_key = os.environ.get("PLATFORM_API_KEY", "")
 
     if not api_key and not args.health_check_only:
-        print(
+        print(  # noqa: T201
             "ERROR: Platform API key not set. "
             "Set PLATFORM_API_KEY in agent/.env or as environment variable.\n"
-            "Run with --help for usage information."
+            "Run with --help for usage information.",
+            file=sys.stderr,
         )
         return 1
 
@@ -1432,9 +1446,9 @@ async def _main() -> int:
 
     try:
         output_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-        print(f"\n  Report saved: {output_path}")
+        logger.info("agent.strategy.regime.validate.report_saved", path=str(output_path))
     except OSError as exc:
-        print(f"\n  WARNING: Could not write report to disk: {exc}")
+        logger.warning("agent.strategy.regime.validate.report_write_failed", error=str(exc))
 
     # Exit 0 if no platform errors, 1 if any backtest errored.
     return 0 if not report.errors else 1

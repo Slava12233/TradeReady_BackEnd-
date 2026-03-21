@@ -177,7 +177,7 @@ class TradeExecutor:
         fingerprint = self._fingerprint(decision)
         if fingerprint in self._submitted_fingerprints:
             self._log.warning(
-                "trade_executor.execute.duplicate",
+                "agent.trade.executor.execute.duplicate",
                 symbol=decision.symbol,
                 action=decision.action,
                 fingerprint=fingerprint,
@@ -197,7 +197,7 @@ class TradeExecutor:
         # ── 2. Pre-trade state ───────────────────────────────────────────
         pre_state = await self._fetch_portfolio_state()
         self._log.info(
-            "trade_executor.execute.pre_trade",
+            "agent.trade.executor.execute.pre_trade",
             symbol=decision.symbol,
             action=decision.action,
             confidence=decision.confidence,
@@ -217,7 +217,7 @@ class TradeExecutor:
         if result.success:
             post_state = await self._fetch_portfolio_state()
             self._log.info(
-                "trade_executor.execute.post_trade",
+                "agent.trade.executor.execute.post_trade",
                 symbol=decision.symbol,
                 order_id=result.order_id,
                 fill_price=str(result.fill_price) if result.fill_price else None,
@@ -233,14 +233,14 @@ class TradeExecutor:
             try:
                 await self._budget_mgr.record_trade(self._agent_id, trade_value)
                 self._log.debug(
-                    "trade_executor.execute.budget_updated",
+                    "agent.trade.executor.execute.budget_updated",
                     symbol=decision.symbol,
                     trade_value=str(trade_value),
                 )
             except Exception as exc:  # noqa: BLE001
                 # Non-fatal: budget counter update failure must not block the execution record.
                 self._log.error(
-                    "trade_executor.execute.budget_update_failed",
+                    "agent.trade.executor.execute.budget_update_failed",
                     symbol=decision.symbol,
                     error=str(exc),
                 )
@@ -269,7 +269,7 @@ class TradeExecutor:
         results: list[ExecutionResult] = []
         for i, decision in enumerate(decisions):
             self._log.info(
-                "trade_executor.execute_batch.step",
+                "agent.trade.executor.execute_batch.step",
                 step=i + 1,
                 total=len(decisions),
                 symbol=decision.symbol,
@@ -293,14 +293,14 @@ class TradeExecutor:
                 )
                 results.append(err_result)
                 self._log.error(
-                    "trade_executor.execute_batch.unexpected_error",
+                    "agent.trade.executor.execute_batch.unexpected_error",
                     step=i + 1,
                     symbol=decision.symbol,
                     error=str(exc),
                 )
 
         self._log.info(
-            "trade_executor.execute_batch.complete",
+            "agent.trade.executor.execute_batch.complete",
             total=len(decisions),
             successes=sum(1 for r in results if r.success),
         )
@@ -345,7 +345,7 @@ class TradeExecutor:
                 return raw
         except Exception as exc:  # noqa: BLE001
             self._log.warning(
-                "trade_executor.portfolio_fetch_failed",
+                "agent.trade.executor.portfolio_fetch_failed",
                 error=str(exc),
             )
         return {}
@@ -395,7 +395,7 @@ class TradeExecutor:
                     # Return quantity_pct as a USDT-fraction — the SDK converts.
                     # For paper trading, clip to the base minimum.
                     self._log.debug(
-                        "trade_executor.qty_resolved",
+                        "agent.trade.executor.qty_resolved",
                         symbol=decision.symbol,
                         quantity_pct=str(decision.quantity_pct),
                         estimated_usdt=str(usdt_value.quantize(Decimal("0.01"))),
@@ -403,7 +403,7 @@ class TradeExecutor:
                     )
         except Exception as exc:  # noqa: BLE001
             self._log.debug(
-                "trade_executor.qty_resolve_fallback",
+                "agent.trade.executor.qty_resolve_fallback",
                 symbol=decision.symbol,
                 error=str(exc),
             )
@@ -436,7 +436,7 @@ class TradeExecutor:
                     return result
                 if attempt == 0:
                     self._log.warning(
-                        "trade_executor.submit.attempt_failed",
+                        "agent.trade.executor.submit.attempt_failed",
                         symbol=sym,
                         side=side,
                         attempt=attempt + 1,
@@ -447,7 +447,7 @@ class TradeExecutor:
                     await asyncio.sleep(_RETRY_DELAY_SECONDS)
                 else:
                     self._log.error(
-                        "trade_executor.submit.final_failure",
+                        "agent.trade.executor.submit.final_failure",
                         symbol=sym,
                         side=side,
                         error=result.error_message,
@@ -456,7 +456,7 @@ class TradeExecutor:
             except Exception as exc:  # noqa: BLE001
                 if attempt == 0:
                     self._log.warning(
-                        "trade_executor.submit.exception_attempt",
+                        "agent.trade.executor.submit.exception_attempt",
                         symbol=sym,
                         side=side,
                         attempt=attempt + 1,
@@ -466,7 +466,7 @@ class TradeExecutor:
                     await asyncio.sleep(_RETRY_DELAY_SECONDS)
                 else:
                     self._log.error(
-                        "trade_executor.submit.exception_final",
+                        "agent.trade.executor.submit.exception_final",
                         symbol=sym,
                         side=side,
                         error=str(exc),
@@ -515,7 +515,7 @@ class TradeExecutor:
         """
         if self._sdk_client is None:
             self._log.debug(
-                "trade_executor.place_order.no_sdk",
+                "agent.trade.executor.place_order.no_sdk",
                 symbol=symbol,
                 side=side,
                 qty=qty,
@@ -533,7 +533,7 @@ class TradeExecutor:
             )
 
         self._log.info(
-            "trade_executor.place_order",
+            "agent.trade.executor.place_order",
             symbol=symbol,
             side=side,
             qty=qty,
@@ -580,7 +580,7 @@ class TradeExecutor:
                     pass
 
         self._log.info(
-            "trade_executor.place_order.success",
+            "agent.trade.executor.place_order.success",
             symbol=symbol,
             side=side,
             order_id=order_id,
@@ -625,7 +625,7 @@ class TradeExecutor:
             from src.database.session import get_session_factory  # noqa: PLC0415
         except ImportError as exc:
             self._log.warning(
-                "trade_executor.persist.import_failed",
+                "agent.trade.executor.persist.import_failed",
                 error=str(exc),
                 hint="DB not available; skipping AgentDecision persistence.",
             )
@@ -642,7 +642,7 @@ class TradeExecutor:
             agent_uuid = UUID(self._agent_id)
         except (ValueError, AttributeError) as exc:
             self._log.warning(
-                "trade_executor.persist.invalid_agent_id",
+                "agent.trade.executor.persist.invalid_agent_id",
                 agent_id=self._agent_id,
                 error=str(exc),
             )
@@ -674,14 +674,14 @@ class TradeExecutor:
                 await repo.create(decision_row)
 
             self._log.debug(
-                "trade_executor.persist.success",
+                "agent.trade.executor.persist.success",
                 symbol=decision.symbol,
                 order_id=result.order_id,
             )
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "trade_executor.persist.db_error",
+                "agent.trade.executor.persist.db_error",
                 symbol=decision.symbol,
                 error=str(exc),
             )

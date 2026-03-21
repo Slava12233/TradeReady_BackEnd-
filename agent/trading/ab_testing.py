@@ -352,7 +352,7 @@ class ABTestRunner:
         }
 
         self._log.info(
-            "ab_test.created",
+            "agent.trade.ab_test.created",
             test_id=test_id,
             agent_id=agent_id,
             strategy=strategy_name,
@@ -428,7 +428,7 @@ class ABTestRunner:
         completed_b = _count_completed(self._records[test_id]["b"])
 
         self._log.debug(
-            "ab_test.record",
+            "agent.trade.ab_test.record",
             test_id=test_id,
             strategy=test.strategy_name,
             variant=variant,
@@ -501,7 +501,7 @@ class ABTestRunner:
         )
 
         self._log.info(
-            "ab_test.evaluated",
+            "agent.trade.ab_test.evaluated",
             test_id=test_id,
             strategy=test.strategy_name,
             winner=winner,
@@ -545,7 +545,7 @@ class ABTestRunner:
 
         if test.winner is None:
             self._log.warning(
-                "ab_test.promote.not_evaluated",
+                "agent.trade.ab_test.promote.not_evaluated",
                 test_id=test_id,
                 strategy=test.strategy_name,
                 reason="Call evaluate() before promote_winner().",
@@ -554,7 +554,7 @@ class ABTestRunner:
 
         if test.winner == "inconclusive":
             self._log.warning(
-                "ab_test.promote.inconclusive",
+                "agent.trade.ab_test.promote.inconclusive",
                 test_id=test_id,
                 strategy=test.strategy_name,
                 reason="No statistically significant winner; not promoting.",
@@ -571,7 +571,7 @@ class ABTestRunner:
         self._active_index.get(test.agent_id, {}).pop(test.strategy_name, None)
 
         self._log.info(
-            "ab_test.promoting_winner",
+            "agent.trade.ab_test.promoting_winner",
             test_id=test_id,
             strategy=test.strategy_name,
             winner=test.winner,
@@ -605,7 +605,7 @@ class ABTestRunner:
         self._active_index.get(test.agent_id, {}).pop(test.strategy_name, None)
 
         self._log.info(
-            "ab_test.cancelled",
+            "agent.trade.ab_test.cancelled",
             test_id=test_id,
             strategy=test.strategy_name,
         )
@@ -701,7 +701,7 @@ class ABTestRunner:
         """
         if self._rest is None:
             self._log.warning(
-                "ab_test.promote.no_rest_client",
+                "agent.trade.ab_test.promote.no_rest_client",
                 test_id=test.id,
                 strategy=test.strategy_name,
                 reason="No REST client configured; skipping parameter promotion.",
@@ -726,7 +726,7 @@ class ABTestRunner:
 
             if strategy_id is None:
                 self._log.warning(
-                    "ab_test.promote.strategy_not_found",
+                    "agent.trade.ab_test.promote.strategy_not_found",
                     test_id=test.id,
                     strategy=test.strategy_name,
                     reason="Strategy not found in registry; cannot create new version.",
@@ -748,7 +748,7 @@ class ABTestRunner:
             new_version = version_resp.json()
 
             self._log.info(
-                "ab_test.promote.success",
+                "agent.trade.ab_test.promote.success",
                 test_id=test.id,
                 strategy=test.strategy_name,
                 strategy_id=strategy_id,
@@ -759,7 +759,7 @@ class ABTestRunner:
         except Exception as exc:  # noqa: BLE001
             # Never let a promotion failure crash the trading loop — log and continue.
             self._log.error(
-                "ab_test.promote.error",
+                "agent.trade.ab_test.promote.error",
                 test_id=test.id,
                 strategy=test.strategy_name,
                 error=str(exc),
@@ -791,7 +791,7 @@ class ABTestRunner:
             )
         except ImportError:
             self._log.warning(
-                "ab_test.persist.import_error",
+                "agent.trade.ab_test.persist.import_error",
                 reason="src package not available; skipping persistence.",
             )
             return
@@ -827,14 +827,14 @@ class ABTestRunner:
                 await repo.create(journal_row)
                 await session.commit()
                 self._log.info(
-                    "ab_test.persist.success",
+                    "agent.trade.ab_test.persist.success",
                     test_id=test.id,
                     event=event,
                     entry_id=str(journal_row.id),
                 )
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "ab_test.persist.error",
+                "agent.trade.ab_test.persist.error",
                 test_id=test.id,
                 event=event,
                 error=str(exc),

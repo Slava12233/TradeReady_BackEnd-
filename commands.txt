@@ -20,3 +20,6 @@ You'll see all 11 tables — right-click any table and choose View/Edit Data to 
   
   
 run tests :   pytest --cov=src --cov-report=html                                                                                                                                                    - Password: E2eTestPass123!
+
+
+ claude --allow-dangerously-skip-permissions

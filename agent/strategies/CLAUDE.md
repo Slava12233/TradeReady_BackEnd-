@@ -1,6 +1,6 @@
 # agent/strategies/ — Agent Trading Strategy System
 
-<!-- last-updated: 2026-03-20 (perf fixes, security fixes, CLI --api-key removed) -->
+<!-- last-updated: 2026-03-21 (configure_agent_logging migration) -->
 
 > Five complementary strategy implementations that can operate independently or together through the ensemble combiner. All strategies execute against the platform's backtest or live sandbox APIs using existing SDK and REST tool integrations.
 
@@ -374,6 +374,11 @@ The `risk/` overlay is inserted between the MetaLearner output and order executi
 - **Bounded caches via `collections.deque`** — observation buffers and rolling windows use `collections.deque(maxlen=N)` to prevent unbounded memory growth during long runs.
 - **Model integrity via SHA-256 checksums** — `checksum.py` provides `save_checksum()` / `verify_checksum()` for `.zip` and `.joblib` model files. Call `save_checksum()` after every model save and `verify_checksum()` before every model load. `SecurityError` is raised on digest mismatch.
 - **No `--api-key` CLI arguments** — API keys are read exclusively from `agent/.env` via `AgentConfig`. Passing secrets on the command line would expose them in shell history and `ps` output.
+
+## Recent Changes
+
+- `2026-03-20` — Perf fixes, security fixes, CLI --api-key removed.
+- `2026-03-21` — All strategy submodules migrated to `configure_agent_logging()`: `rl/` (5 files), `evolutionary/` (2 files), `ensemble/` (3 files), `regime/` (2 files) now call `configure_agent_logging()` at startup and use standardized structlog event names. `ensemble/run.py` adds `LogBatchWriter` for per-strategy signal persistence to `agent_strategy_signals` DB table.
 
 ---
 

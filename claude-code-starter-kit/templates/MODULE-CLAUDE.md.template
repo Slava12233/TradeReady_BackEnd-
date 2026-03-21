@@ -1,0 +1,51 @@
+# {{MODULE_NAME}}
+
+<!-- last-updated: {{DATE}} -->
+
+> {{ONE_LINE_PURPOSE}}
+
+## What This Module Does
+
+{{2-3 sentence overview of the module's responsibility.}}
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `{{file.ext}}` | {{What it does}} |
+
+## Architecture & Patterns
+
+- {{Key patterns used (repository, factory, singleton, etc.)}}
+- {{Important abstractions}}
+- {{Dependency direction}}
+
+## Public API / Interfaces
+
+{{Key classes, functions, or endpoints exposed by this module.}}
+
+## Dependencies
+
+- **Depends on:** {{Other modules this module imports from}}
+- **Used by:** {{Modules that import from this module}}
+
+## Common Tasks
+
+### Adding a new {{entity}}
+1. {{Step 1}}
+2. {{Step 2}}
+3. {{Step 3}}
+
+### Modifying {{feature}}
+1. {{Step 1}}
+2. {{Step 2}}
+
+## Gotchas & Pitfalls
+
+- {{Non-obvious things that will bite you}}
+- {{Edge cases}}
+- {{Things that look wrong but are intentional}}
+
+## Recent Changes
+
+- `{{DATE}}` — Initial CLAUDE.md created by bootstrap

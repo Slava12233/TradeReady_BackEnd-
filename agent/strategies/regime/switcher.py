@@ -34,7 +34,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -163,7 +163,7 @@ class RegimeSwitcher:
         self._cached_regime_result: tuple[RegimeType, float] | None = None
 
         logger.info(
-            "regime_switcher.initialised",
+            "agent.strategy.regime.switcher.initialised",
             initial_regime=initial_regime.value,
             confidence_threshold=confidence_threshold,
             cooldown_candles=cooldown_candles,
@@ -193,7 +193,7 @@ class RegimeSwitcher:
         """
         if len(candles) < MIN_CANDLES_REQUIRED:
             logger.debug(
-                "regime_switcher.detect_skipped_insufficient_candles",
+                "agent.strategy.regime.switcher.detect_skipped_insufficient_candles",
                 n_candles=len(candles),
                 min_required=MIN_CANDLES_REQUIRED,
             )
@@ -209,7 +209,7 @@ class RegimeSwitcher:
             and self._cached_regime_result is not None
         ):
             logger.debug(
-                "regime_switcher.detect_cache_hit",
+                "agent.strategy.regime.switcher.detect_cache_hit",
                 last_candle_ts=last_candle_ts,
             )
             return self._cached_regime_result
@@ -219,7 +219,7 @@ class RegimeSwitcher:
         except ValueError:
             # All rows dropped as NaN — indicator warm-up not yet complete.
             logger.debug(
-                "regime_switcher.detect_skipped_nan_features",
+                "agent.strategy.regime.switcher.detect_skipped_nan_features",
                 n_candles=len(candles),
             )
             return self.current_regime, 0.0
@@ -236,7 +236,7 @@ class RegimeSwitcher:
         self._cached_regime_result = (regime, confidence)
 
         logger.debug(
-            "regime_switcher.detected",
+            "agent.strategy.regime.switcher.detected",
             regime=regime.value,
             confidence=round(confidence, 4),
             n_candles=len(candles),
@@ -265,7 +265,7 @@ class RegimeSwitcher:
 
         if confidence < self._confidence_threshold:
             logger.debug(
-                "regime_switcher.switch_rejected_low_confidence",
+                "agent.strategy.regime.switcher.switch_rejected_low_confidence",
                 new_regime=new_regime.value,
                 confidence=round(confidence, 4),
                 threshold=self._confidence_threshold,
@@ -274,7 +274,7 @@ class RegimeSwitcher:
 
         if self.candles_since_switch < self._cooldown_candles:
             logger.debug(
-                "regime_switcher.switch_rejected_cooldown",
+                "agent.strategy.regime.switcher.switch_rejected_cooldown",
                 new_regime=new_regime.value,
                 candles_since_switch=self.candles_since_switch,
                 cooldown=self._cooldown_candles,
@@ -329,7 +329,7 @@ class RegimeSwitcher:
             self.candles_since_switch = 0
 
             record = RegimeRecord(
-                timestamp=datetime.now(tz=timezone.utc),
+                timestamp=datetime.now(tz=UTC),
                 regime=new_regime,
                 confidence=confidence,
                 strategy_id=self._strategy_map[new_regime],
@@ -339,7 +339,7 @@ class RegimeSwitcher:
 
             switched = True
             logger.info(
-                "regime_switcher.switched",
+                "agent.strategy.regime.switcher.switched",
                 old_regime=old_regime.value,
                 new_regime=new_regime.value,
                 confidence=round(confidence, 4),
@@ -386,7 +386,7 @@ class RegimeSwitcher:
         self._total_candles_processed = 0
         self._cached_last_candle_ts = None
         self._cached_regime_result = None
-        logger.debug("regime_switcher.reset")
+        logger.debug("agent.strategy.regime.switcher.reset")
 
 
 # ---------------------------------------------------------------------------
@@ -469,11 +469,15 @@ def _train_demo_classifier(candles: list[dict], seed: int = 42) -> RegimeClassif
     y_test = labels.iloc[split_idx:].reset_index(drop=True)
 
     clf = RegimeClassifier(seed=seed, use_xgboost=False)
-    print(f"Training classifier on {len(X_train)} samples ...")
+    logger.info("agent.strategy.regime.switcher.demo_classifier_training", n_train=len(X_train))
     clf.train(X_train, y_train)
 
     metrics = clf.evaluate(X_test, y_test)
-    print(f"Test accuracy: {metrics['accuracy']:.2%}  (n={metrics['n_samples']})")
+    logger.info(
+        "switcher.demo_classifier_ready",
+        accuracy=round(metrics["accuracy"], 4),
+        n_samples=metrics["n_samples"],
+    )
     return clf
 
 
@@ -490,8 +494,7 @@ def _run_demo(n_candles: int = 400, seed: int = 42, window_size: int = 100) -> N
         window_size: Number of candles in the rolling context window passed
             to the switcher on each step.  Must be >= :data:`MIN_CANDLES_REQUIRED`.
     """
-    print("\n=== RegimeSwitcher Demo ===")
-    print(f"Candles: {n_candles}  |  Seed: {seed}  |  Window: {window_size}")
+    logger.info("agent.strategy.regime.switcher.demo_starting", n_candles=n_candles, seed=seed, window_size=window_size)
 
     # Generate synthetic candle stream.
     all_candles = _make_synthetic_candles(n=n_candles, seed=seed)
@@ -515,10 +518,13 @@ def _run_demo(n_candles: int = 400, seed: int = 42, window_size: int = 100) -> N
         cooldown_candles=SWITCH_COOLDOWN_CANDLES,
     )
 
-    print(f"\nInitial regime : {switcher.current_regime.value}")
-    print(f"Confidence threshold : {switcher._confidence_threshold}")
-    print(f"Cooldown candles     : {switcher._cooldown_candles}")
-    print(f"\nSimulating {n_candles - window_size} steps ...\n")
+    logger.info(
+        "switcher.demo_initialized",
+        initial_regime=switcher.current_regime.value,
+        confidence_threshold=switcher._confidence_threshold,
+        cooldown_candles=switcher._cooldown_candles,
+        steps=n_candles - window_size,
+    )
 
     switch_log: list[dict[str, Any]] = []
 
@@ -538,32 +544,31 @@ def _run_demo(n_candles: int = 400, seed: int = 42, window_size: int = 100) -> N
                     "timestamp": record.timestamp.strftime("%H:%M:%S"),
                 }
             )
-            print(
-                f"  [Candle {i:>4d}] Switched -> {regime.value:<20}"
-                f"  confidence={record.confidence:.3f}"
-                f"  strategy={strategy_id}"
+            logger.info(
+                "switcher.demo_switch",
+                candle=i,
+                regime=regime.value,
+                confidence=round(record.confidence, 3),
+                strategy=strategy_id,
             )
 
     # Summary.
-    print(f"\n=== Summary ===")
-    print(f"Total candles processed : {switcher._total_candles_processed}")
-    print(f"Total regime switches   : {len(switcher.regime_history)}")
-    print(f"Final regime            : {switcher.current_regime.value}")
-    print(f"Active strategy         : {switcher.get_active_strategy()}")
-
-    if switcher.regime_history:
-        print("\nRegime change history:")
-        for record in switcher.regime_history:
-            print(
-                f"  candle={record.candle_index:>4d}"
-                f"  regime={record.regime.value:<20}"
-                f"  confidence={record.confidence:.3f}"
-                f"  strategy={record.strategy_id}"
-            )
-    else:
-        print("\nNo regime switches occurred (all candles stayed in the initial regime).")
-
-    print()
+    logger.info(
+        "switcher.demo_complete",
+        candles_processed=switcher._total_candles_processed,
+        total_switches=len(switcher.regime_history),
+        final_regime=switcher.current_regime.value,
+        active_strategy=switcher.get_active_strategy(),
+        regime_history=[
+            {
+                "candle": r.candle_index,
+                "regime": r.regime.value,
+                "confidence": round(r.confidence, 3),
+                "strategy": r.strategy_id,
+            }
+            for r in switcher.regime_history
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------

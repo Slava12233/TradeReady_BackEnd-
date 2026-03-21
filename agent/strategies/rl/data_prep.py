@@ -53,8 +53,7 @@ from typing import Any
 
 import httpx
 import structlog
-
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -238,13 +237,13 @@ class DataPrepClient:
             return response.json()  # type: ignore[no-any-return]
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "data_range_fetch_failed",
+                "agent.strategy.data_prep.range_fetch_failed",
                 status=exc.response.status_code,
                 body=exc.response.text[:200],
             )
             raise
         except httpx.RequestError as exc:
-            logger.error("data_range_network_error", error=str(exc))
+            logger.error("agent.strategy.data_prep.range_network_error", error=str(exc))
             raise
 
     async def get_candles(
@@ -297,7 +296,7 @@ class DataPrepClient:
                 data = response.json()
             except httpx.HTTPStatusError as exc:
                 logger.error(
-                    "candles_fetch_failed",
+                    "agent.strategy.data_prep.candles_fetch_failed",
                     symbol=symbol,
                     interval=interval,
                     status=exc.response.status_code,
@@ -305,7 +304,7 @@ class DataPrepClient:
                 )
                 raise
             except httpx.RequestError as exc:
-                logger.error("candles_network_error", symbol=symbol, error=str(exc))
+                logger.error("agent.strategy.data_prep.candles_network_error", symbol=symbol, error=str(exc))
                 raise
 
             candles: list[dict[str, Any]] = data.get("candles", [])
@@ -549,7 +548,7 @@ async def check_asset(
     window_end = max(all_ends).astimezone(UTC)
 
     logger.info(
-        "checking_asset",
+        "agent.strategy.data_prep.checking_asset",
         symbol=symbol,
         interval=interval,
         window_start=window_start.isoformat(),
@@ -563,14 +562,14 @@ async def check_asset(
         end_time=window_end,
     )
 
-    logger.info("candles_fetched", symbol=symbol, count=len(candles))
+    logger.info("agent.strategy.data_prep.candles_fetched", symbol=symbol, count=len(candles))
 
     split_coverages: dict[str, SplitCoverage] = {}
     for split_name, split in splits.items():
         coverage = _compute_split_coverage(candles, split, interval, gap_threshold)
         split_coverages[split_name] = coverage
         logger.info(
-            "split_coverage",
+            "agent.strategy.data_prep.split_coverage",
             symbol=symbol,
             split=split_name,
             coverage_pct=coverage.coverage_pct,
@@ -638,7 +637,7 @@ async def validate_data(
 
     async with DataPrepClient(base_url, api_key) as client:
         # Step 1: Get platform data range.
-        logger.info("fetching_data_range", base_url=base_url)
+        logger.info("agent.strategy.data_prep.fetching_data_range", base_url=base_url)
         data_range_raw = await client.get_data_range()
 
         earliest_str: str | None = data_range_raw.get("earliest")
@@ -646,7 +645,7 @@ async def validate_data(
 
         if not earliest_str or not latest_str:
             # Platform has no data at all — return an all-failed report.
-            logger.warning("no_data_range_available")
+            logger.warning("agent.strategy.data_prep.no_data_range_available")
             empty_splits: dict[str, SplitDateRange] = {
                 "train": SplitDateRange(name="train", start=checked_at, end=checked_at),
                 "val": SplitDateRange(name="val", start=checked_at, end=checked_at),
@@ -669,7 +668,7 @@ async def validate_data(
         latest = datetime.fromisoformat(latest_str.replace("Z", "+00:00")).astimezone(UTC)
 
         logger.info(
-            "data_range_received",
+            "agent.strategy.data_prep.data_range_received",
             earliest=earliest.isoformat(),
             latest=latest.isoformat(),
             total_pairs=data_range_raw.get("total_pairs", 0),
@@ -678,7 +677,7 @@ async def validate_data(
         # Step 2: Compute split boundaries.
         splits = _compute_splits(earliest, latest)
         logger.info(
-            "splits_computed",
+            "agent.strategy.data_prep.splits_computed",
             train_start=splits["train"].start.isoformat(),
             train_end=splits["train"].end.isoformat(),
             val_start=splits["val"].start.isoformat(),
@@ -706,7 +705,7 @@ async def validate_data(
         asset_reports: list[AssetReadiness] = []
         for symbol, result in zip(assets, raw_results):
             if isinstance(result, httpx.HTTPStatusError | httpx.RequestError):
-                logger.error("asset_check_failed", symbol=symbol, error=str(result))
+                logger.error("agent.strategy.data_prep.asset_check_failed", symbol=symbol, error=str(result))
                 # Mark the asset as having zero coverage on all splits.
                 zero_splits = {
                     name: SplitCoverage(
@@ -814,63 +813,48 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _print_human_summary(report: DataReadiness) -> None:
-    """Print a human-readable summary to stdout.
+def _log_human_summary(report: DataReadiness) -> None:
+    """Log data readiness summary via structlog.
 
     Args:
         report: The completed :class:`DataReadiness` report.
     """
-    line = "-" * 70
-    print(line)
-    print(f"Data Readiness Check — {report.checked_at.strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"Status: {report.status.upper()}")
-    print(f"Interval: {report.interval}  |  Min coverage: {report.min_coverage_pct:.1f}%")
-    print(line)
-
     dr = report.data_range
-    print(
-        f"Platform data range: {dr.get('earliest', 'N/A')} → {dr.get('latest', 'N/A')}"
-        f"  ({dr.get('total_pairs', 0)} pairs)"
-    )
-    print()
-
-    # Print split boundaries.
-    print("Recommended splits (8/2/2):")
-    for name, split in report.splits.items():
-        start_s = split.start.strftime("%Y-%m-%d %H:%M")
-        end_s = split.end.strftime("%Y-%m-%d %H:%M")
-        print(f"  {name:5s}: {start_s}  →  {end_s}")
-    print()
-
-    # Per-asset table.
-    print(f"{'Symbol':<12} {'Overall':>7}  {'Train':>7}  {'Val':>7}  {'Test':>7}  {'Gaps':>5}  Ready")
-    print(line)
+    asset_rows = []
     for asset in report.assets:
         tc = asset.splits.get("train")
         vc = asset.splits.get("val")
         ec = asset.splits.get("test")
         total_gaps = sum(len(s.gaps) for s in asset.splits.values())
-        ready_str = "YES" if asset.ready else "NO *"
-        t_pct = f"{tc.coverage_pct:.1f}%" if tc else "N/A"
-        v_pct = f"{vc.coverage_pct:.1f}%" if vc else "N/A"
-        e_pct = f"{ec.coverage_pct:.1f}%" if ec else "N/A"
-        print(
-            f"{asset.symbol:<12} {asset.overall_coverage_pct:>6.1f}%"
-            f"  {t_pct:>7}  {v_pct:>7}  {e_pct:>7}  {total_gaps:>5}  {ready_str}"
-        )
+        asset_rows.append({
+            "symbol": asset.symbol,
+            "overall_pct": round(asset.overall_coverage_pct, 1),
+            "train_pct": round(tc.coverage_pct, 1) if tc else None,
+            "val_pct": round(vc.coverage_pct, 1) if vc else None,
+            "test_pct": round(ec.coverage_pct, 1) if ec else None,
+            "gaps": total_gaps,
+            "ready": asset.ready,
+        })
 
-    print(line)
-    if report.unready_assets:
-        print(
-            f"UNREADY assets ({len(report.unready_assets)}): "
-            f"{', '.join(report.unready_assets)}"
-        )
-        print(
-            f"These assets have < {report.min_coverage_pct:.1f}% coverage in at least one split."
-        )
-    else:
-        print("All assets pass the coverage threshold.")
-    print(line)
+    logger.info(
+        "agent.strategy.data_prep.readiness_report",
+        checked_at=report.checked_at.strftime("%Y-%m-%d %H:%M UTC"),
+        status=report.status.upper(),
+        interval=report.interval,
+        min_coverage_pct=report.min_coverage_pct,
+        data_range_earliest=dr.get("earliest", "N/A"),
+        data_range_latest=dr.get("latest", "N/A"),
+        total_pairs=dr.get("total_pairs", 0),
+        splits={
+            name: {
+                "start": split.start.strftime("%Y-%m-%d %H:%M"),
+                "end": split.end.strftime("%Y-%m-%d %H:%M"),
+            }
+            for name, split in report.splits.items()
+        },
+        assets=asset_rows,
+        unready_assets=report.unready_assets,
+    )
 
 
 async def _async_main(argv: list[str] | None = None) -> int:
@@ -882,15 +866,9 @@ async def _async_main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code: ``0`` on success, ``1`` on insufficient data or error.
     """
-    import structlog
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
 
-    structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.add_log_level,
-            structlog.dev.ConsoleRenderer(colors=False),
-        ]
-    )
+    configure_agent_logging()
 
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -909,20 +887,19 @@ async def _async_main(argv: list[str] | None = None) -> int:
             gap_threshold=args.gap_threshold,
         )
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-        logger.error("validation_failed", error=str(exc))
-        print(f"ERROR: Failed to connect to platform at {args.base_url}: {exc}", file=sys.stderr)
+        logger.error("agent.strategy.data_prep.validation_failed", error=str(exc))
+        print(f"ERROR: Failed to connect to platform at {args.base_url}: {exc}", file=sys.stderr)  # noqa: T201
         return 1
     except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        logger.error("agent.strategy.data_prep.invalid_args", error=str(exc))
+        print(f"ERROR: {exc}", file=sys.stderr)  # noqa: T201
         return 1
 
     if args.json_output:
-        print(report.model_dump_json(indent=2))
+        print(report.model_dump_json(indent=2))  # noqa: T201
     else:
-        _print_human_summary(report)
-        print()
-        print("Full JSON report:")
-        print(report.model_dump_json(indent=2))
+        _log_human_summary(report)
+        print(report.model_dump_json(indent=2))  # noqa: T201
 
     if report.unready_assets:
         return 1

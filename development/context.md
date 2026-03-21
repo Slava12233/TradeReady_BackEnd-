@@ -17,9 +17,9 @@ tags:
 
 ## Current State
 
-**Active work:** Agent template Memory Protocol rollout complete — all 16 agent templates updated.
-**Last session:** 2026-03-21 — Added `memory: project` frontmatter and `## Memory Protocol` sections to all 16 agent templates in `claude-code-starter-kit/templates/agents/`. 12 agents were missing `memory: project` (test-runner, deploy-checker, security-auditor, api-sync-checker, perf-checker, e2e-tester, migration-helper, doc-updater, frontend-developer, ml-engineer, codebase-researcher, plus backend-developer which already had the flag but lacked the section). All 4 pre-existing agents (code-reviewer, context-manager, planner, security-reviewer) also received Memory Protocol sections. Write-capable agents got the full MEMORY.md update protocol; read-only agents (security-auditor, perf-checker, api-sync-checker, codebase-researcher) got the analysis-oriented variant.
-**Next steps:** (1) Start Docker services, load historical OHLCV data via `scripts/backfill_history.py`. (2) Run training pipeline: regime classifier → PPO RL → evolutionary optimiser → ensemble weight search. (3) Battle system frontend (`Frontend/src/components/battles/`) remains empty — last major incomplete frontend area. (4) Monitoring and alerting for live ensemble + trading loop runs. (5) Integration test the full agent ecosystem against a live platform instance.
+**Active work:** Agent Logging System complete (34 tasks, 5 phases).
+**Last session:** 2026-03-21 — Agent Logging System: centralized structlog config with distributed trace correlation (`trace_id`/`span_id`/`agent_id`), API call logging middleware with LLM cost estimation, async batched DB writer (`LogBatchWriter`), 16 Prometheus metrics (`AGENT_REGISTRY`), 2 new DB tables (`agent_api_calls`, `agent_strategy_signals`), `trace_id` on `AgentDecision`, feedback lifecycle columns, 3 new Celery analytics tasks, 6 Grafana dashboards, 11 Prometheus alert rules, 3 new API endpoints on agents router, 66 new agent tests.
+**Next steps:** (1) Start Docker services, load historical OHLCV data via `scripts/backfill_history.py`. (2) Run training pipeline: regime classifier → PPO RL → evolutionary optimiser → ensemble weight search. (3) Battle system frontend (`Frontend/src/components/battles/`) remains empty — last major incomplete frontend area. (4) Integration test the full agent ecosystem against a live platform instance. (5) Run Alembic migrations 018 and 019 against the live DB.
 **Blocked:** Nothing currently blocked.
 
 ---
@@ -56,6 +56,7 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 | **Agent Ecosystem (Phase 1)** | Complete | DB migration 017, 10 models, 10 repos, conversation system, memory system, 5 agent tools, AgentServer, CLI REPL, 4 Celery tasks. 370+ tests. |
 | **Agent Ecosystem (Phase 2)** | Complete | Permissions system (roles/capabilities/budget/enforcement), 4 CRITICAL security fixes, trading intelligence (TradingLoop, SignalGenerator, TradeExecutor, PositionMonitor, TradingJournal, StrategyManager, ABTestRunner). 414+ tests. |
 | **Agent Memory & Learning System** | Complete | `memory: project` on all 16 agents, 16 MEMORY.md files seeded, Memory Protocol in all agent prompts, 3 activity logging scripts, PostToolUse hook, `/analyze-agents` skill, `/review-changes` feedback capture. |
+| **Agent Logging System** | Complete | 34 tasks, 5 phases. Centralized structlog + trace_id correlation, API call logging middleware, LLM cost estimation, LogBatchWriter (async batched DB), 16 Prometheus metrics (AGENT_REGISTRY), 2 new DB tables, 3 new API endpoints, 3 Celery analytics tasks, 6 Grafana dashboards, 11 alert rules. 66 new tests. |
 | **Docs Site** | **COMPLETE** | 8 phases done. 50 MDX pages, 12 sections, 7 custom components, Cmd+K search, MD downloads, 5 REST API routes, landing integration, OpenGraph metadata, sitemap, custom 404. Security + perf hardened. |
 | **Strategy Registry (STR-1)** | Production | 6 DB tables, 10 REST endpoints, versioning, ownership checks, 24 tests |
 | **Strategy Executor (STR-2)** | Production | IndicatorEngine (7 indicators), StrategyExecutor, TestOrchestrator, TestAggregator, RecommendationEngine, 6 REST endpoints, 2 Celery tasks, 91 tests |
@@ -99,9 +100,9 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 
 Each account owns multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. All trading tables keyed by `agent_id`. Auth flow: API key tries agents table first, falls back to accounts. JWT uses `X-Agent-Id` header.
 
-### Database (17 migrations, current head: 017)
+### Database (19 migrations, current head: 019)
 
-Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable)
+Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable), `agent_api_calls`, `agent_strategy_signals`
 
 Note: Migration 011 missing from directory — chain skips 010 → 012.
 
@@ -144,6 +145,85 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 ---
 
 ## Recent Activity
+
+### 2026-03-21 — MILESTONE: Agent Logging System Complete (34 Tasks, 5 Phases)
+
+**What was built:**
+Full observability stack for the agent ecosystem: distributed trace correlation across all agent operations, Prometheus metrics, async batched DB persistence, Grafana dashboards, and Prometheus alert rules.
+
+**Changes:**
+
+New agent infrastructure files:
+- `agent/logging.py` — `configure_agent_logging()`: centralized structlog config with ISO timestamps, JSON output, and structlog-contextvars context (trace_id, span_id, agent_id). Call once at startup.
+- `agent/logging_middleware.py` — `log_api_call()` async context manager: wraps every tool call with structured logging, latency measurement, and LLM token/cost estimation. `set_agent_id()` binds agent context.
+- `agent/logging_writer.py` — `LogBatchWriter`: accumulates `AgentApiCall` rows in-memory, flushes to DB in batches (configurable size/interval). Used by `trading/loop.py` and `strategies/ensemble/run.py`.
+- `agent/metrics.py` — 16 Prometheus metrics in `AGENT_REGISTRY` (separate from platform registry): API call counters/histograms, LLM cost gauges, memory hit/miss counters, permission denial counters, budget utilization gauges, strategy signal counters.
+- `agent/server.py` — Added `/metrics` endpoint via `asyncio.start_server`; `set_agent_id()` helper.
+
+Modified agent files (structlog migration + instrumentation):
+- `agent/main.py` — Calls `configure_agent_logging()` at startup.
+- `agent/tasks.py` — Migrated to structlog; calls `configure_agent_logging()`.
+- `agent/tools/sdk_tools.py` — Wraps all 7 tool functions with `log_api_call()`; passes `get_trace_id` as `trace_id_provider` to `AsyncAgentExchangeClient`.
+- `agent/tools/rest_tools.py` — Wraps tool functions; injects `X-Trace-Id` header on every outbound request.
+- `agent/tools/agent_tools.py` — Wraps tool functions with `log_api_call()`.
+- `agent/conversation/session.py` — LLM calls wrapped with `log_api_call()` for cost tracking.
+- `agent/trading/loop.py` — Generates fresh `trace_id` per tick; passes to `LogBatchWriter`; EMA-based anomaly detection on tick latency.
+- `agent/trading/journal.py` — LLM reflection calls wrapped with `log_api_call()`.
+- `agent/memory/postgres_store.py` — Logs all memory operations; increments `memory_operations_total` counter.
+- `agent/memory/redis_cache.py` — Records cache hit/miss via `memory_cache_hits_total`/`memory_cache_misses_total`.
+- `agent/memory/retrieval.py` — Logs retrieval latency and result count.
+- `agent/permissions/enforcement.py` — Increments `permission_denials_total` on every `PermissionDenied` event.
+- `agent/permissions/budget.py` — Emits `budget_usage_ratio` gauge on each check.
+- `agent/strategies/ensemble/run.py` — Writes `AgentStrategySignal` rows per step via `LogBatchWriter`.
+- `agent/strategies/rl/*.py` (5 files) — All call `configure_agent_logging()` at startup.
+- `agent/strategies/evolutionary/*.py` (2 files) — Migrated to `configure_agent_logging()`.
+- `agent/strategies/ensemble/*.py` (3 files) — Migrated; standardized event names.
+- `agent/strategies/regime/*.py` (2 files) — Standardized event names.
+- `agent/pyproject.toml` — Added `prometheus-client>=0.20` to dependencies.
+- `sdk/agentexchange/async_client.py` — Added `trace_id_provider: Callable[[], str] | None` to inject `X-Trace-Id` header on every outbound request.
+
+New backend files:
+- `src/api/middleware/audit.py` — `AuditMiddleware`: fire-and-forget middleware that writes request metadata to `audit_log` table; registered after other middleware in `src/main.py`.
+- `src/monitoring/metrics.py` — 4 platform Prometheus metrics: `platform_orders_total`, `platform_order_latency_seconds`, `platform_api_errors_total`, `platform_price_ingestion_lag_seconds`.
+- `src/database/repositories/agent_api_call_repo.py` — `AgentApiCallRepository`: bulk save + analytics queries.
+- `src/database/repositories/agent_strategy_signal_repo.py` — `AgentStrategySignalRepository`: bulk save + attribution queries.
+- `src/tasks/agent_analytics.py` — 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC), `agent_platform_health_report` (daily 06:00 UTC).
+- `alembic/versions/018_add_agent_logging_tables.py` — `agent_api_calls` table, `agent_strategy_signals` table, `trace_id` column on `agent_decisions`.
+- `alembic/versions/019_add_feedback_lifecycle_columns.py` — `status` CHECK constraint + default, `resolution` column on `agent_feedback`.
+- `monitoring/alerts/agent-alerts.yml` — 11 Prometheus alert rules.
+- `monitoring/dashboards/*.json` — 6 Grafana dashboard definitions.
+
+Modified backend files:
+- `src/api/routes/agents.py` — 3 new endpoints: `GET /decisions/trace/{trace_id}`, `GET /decisions/analyze`, `PATCH /feedback/{feedback_id}`.
+- `src/api/schemas/agents.py` — 8+ new Pydantic schemas for trace/analyze/feedback endpoints.
+- `src/api/middleware/logging.py` — Extracts `X-Trace-Id`; increments `platform_api_errors_total` on 4xx/5xx.
+- `src/database/models.py` — `AgentApiCall`, `AgentStrategySignal` models; `trace_id` on `AgentDecision`; `status`/`resolution` on `AgentFeedback`.
+- `src/dependencies.py` — 3 new dependency aliases: `AgentApiCallRepoDep`, `AgentStrategySignalRepoDep`, etc.
+- `src/main.py` — `AuditMiddleware` registered.
+- `src/order_engine/engine.py` — Instruments `platform_orders_total` counter and `platform_order_latency_seconds` histogram.
+- `src/price_ingestion/service.py` — Updates `platform_price_ingestion_lag_seconds` gauge.
+- `src/tasks/celery_app.py` — 3 new beat schedule entries (02:00, 03:00 Sunday, 06:00 UTC).
+
+New tests:
+- `agent/tests/test_logging.py` — 25 tests for `configure_agent_logging()` and structlog context.
+- `agent/tests/test_logging_middleware.py` — 24 tests for `log_api_call()` and LLM cost estimator.
+- `agent/tests/test_logging_writer.py` — 17 tests for `LogBatchWriter` async batching.
+- `tests/unit/test_agent_api_call_repo.py` — 9 tests for `AgentApiCallRepository`.
+- `tests/unit/test_agent_strategy_signal_repo.py` — 10 tests for `AgentStrategySignalRepository`.
+
+**Decisions:**
+- Separate `AGENT_REGISTRY` from platform's default Prometheus registry — agent and platform metrics are served on different ports; mixing them would require all consumers to filter by prefix.
+- `LogBatchWriter` over per-call DB inserts — agent tools fire on every LLM/SDK call (potentially hundreds per minute); synchronous per-call inserts would add latency to the hot path.
+- EMA anomaly detection in `TradingLoop` — lightweight stateful detection without a separate ML model; detects tick latency spikes that correlate with connectivity degradation.
+- `AuditMiddleware` is fire-and-forget — audit logging must never block a request; a failed DB write is logged but the request proceeds.
+- `trace_id` on `AgentDecision` (not a separate table) — decision rows already exist per trading action; adding a column is additive (migration 018) and enables trace→decision lookup without a join.
+
+**Learnings:**
+- `configure_agent_logging()` must be called before any structlog event is emitted — if called after the first log, context vars may be unbound.
+- `LogBatchWriter.flush()` should be called explicitly on shutdown — the background flush task may have unflushed rows when the event loop closes.
+- Prometheus `AGENT_REGISTRY` must use `registry=AGENT_REGISTRY` on every `Counter`/`Histogram`/`Gauge` definition — omitting it registers to the default registry and appears at the platform's `/metrics` instead.
+
+---
 
 ### 2026-03-21 — MILESTONE: Agent Memory & Learning System Complete (14 Tasks)
 

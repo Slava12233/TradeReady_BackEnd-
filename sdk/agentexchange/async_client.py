@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -66,11 +67,16 @@ class AsyncAgentExchangeClient:
     three times with exponential back-off (1 s / 2 s / 4 s).
 
     Args:
-        api_key:    Agent API key (``ak_live_...`` format).
-        api_secret: Agent API secret (``sk_live_...`` format).
-        base_url:   Base URL of the platform REST API.
-                    Defaults to ``http://localhost:8000``.
-        timeout:    HTTP request timeout in seconds.  Defaults to ``30``.
+        api_key:            Agent API key (``ak_live_...`` format).
+        api_secret:         Agent API secret (``sk_live_...`` format).
+        base_url:           Base URL of the platform REST API.
+                            Defaults to ``http://localhost:8000``.
+        timeout:            HTTP request timeout in seconds.  Defaults to ``30``.
+        trace_id_provider:  Optional zero-argument callable that returns the
+                            current trace ID string.  When provided and the
+                            returned string is non-empty, an ``X-Trace-Id``
+                            header is injected into every outbound request.
+                            Defaults to ``None`` (no trace header sent).
 
     Example::
 
@@ -87,11 +93,13 @@ class AsyncAgentExchangeClient:
         api_secret: str,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: float = 30.0,
+        trace_id_provider: Callable[[], str] | None = None,
     ) -> None:
         self._api_key = api_key
         self._api_secret = api_secret
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._trace_id_provider = trace_id_provider
         self._jwt: str | None = None
         self._jwt_expires_at: float = 0.0  # UNIX timestamp
         self._http = httpx.AsyncClient(
@@ -104,7 +112,7 @@ class AsyncAgentExchangeClient:
     # Async context manager support
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> "AsyncAgentExchangeClient":
+    async def __aenter__(self) -> AsyncAgentExchangeClient:
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -181,7 +189,11 @@ class AsyncAgentExchangeClient:
             AgentExchangeError subclasses: For all HTTP error responses.
         """
         await self._ensure_auth()
-        headers = {"Authorization": f"Bearer {self._jwt}"}
+        headers: dict[str, str] = {"Authorization": f"Bearer {self._jwt}"}
+        if self._trace_id_provider:
+            trace_id = self._trace_id_provider()
+            if trace_id:
+                headers["X-Trace-Id"] = trace_id
 
         last_exc: Exception | None = None
         response: httpx.Response | None = None

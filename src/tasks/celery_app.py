@@ -53,6 +53,8 @@ app = Celery(
         "src.tasks.strategy_tasks",
         # Agent ecosystem tasks (agent/ package)
         "agent.tasks",
+        # Agent analytics tasks (src/tasks/ package)
+        "src.tasks.agent_analytics",
     ],
 )
 
@@ -192,5 +194,25 @@ app.conf.beat_schedule = {
     "agent-performance-snapshot": {
         "task": "agent.tasks.agent_performance_snapshot",
         "schedule": 3600.0,  # every hour
+    },
+    # ── Agent Analytics Tasks ─────────────────────────────────────────────
+    # Daily strategy attribution — aggregates last 24 h of agent_strategy_signals
+    # per strategy, correlates with decision outcomes via trace_id, and writes
+    # one AgentPerformance row per strategy per agent with period="attribution".
+    "agent-strategy-attribution": {
+        "task": "src.tasks.agent_analytics.agent_strategy_attribution",
+        "schedule": crontab(hour=2, minute=0),  # 02:00 UTC daily — after cleanup-backtest-detail-data
+    },
+    # Weekly memory effectiveness — counts decisions with/without memory context
+    # for the last 7 days and writes an AgentJournal "insight" entry per agent.
+    "agent-memory-effectiveness": {
+        "task": "src.tasks.agent_analytics.agent_memory_effectiveness",
+        "schedule": crontab(hour=3, minute=0, day_of_week=0),  # Sunday 03:00 UTC
+    },
+    # Daily platform health report — compares 24 h API call stats to the prior
+    # day and auto-creates AgentFeedback entries on latency or error regressions.
+    "agent-platform-health-report": {
+        "task": "src.tasks.agent_analytics.agent_platform_health_report",
+        "schedule": crontab(hour=6, minute=0),  # 06:00 UTC daily — off-peak
     },
 }

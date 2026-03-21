@@ -1,0 +1,242 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code when working with code in this repository.
+
+> **First step rule:** At the start of every conversation, read `development/context.md` before doing anything else. It contains a rolling summary of all development activity, decisions, and current state.
+
+> **Self-maintenance rule:** When modifying code in any folder, update that folder's `CLAUDE.md` if behavior, files, or patterns changed. Update the `<!-- last-updated -->` timestamp when you do.
+
+## CLAUDE.md Index
+
+Each module has its own `CLAUDE.md` with detailed file inventories, public APIs, patterns, and gotchas. Read the local file before working in that folder.
+
+<!-- BOOTSTRAP: The /bootstrap-project skill will populate this table automatically -->
+
+| Path | Description |
+|------|-------------|
+| `development/CLAUDE.md` | Development planning docs, progress tracking |
+
+---
+
+## Sub-Agents (`.claude/agents/`)
+
+<!-- last-updated: {{DATE}} -->
+
+16 specialized agents organized by role category.
+
+### Agent Inventory
+
+#### Quality Gate Agents (run after every change)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `code-reviewer` | Reviews code against CLAUDE.md-documented standards | Read, Write, Grep, Glob, Bash | sonnet | report + write | **After every code change** (step 1) |
+| `test-runner` | Maps changes to tests, runs them, writes missing tests | Read, Write, Edit, Grep, Glob, Bash | sonnet | run + write | **After every code change** (step 2) |
+| `context-manager` | Maintains `development/context.md` + syncs CLAUDE.md files | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | **After every task** (mandatory final step) |
+
+#### Security Agents (run for auth, input handling, sensitive changes)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `security-auditor` | Read-only audit: auth bypasses, injection, secrets, XSS | Read, Grep, Glob, Bash | sonnet | read-only | After security-sensitive changes |
+| `security-reviewer` | Vulnerability detection + remediation. Can fix CRITICALs | Read, Write, Edit, Bash, Grep, Glob | sonnet | read + fix | **PROACTIVELY** after auth/input/API code |
+
+#### Infrastructure Agents (run before deploys, migrations, API changes)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `migration-helper` | Validates/generates database migrations for safety | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | **Before** any migration |
+| `api-sync-checker` | Compares backend schemas vs frontend types | Read, Grep, Glob, Bash | sonnet | read-only | After API route/schema/frontend changes |
+| `deploy-checker` | Full A-Z deployment readiness validation | Read, Write, Edit, Grep, Glob, Bash | sonnet | report + write | Before deploying to production |
+| `doc-updater` | Keeps documentation in sync with code | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | After API, schema, or module changes |
+| `perf-checker` | N+1 queries, blocking async, missing indexes, render issues | Read, Grep, Glob, Bash | sonnet | read-only | After DB/async/hot-path/component changes |
+
+#### Development Agents (run when building features)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `backend-developer` | Production-quality backend code following conventions | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When creating backend modules/services |
+| `frontend-developer` | Frontend features following conventions | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When implementing frontend features |
+| `ml-engineer` | ML/RL training pipelines, model integration | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When building ML/RL/training systems |
+| `e2e-tester` | Live E2E scenarios, returns credentials for verification | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When validating full stack or populating data |
+
+#### Research & Planning Agents (run before implementing)
+
+| Agent | Purpose | Tools | Model | Mode | When to Use |
+|-------|---------|-------|-------|------|-------------|
+| `planner` | Detailed phased implementation plans with risks/testing | Read, Grep, Glob | **opus** | read-only | **PROACTIVELY** for complex features/refactoring |
+| `codebase-researcher` | Answers questions using CLAUDE.md navigation system | Read, Grep, Glob, Bash | sonnet | read-only | When you need to understand how something works |
+
+### Agent Pipelines (Execution Order)
+
+```
+Standard Post-Change (every code change):
+  code-reviewer → test-runner → context-manager
+
+API/Schema Change:
+  [make changes] → api-sync-checker → doc-updater → code-reviewer → test-runner → context-manager
+
+Security-Sensitive Change:
+  [make changes] → security-reviewer → security-auditor → code-reviewer → test-runner → context-manager
+
+Performance-Sensitive Change:
+  [make changes] → perf-checker → code-reviewer → test-runner → context-manager
+
+Database Migration:
+  migration-helper → [apply] → deploy-checker → context-manager
+
+Feature Implementation:
+  planner → codebase-researcher → backend/frontend/ml-engineer → code-reviewer → test-runner → context-manager
+```
+
+### Mandatory Agent Rules
+
+1. **After ANY code change**, run the standard pipeline: `code-reviewer` → `test-runner` → `context-manager`. Never skip.
+2. **Before ANY migration**, delegate to `migration-helper`.
+3. **After API/schema changes**, run `api-sync-checker` → `doc-updater` before the standard pipeline.
+4. **For security-sensitive changes**, run the security pipeline.
+5. **For performance-sensitive changes**, run `perf-checker` before the standard pipeline.
+6. If `test-runner` identifies missing coverage, it writes new tests.
+7. If tests fail, fix the code (or tests if behavior changed), then re-run until all pass.
+8. **`context-manager` is ALWAYS the final step** of every task. Not optional.
+9. **At the end of every task**, include an **Agent Activity Report** in your final response to the user. Format:
+
+```
+## Agent Activity Report
+
+| Agent | Task | Result |
+|-------|------|--------|
+| `agent-name` | What it was asked to do | Outcome (files changed, issues found, tests passed, etc.) |
+| ... | ... | ... |
+
+**Pipeline:** agent1 → agent2 → agent3
+**Total agents used:** N
+```
+
+This report gives visibility into which agents ran, what they accomplished, and the pipeline flow. Always include it — even for simple tasks with just 1 agent.
+
+---
+
+## Skills (`.claude/skills/`)
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| `commit` | `/commit` | Smart commit: stages, lints, generates conventional message, commits |
+| `review-changes` | `/review-changes` | Full post-change pipeline: detects type, runs agents in order |
+| `run-checks` | `/run-checks` | Quick quality gate: lint + type check + tests on changed files only |
+| `sync-context` | `/sync-context` | Scan all CLAUDE.md files, fix stale data, create missing ones |
+| `plan-to-tasks` | `/plan-to-tasks <file>` | Read a plan, match tasks to agents, create task files |
+| `analyze-agents` | `/analyze-agents` | Analyze agent activity logs, memory health, suggest improvements |
+
+## Configuration (`.claude/settings.json`)
+
+Shared team config (committed). Defines:
+- **Permissions**: Pattern-based allow/deny rules for all tools
+- **Env vars**: Project-specific environment variables
+- **Hooks**: PostToolUse reminder after Write/Edit to run quality pipeline
+- **Denied**: Destructive operations (`rm -rf /`, `git push --force`, `DROP TABLE`)
+
+Personal overrides go in `.claude/settings.local.json` (gitignored).
+
+---
+
+## Production-First Development Protocol
+
+### Before ANY Change
+1. Understand the existing code — read the files you're modifying
+2. Check existing tests for the area you're changing
+3. Run lint and type checks on affected files before committing
+
+### After ANY Change
+1. **Tests pass**: Run tests for affected areas — fix broken tests or update them if behavior intentionally changed
+2. **Lint clean**: Linter must pass with zero errors
+3. **Type safe**: Type checker must pass
+4. **No regressions**: If changing an API endpoint, verify the response shape hasn't broken consumers
+5. **Migration safe**: New DB changes need migrations that work on the live database
+
+---
+
+## Running the Platform
+
+<!-- BOOTSTRAP: Replace these with your actual commands -->
+
+```bash
+# Development server
+{{DEV_SERVER_COMMAND}}
+
+# Run tests
+{{TEST_COMMAND}}
+
+# Lint
+{{LINT_COMMAND}}
+
+# Type check
+{{TYPE_CHECK_COMMAND}}
+
+# Build
+{{BUILD_COMMAND}}
+```
+
+## Testing
+
+```bash
+{{TEST_COMMAND}}                    # All tests
+```
+
+- See `tests/CLAUDE.md` for full fixture inventory, mock patterns, and test-specific gotchas
+
+## Linting & Type Checking
+
+```bash
+{{LINT_COMMAND}}                    # Lint
+{{TYPE_CHECK_COMMAND}}              # Type check
+```
+
+## Architecture Overview
+
+<!-- BOOTSTRAP: The bootstrap skill will generate this section based on your codebase -->
+
+{{ARCHITECTURE_OVERVIEW}}
+
+### Dependency Direction (strict)
+```
+Routes/Controllers → Services/Use Cases → Repositories/Data Access → Models/Entities
+```
+Never import upward in this chain.
+
+### Key Data Flows
+
+<!-- BOOTSTRAP: Describe your main data flows here -->
+
+## Code Standards
+
+<!-- BOOTSTRAP: The bootstrap skill will detect and populate these -->
+
+- See `.claude/rules/code-style.md` for detailed coding standards
+- See `.claude/rules/testing.md` for test conventions
+- See `.claude/rules/security.md` for security requirements
+
+### Naming
+- Files: `{{FILE_NAMING}}` (e.g., `snake_case.py`, `kebab-case.ts`)
+- Classes: `PascalCase`
+- Functions: `{{FUNCTION_NAMING}}` (e.g., `snake_case`, `camelCase`)
+- Constants: `UPPER_SNAKE_CASE`
+- Private: `_prefix`
+
+## Git Commit Format
+
+```
+type(scope): description
+```
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
+
+## Environment Variables
+
+<!-- BOOTSTRAP: List your env vars here -->
+
+| Variable | Purpose |
+|----------|---------|
+
+## Docker
+
+<!-- BOOTSTRAP: If applicable, describe Docker setup -->

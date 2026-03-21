@@ -231,7 +231,7 @@ class CapabilityManager:
             agent_uuid = UUID(agent_id)
         except (ValueError, AttributeError) as exc:
             logger.warning(
-                "capability_manager.invalid_agent_id",
+                "agent.permission.invalid_agent_id",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -245,7 +245,7 @@ class CapabilityManager:
                     record = await repo.get_by_agent(agent_uuid)
                 except AgentPermissionNotFoundError:
                     logger.debug(
-                        "capability_manager.no_permission_record",
+                        "agent.permission.no_permission_record",
                         agent_id=agent_id,
                     )
                     return set()
@@ -255,7 +255,7 @@ class CapabilityManager:
                     role = AgentRole(record.role)
                 except ValueError:
                     logger.warning(
-                        "capability_manager.unknown_role",
+                        "agent.permission.unknown_role",
                         agent_id=agent_id,
                         role=record.role,
                     )
@@ -288,7 +288,7 @@ class CapabilityManager:
 
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "capability_manager.db_load_error",
+                "agent.permission.db_load_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -325,14 +325,14 @@ class CapabilityManager:
             return caps
         except RedisError as exc:
             logger.debug(
-                "capability_manager.cache_read_error",
+                "agent.permission.cache_read_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
             return None
         except (json.JSONDecodeError, TypeError) as exc:
             logger.warning(
-                "capability_manager.cache_deserialise_error",
+                "agent.permission.cache_deserialise_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -353,20 +353,20 @@ class CapabilityManager:
             payload = json.dumps([cap.value for cap in caps])
             await redis.set(_cache_key(agent_id), payload, ex=_PERMISSIONS_CACHE_TTL)
             logger.debug(
-                "capability_manager.cache_written",
+                "agent.permission.cache_written",
                 agent_id=agent_id,
                 count=len(caps),
                 ttl=_PERMISSIONS_CACHE_TTL,
             )
         except RedisError as exc:
             logger.debug(
-                "capability_manager.cache_write_error",
+                "agent.permission.cache_write_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
         except (TypeError, ValueError) as exc:
             logger.warning(
-                "capability_manager.cache_serialise_error",
+                "agent.permission.cache_serialise_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -384,12 +384,12 @@ class CapabilityManager:
             redis = await self._get_redis()
             await redis.delete(_cache_key(agent_id))
             logger.debug(
-                "capability_manager.cache_invalidated",
+                "agent.permission.cache_invalidated",
                 agent_id=agent_id,
             )
         except RedisError as exc:
             logger.debug(
-                "capability_manager.cache_invalidate_error",
+                "agent.permission.cache_invalidate_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -419,7 +419,7 @@ class CapabilityManager:
         cached = await self._read_cache(agent_id)
         if cached is not None:
             logger.debug(
-                "capability_manager.cache_hit",
+                "agent.permission.cache_hit",
                 agent_id=agent_id,
                 count=len(cached),
             )
@@ -507,7 +507,7 @@ class CapabilityManager:
                 )
 
             logger.info(
-                "capability_manager.capability_granted",
+                "agent.permission.capability_granted",
                 agent_id=agent_id,
                 capability=capability.value,
                 granted_by=granted_by,
@@ -516,7 +516,7 @@ class CapabilityManager:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "capability_manager.grant_error",
+                "agent.permission.grant_error",
                 agent_id=agent_id,
                 capability=capability.value,
                 error=str(exc),
@@ -582,7 +582,7 @@ class CapabilityManager:
                 )
 
             logger.info(
-                "capability_manager.capability_revoked",
+                "agent.permission.capability_revoked",
                 agent_id=agent_id,
                 capability=capability.value,
             )
@@ -590,7 +590,7 @@ class CapabilityManager:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "capability_manager.revoke_error",
+                "agent.permission.revoke_error",
                 agent_id=agent_id,
                 capability=capability.value,
                 error=str(exc),
@@ -655,7 +655,7 @@ class CapabilityManager:
                 )
 
             logger.info(
-                "capability_manager.role_changed",
+                "agent.permission.role_changed",
                 agent_id=agent_id,
                 new_role=role.value,
                 granted_by=granted_by,
@@ -664,7 +664,7 @@ class CapabilityManager:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "capability_manager.set_role_error",
+                "agent.permission.set_role_error",
                 agent_id=agent_id,
                 role=role.value,
                 error=str(exc),
@@ -708,7 +708,7 @@ class CapabilityManager:
                     return role_from_string(self._config.default_agent_role)
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "capability_manager.get_role_error",
+                "agent.permission.get_role_error",
                 agent_id=agent_id,
                 error=str(exc),
             )

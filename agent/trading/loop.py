@@ -53,6 +53,7 @@ from uuid import UUID
 import structlog
 
 from agent.config import AgentConfig
+from agent.logging_writer import LogBatchWriter
 from agent.models.ecosystem import ExecutionResult, PositionAction, TradingCycleResult
 from agent.permissions.enforcement import PermissionEnforcer
 from agent.trading.signal_generator import SignalGenerator, TradingSignal
@@ -116,6 +117,12 @@ class TradingLoop:
         sdk_client: Optional pre-built ``AsyncAgentExchangeClient``.  When
             ``None`` the loop constructs one from ``config.platform_api_key`` on
             :meth:`start`; a connected client enables live order placement.
+        batch_writer: Optional :class:`~agent.logging_writer.LogBatchWriter`
+            for persisting per-signal strategy records.  When provided, every
+            signal produced by the ensemble is recorded via
+            :meth:`~agent.logging_writer.LogBatchWriter.add_signal` with the
+            current trace ID attached.  Pass ``None`` (the default) to disable
+            batch logging without affecting any other behaviour.
 
     Example::
 
@@ -137,12 +144,14 @@ class TradingLoop:
         enforcer: PermissionEnforcer,
         signal_generator: SignalGenerator | None = None,
         sdk_client: Any = None,  # noqa: ANN401
+        batch_writer: LogBatchWriter | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._config = config
         self._enforcer = enforcer
         self._signal_generator: SignalGenerator | None = signal_generator
         self._sdk_client: Any = sdk_client
+        self._batch_writer = batch_writer
 
         # Lifecycle state
         self._stop_event = asyncio.Event()
@@ -154,6 +163,12 @@ class TradingLoop:
 
         # HTTP client for candle fetching (lazily created in _ensure_rest_client).
         self._rest_client: Any = None
+
+        # EMA state for anomaly detection (ephemeral — reset on restart).
+        self._ema_api_latency: float | None = None
+        self._ema_confidence: float | None = None
+        self._ema_pnl: float = 0.0
+        self._ema_pnl_var: float = 0.0
 
         self._log = logger.bind(agent_id=agent_id, component="trading_loop")
 
@@ -174,11 +189,11 @@ class TradingLoop:
             RuntimeError: If the asyncio event loop is not running.
         """
         if self._is_running:
-            self._log.warning("trading_loop.start.already_running")
+            self._log.warning("agent.trade.loop.start.already_running")
             return
 
         self._log.info(
-            "trading_loop.start",
+            "agent.trade.loop.start",
             interval=self._config.trading_loop_interval,
             symbols=self._config.symbols,
             min_confidence=self._config.trading_min_confidence,
@@ -202,7 +217,7 @@ class TradingLoop:
         if not self._is_running:
             return
 
-        self._log.info("trading_loop.stop")
+        self._log.info("agent.trade.loop.stop")
         self._stop_event.set()
         self._is_running = False
 
@@ -221,11 +236,11 @@ class TradingLoop:
             try:
                 await self._rest_client.aclose()
             except Exception as exc:  # noqa: BLE001
-                self._log.debug("trading_loop.rest_client.close_error", error=str(exc))
+                self._log.debug("agent.trade.loop.rest_client.close_error", error=str(exc))
             self._rest_client = None
 
         self._log.info(
-            "trading_loop.stopped",
+            "agent.trade.loop.stopped",
             cycles_completed=self._cycle_counter,
         )
 
@@ -274,6 +289,10 @@ class TradingLoop:
         if self._stop_event.is_set():
             raise LoopStoppedError(self._agent_id)
 
+        from agent.logging import set_trace_id  # noqa: PLC0415
+
+        trace_id = set_trace_id()
+
         self._cycle_counter += 1
         cycle_num = self._cycle_counter
         start_ms = time.monotonic()
@@ -284,9 +303,10 @@ class TradingLoop:
         decisions_made = 0
 
         self._log.info(
-            "trading_loop.tick.start",
+            "agent.trade.loop.tick.start",
             cycle=cycle_num,
             symbols=self._config.symbols,
+            trace_id=trace_id,
         )
 
         # ── 1. Observe ───────────────────────────────────────────────────
@@ -301,7 +321,7 @@ class TradingLoop:
         except Exception as exc:  # noqa: BLE001
             err_msg = f"Signal generation failed: {exc}"
             errors.append(err_msg)
-            self._log.error("trading_loop.tick.signal_gen_failed", cycle=cycle_num, error=str(exc))
+            self._log.error("agent.trade.loop.tick.signal_gen_failed", cycle=cycle_num, error=str(exc))
 
         # ── 3. Decide — filter by confidence threshold ───────────────────
         threshold = self._config.trading_min_confidence
@@ -312,12 +332,32 @@ class TradingLoop:
         decisions_made = len(actionable)
 
         self._log.info(
-            "trading_loop.tick.signals",
+            "agent.trade.loop.tick.signals",
             cycle=cycle_num,
             total_signals=signals_generated,
             actionable=decisions_made,
             threshold=threshold,
         )
+
+        # Emit decision metrics for all non-hold signals
+        try:
+            from agent.metrics import agent_decisions_total  # noqa: PLC0415
+
+            for _sig in actionable:
+                agent_decisions_total.labels(
+                    agent_id=self._agent_id,
+                    decision_type="trade",
+                    direction=_sig.action,
+                ).inc()
+            for _sig in signals:
+                if _sig.action == "hold":
+                    agent_decisions_total.labels(
+                        agent_id=self._agent_id,
+                        decision_type="hold",
+                        direction="hold",
+                    ).inc()
+        except Exception:  # noqa: BLE001
+            pass
 
         # ── 4. Check + 5. Execute ─────────────────────────────────────────
         for signal in actionable:
@@ -338,7 +378,7 @@ class TradingLoop:
         except Exception as exc:  # noqa: BLE001
             err_msg = f"Record step failed: {exc}"
             errors.append(err_msg)
-            self._log.error("trading_loop.tick.record_failed", cycle=cycle_num, error=str(exc))
+            self._log.error("agent.trade.loop.tick.record_failed", cycle=cycle_num, error=str(exc))
 
         # ── 7. Learn (best-effort) ─────────────────────────────────────────
         try:
@@ -346,12 +386,28 @@ class TradingLoop:
         except Exception as exc:  # noqa: BLE001
             # Non-fatal — learning failures must never block the cycle.
             self._log.warning(
-                "trading_loop.tick.learn_failed",
+                "agent.trade.loop.tick.learn_failed",
                 cycle=cycle_num,
                 error=str(exc),
             )
 
         duration_ms = int((time.monotonic() - start_ms) * 1000)
+
+        # ── 8. Anomaly detection (lightweight — no DB queries) ─────────────
+        try:
+            avg_confidence = (
+                sum(s.confidence for s in signals) / len(signals) if signals else 0.5
+            )
+            pnl_val = float(portfolio_state.get("total_pnl", 0) or 0)
+            tick_metrics: dict[str, float] = {
+                "avg_api_latency": float(duration_ms),
+                "avg_confidence": avg_confidence,
+                "pnl": pnl_val,
+            }
+            await self._detect_anomalies(tick_metrics)
+        except Exception as exc:  # noqa: BLE001
+            # Anomaly detection must never block the trading cycle.
+            self._log.debug("agent.anomaly.detection_error", error=str(exc))
         trades_executed = sum(1 for e in executions if e.success)
 
         result = TradingCycleResult(
@@ -369,7 +425,7 @@ class TradingLoop:
         )
 
         self._log.info(
-            "trading_loop.tick.complete",
+            "agent.trade.loop.tick.complete",
             cycle=cycle_num,
             duration_ms=duration_ms,
             signals=signals_generated,
@@ -392,7 +448,7 @@ class TradingLoop:
         Backs off for :data:`_ERROR_BACKOFF_SECONDS` after repeated failures.
         """
         interval = float(self._config.trading_loop_interval)
-        self._log.info("trading_loop.run_forever.started", interval=interval)
+        self._log.info("agent.trade.loop.run_forever.started", interval=interval)
 
         while not self._stop_event.is_set():
             try:
@@ -403,13 +459,13 @@ class TradingLoop:
             except Exception as exc:  # noqa: BLE001
                 self._consecutive_errors += 1
                 self._log.error(
-                    "trading_loop.run_forever.tick_error",
+                    "agent.trade.loop.run_forever.tick_error",
                     error=str(exc),
                     consecutive_errors=self._consecutive_errors,
                 )
                 if self._consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                     self._log.warning(
-                        "trading_loop.run_forever.backing_off",
+                        "agent.trade.loop.run_forever.backing_off",
                         backoff_seconds=_ERROR_BACKOFF_SECONDS,
                         consecutive_errors=self._consecutive_errors,
                     )
@@ -423,6 +479,24 @@ class TradingLoop:
                         pass
                     self._consecutive_errors = 0
 
+            # Update health gauges after each tick attempt
+            try:
+                from agent.metrics import agent_consecutive_errors, agent_health_status  # noqa: PLC0415
+
+                agent_consecutive_errors.labels(agent_id=self._agent_id).set(
+                    self._consecutive_errors
+                )
+                # 1.0 = healthy, 0.5 = degraded (errors > 0), 0.0 = unhealthy
+                if self._consecutive_errors == 0:
+                    _health_val = 1.0
+                elif self._consecutive_errors < _MAX_CONSECUTIVE_ERRORS:
+                    _health_val = 0.5
+                else:
+                    _health_val = 0.0
+                agent_health_status.labels(agent_id=self._agent_id).set(_health_val)
+            except Exception:  # noqa: BLE001
+                pass
+
             # Sleep for the configured interval or until stop is signalled.
             if not self._stop_event.is_set():
                 try:
@@ -434,7 +508,7 @@ class TradingLoop:
                     # Normal case: timeout elapsed, run next tick.
                     pass
 
-        self._log.info("trading_loop.run_forever.exited")
+        self._log.info("agent.trade.loop.run_forever.exited")
 
     # ------------------------------------------------------------------
     # Step implementations
@@ -459,14 +533,14 @@ class TradingLoop:
             if isinstance(portfolio_raw, dict):
                 portfolio_state = portfolio_raw
         except Exception as exc:  # noqa: BLE001
-            self._log.warning("trading_loop.observe.portfolio_failed", error=str(exc))
+            self._log.warning("agent.trade.loop.observe.portfolio_failed", error=str(exc))
 
         try:
             positions_raw = await self._sdk_client.get_positions()
             if isinstance(positions_raw, list):
                 positions = positions_raw
         except Exception as exc:  # noqa: BLE001
-            self._log.warning("trading_loop.observe.positions_failed", error=str(exc))
+            self._log.warning("agent.trade.loop.observe.positions_failed", error=str(exc))
 
         return portfolio_state, positions
 
@@ -511,12 +585,12 @@ class TradingLoop:
             )
         except Exception as exc:  # noqa: BLE001
             err = f"Permission check failed for {sym}: {exc}"
-            self._log.error("trading_loop.check.enforcer_error", symbol=sym, error=str(exc))
+            self._log.error("agent.trade.loop.check.enforcer_error", symbol=sym, error=str(exc))
             return None, err
 
         if not enforcement.allowed:
             self._log.info(
-                "trading_loop.check.denied",
+                "agent.trade.loop.check.denied",
                 symbol=sym,
                 side=side,
                 reason=enforcement.reason,
@@ -546,7 +620,7 @@ class TradingLoop:
 
         if self._sdk_client is None:
             self._log.debug(
-                "trading_loop.execute.no_sdk_client",
+                "agent.trade.loop.execute.no_sdk_client",
                 symbol=sym,
                 side=side,
                 qty=qty,
@@ -554,7 +628,7 @@ class TradingLoop:
             return None, ""
 
         self._log.info(
-            "trading_loop.execute.placing_order",
+            "agent.trade.loop.execute.placing_order",
             symbol=sym,
             side=side,
             qty=qty,
@@ -590,7 +664,7 @@ class TradingLoop:
                 executed_at=datetime.now(UTC),
             )
             self._log.info(
-                "trading_loop.execute.order_placed",
+                "agent.trade.loop.execute.order_placed",
                 symbol=sym,
                 side=side,
                 order_id=order_id,
@@ -600,7 +674,7 @@ class TradingLoop:
         except Exception as exc:  # noqa: BLE001
             err = f"Order placement failed for {sym}: {exc}"
             self._log.error(
-                "trading_loop.execute.order_failed",
+                "agent.trade.loop.execute.order_failed",
                 symbol=sym,
                 side=side,
                 error=str(exc),
@@ -652,7 +726,7 @@ class TradingLoop:
             from src.database.session import get_session_factory  # noqa: PLC0415
         except ImportError as exc:
             self._log.warning(
-                "trading_loop.record.import_failed",
+                "agent.trade.loop.record.import_failed",
                 error=str(exc),
                 hint="DB not available in this environment; skipping persistence.",
             )
@@ -694,6 +768,10 @@ class TradingLoop:
                 now = datetime.now(UTC)
 
                 # Record one decision row per signal.
+                from agent.logging import get_trace_id  # noqa: PLC0415
+
+                current_trace_id = get_trace_id()
+
                 for sig in signals:
                     decision_type = "hold" if sig.action == "hold" else "trade"
                     direction = sig.action  # "buy", "sell", or "hold"
@@ -724,6 +802,7 @@ class TradingLoop:
                             "agreement_rate": sig.agreement_rate,
                         },
                         order_id=order_uuid,
+                        trace_id=current_trace_id or None,
                     )
                     await decision_repo.create(decision_row)
 
@@ -742,7 +821,7 @@ class TradingLoop:
 
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "trading_loop.record.db_error",
+                "agent.trade.loop.record.db_error",
                 error=str(exc),
             )
             raise
@@ -797,7 +876,7 @@ class TradingLoop:
             combined_insight = " | ".join(insights)
             _ = _has_memory  # referenced in log message below
             self._log.debug(
-                "trading_loop.learn.insights_extracted",
+                "agent.trade.loop.learn.insights_extracted",
                 count=len(insights),
                 preview=combined_insight[:120],
             )
@@ -807,6 +886,63 @@ class TradingLoop:
             # the TradingLoop is embedded in a live server context.
         except ImportError:
             pass
+
+    async def _detect_anomalies(self, tick_metrics: dict[str, float]) -> None:
+        """Compare current tick metrics to rolling baselines using EMA.
+
+        Maintains exponential moving averages for API latency, signal confidence,
+        and portfolio PnL.  Emits a structured warning log for each metric that
+        deviates significantly from its baseline.  All state is in-memory and
+        resets on loop restart — no DB queries are performed.
+
+        Args:
+            tick_metrics: Dictionary with keys ``avg_api_latency`` (ms),
+                ``avg_confidence`` (0–1), and ``pnl`` (float).
+        """
+        alpha = 0.1
+
+        # First tick — initialise baselines without comparison.
+        if self._ema_api_latency is None:
+            self._ema_api_latency = tick_metrics.get("avg_api_latency", 0)
+            self._ema_confidence = tick_metrics.get("avg_confidence", 0.5)
+            self._ema_pnl = tick_metrics.get("pnl", 0)
+            self._ema_pnl_var = 0.0
+            return
+
+        latency = tick_metrics.get("avg_api_latency", 0)
+        confidence = tick_metrics.get("avg_confidence", 0.5)
+        pnl = tick_metrics.get("pnl", 0)
+
+        # Update EMAs.
+        self._ema_api_latency = alpha * latency + (1 - alpha) * self._ema_api_latency
+        self._ema_confidence = alpha * confidence + (1 - alpha) * (self._ema_confidence or 0.5)
+
+        # Detect anomalies.
+        anomalies: list[tuple[str, float, float]] = []
+
+        if latency > self._ema_api_latency * 2 and latency > 100:  # >2x baseline and >100 ms
+            anomalies.append(("api_latency_spike", latency, self._ema_api_latency))
+
+        if confidence < (self._ema_confidence or 0.5) * 0.7 and confidence > 0:
+            anomalies.append(("confidence_drop", confidence, self._ema_confidence or 0.5))
+
+        # PnL outlier using EMA variance (Welford-style online estimator via EMA).
+        pnl_diff = pnl - self._ema_pnl
+        self._ema_pnl_var = alpha * pnl_diff**2 + (1 - alpha) * self._ema_pnl_var
+        pnl_std = self._ema_pnl_var**0.5
+        if pnl_std > 0 and abs(pnl_diff) > 3 * pnl_std:
+            anomalies.append(("pnl_outlier", pnl, self._ema_pnl))
+
+        # Update PnL EMA after comparison so the current value is the new baseline.
+        self._ema_pnl = alpha * pnl + (1 - alpha) * self._ema_pnl
+
+        for anomaly_type, value, baseline in anomalies:
+            self._log.warning(
+                "agent.anomaly.detected",
+                type=anomaly_type,
+                value=round(value, 4),
+                baseline=round(baseline, 4),
+            )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -852,6 +988,8 @@ class TradingLoop:
                 config=ensemble_config,
                 sdk_client=self._sdk_client,
                 rest_client=rest_client,
+                batch_writer=self._batch_writer,
+                agent_id=self._agent_id,
             )
             await runner.initialize()
 
@@ -861,7 +999,7 @@ class TradingLoop:
                 rest_client=rest_client,
             )
             self._log.info(
-                "trading_loop.signal_generator.initialised",
+                "agent.trade.loop.signal_generator.initialised",
                 symbols=self._config.symbols,
                 enable_rl=ensemble_config.enable_rl_signal,
                 enable_evolved=ensemble_config.enable_evolved_signal,
@@ -870,7 +1008,7 @@ class TradingLoop:
 
         except Exception as exc:  # noqa: BLE001
             self._log.warning(
-                "trading_loop.signal_generator.init_failed",
+                "agent.trade.loop.signal_generator.init_failed",
                 error=str(exc),
                 hint="Loop will run without signal generation; all ticks will produce no signals.",
             )

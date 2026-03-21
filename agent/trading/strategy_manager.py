@@ -352,7 +352,7 @@ class StrategyManager:
         window.append(record)
 
         self._log.debug(
-            "strategy_manager.record",
+            "agent.trade.strategy_manager.record",
             agent_id=agent_id,
             strategy=strategy_name,
             action=signal.action,
@@ -468,7 +468,7 @@ class StrategyManager:
 
             if completed < self._min_trades:
                 self._log.debug(
-                    "strategy_manager.degradation_check.skipped",
+                    "agent.trade.strategy_manager.degradation_check.skipped",
                     strategy=strategy_name,
                     completed_trades=completed,
                     required=self._min_trades,
@@ -625,7 +625,7 @@ class StrategyManager:
 
         if alerts:
             self._log.info(
-                "strategy_manager.degradation_detected",
+                "agent.trade.strategy_manager.degradation_detected",
                 agent_id=agent_id,
                 alert_count=len(alerts),
                 strategies=[a.strategy_name for a in alerts],
@@ -767,7 +767,7 @@ class StrategyManager:
             )
 
         self._log.info(
-            "strategy_manager.suggestions_generated",
+            "agent.trade.strategy_manager.suggestions_generated",
             agent_id=agent_id,
             strategy=strategy_name,
             count=len(adjustments),
@@ -837,7 +837,7 @@ class StrategyManager:
         recommendation = _build_comparison_recommendation(perfs, ranking)
 
         self._log.info(
-            "strategy_manager.compare",
+            "agent.trade.strategy_manager.compare",
             agent_id=agent_id,
             strategies=ranking,
             best=best,
@@ -885,7 +885,7 @@ class StrategyManager:
             )
         except ImportError:
             self._log.warning(
-                "strategy_manager.persist.import_error",
+                "agent.trade.strategy_manager.persist.import_error",
                 reason="src package not available; skipping persistence.",
             )
             return
@@ -932,7 +932,7 @@ class StrategyManager:
                 await repo.create(perf_row)
                 await session.commit()
                 self._log.info(
-                    "strategy_manager.persist.success",
+                    "agent.trade.strategy_manager.persist.success",
                     agent_id=agent_id,
                     strategy=strategy_name,
                     period=period,
@@ -941,7 +941,7 @@ class StrategyManager:
                 )
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "strategy_manager.persist.error",
+                "agent.trade.strategy_manager.persist.error",
                 agent_id=agent_id,
                 strategy=strategy_name,
                 error=str(exc),

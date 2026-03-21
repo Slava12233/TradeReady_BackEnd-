@@ -47,6 +47,10 @@ from typing import Any
 import structlog
 from src.tasks.celery_app import app
 
+from agent.logging import configure_agent_logging
+
+configure_agent_logging()
+
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -122,7 +126,7 @@ async def _run_morning_review() -> dict[str, Any]:
                 market_prices[symbol] = str(price)
                 symbols_scanned += 1
     except Exception:
-        logger.exception("agent_morning_review.market_scan.failed")
+        logger.exception("agent.task.morning_review.market_scan.failed")
 
     # ── Step 2: load all active (non-archived) agent IDs ─────────────────────
     try:
@@ -132,7 +136,7 @@ async def _run_morning_review() -> dict[str, Any]:
             result = await db.execute(stmt)
             agent_ids = list(result.scalars().all())
     except Exception:
-        logger.exception("agent_morning_review.load_agents.failed")
+        logger.exception("agent.task.morning_review.load_agents.failed")
         duration_ms = round((time.monotonic() - task_start) * 1000, 2)
         return {
             "agents_processed": 0,
@@ -190,14 +194,14 @@ async def _run_morning_review() -> dict[str, Any]:
                 await db.commit()
 
             agents_processed += 1
-            logger.info("agent_morning_review.journal_written", agent_id=str(agent_id))
+            logger.info("agent.task.morning_review.journal_written", agent_id=str(agent_id))
         except Exception:
             agents_failed += 1
-            logger.exception("agent_morning_review.agent_error", agent_id=str(agent_id))
+            logger.exception("agent.task.morning_review.agent_error", agent_id=str(agent_id))
 
     duration_ms = round((time.monotonic() - task_start) * 1000, 2)
     logger.info(
-        "agent_morning_review.finished",
+        "agent.task.morning_review.finished",
         agents_processed=agents_processed,
         agents_skipped=agents_skipped,
         agents_failed=agents_failed,
@@ -287,7 +291,7 @@ async def _run_budget_reset() -> dict[str, Any]:
             result = await db.execute(stmt)
             agent_ids: list[UUID] = list(result.scalars().all())
     except Exception:
-        logger.exception("agent_budget_reset.load_agents.failed")
+        logger.exception("agent.task.budget_reset.load_agents.failed")
         duration_ms = round((time.monotonic() - task_start) * 1000, 2)
         return {
             "agents_reset": 0,
@@ -303,18 +307,18 @@ async def _run_budget_reset() -> dict[str, Any]:
                 await repo.reset_daily(agent_id)
                 await db.commit()
             agents_reset += 1
-            logger.info("agent_budget_reset.agent_reset", agent_id=str(agent_id))
+            logger.info("agent.task.budget_reset.agent_reset", agent_id=str(agent_id))
         except AgentBudgetNotFoundError:
             # Budget row disappeared between the list query and the reset call.
             agents_skipped += 1
-            logger.warning("agent_budget_reset.no_budget_record", agent_id=str(agent_id))
+            logger.warning("agent.task.budget_reset.no_budget_record", agent_id=str(agent_id))
         except Exception:
             agents_failed += 1
-            logger.exception("agent_budget_reset.agent_error", agent_id=str(agent_id))
+            logger.exception("agent.task.budget_reset.agent_error", agent_id=str(agent_id))
 
     duration_ms = round((time.monotonic() - task_start) * 1000, 2)
     logger.info(
-        "agent_budget_reset.finished",
+        "agent.task.budget_reset.finished",
         agents_reset=agents_reset,
         agents_skipped=agents_skipped,
         agents_failed=agents_failed,
@@ -406,7 +410,7 @@ async def _run_memory_cleanup() -> dict[str, Any]:
         confidence_threshold = Decimal(str(_config.memory_cleanup_confidence_threshold))
         age_days = _config.memory_cleanup_age_days
     except Exception:
-        logger.warning("agent_memory_cleanup.config_load_failed, using defaults")
+        logger.warning("agent.task.memory_cleanup.config_load_failed", fallback="using defaults")
         confidence_threshold = Decimal("0.2")
         age_days = 90
 
@@ -422,7 +426,7 @@ async def _run_memory_cleanup() -> dict[str, Any]:
             result = await db.execute(stmt)
             agent_ids: list[UUID] = list(result.scalars().all())
     except Exception:
-        logger.exception("agent_memory_cleanup.load_agents.failed")
+        logger.exception("agent.task.memory_cleanup.load_agents.failed")
         duration_ms = round((time.monotonic() - task_start) * 1000, 2)
         return {
             "agents_processed": 0,
@@ -468,18 +472,18 @@ async def _run_memory_cleanup() -> dict[str, Any]:
             total_low_conf_deleted += low_conf_deleted
             agents_processed += 1
             logger.info(
-                "agent_memory_cleanup.agent_done",
+                "agent.task.memory_cleanup.agent_done",
                 agent_id=str(agent_id),
                 expired_deleted=expired_deleted,
                 low_conf_deleted=low_conf_deleted,
             )
         except Exception:
             agents_failed += 1
-            logger.exception("agent_memory_cleanup.agent_error", agent_id=str(agent_id))
+            logger.exception("agent.task.memory_cleanup.agent_error", agent_id=str(agent_id))
 
     duration_ms = round((time.monotonic() - task_start) * 1000, 2)
     logger.info(
-        "agent_memory_cleanup.finished",
+        "agent.task.memory_cleanup.finished",
         agents_processed=agents_processed,
         agents_failed=agents_failed,
         total_expired_deleted=total_expired_deleted,
@@ -581,7 +585,7 @@ async def _run_performance_snapshot() -> dict[str, Any]:
             result = await db.execute(stmt)
             agents: list[tuple[UUID, str | None]] = list(result.all())
     except Exception:
-        logger.exception("agent_performance_snapshot.load_agents.failed")
+        logger.exception("agent.task.performance_snapshot.load_agents.failed")
         duration_ms = round((time.monotonic() - task_start) * 1000, 2)
         return {
             "agents_processed": 0,
@@ -650,7 +654,7 @@ async def _run_performance_snapshot() -> dict[str, Any]:
             total_rows_written += 1
             agents_processed += 1
             logger.info(
-                "agent_performance_snapshot.agent_done",
+                "agent.task.performance_snapshot.agent_done",
                 agent_id=str(agent_id),
                 strategy_name=strategy_name,
                 total_trades=total_trades,
@@ -658,11 +662,11 @@ async def _run_performance_snapshot() -> dict[str, Any]:
             )
         except Exception:
             agents_failed += 1
-            logger.exception("agent_performance_snapshot.agent_error", agent_id=str(agent_id))
+            logger.exception("agent.task.performance_snapshot.agent_error", agent_id=str(agent_id))
 
     duration_ms = round((time.monotonic() - task_start) * 1000, 2)
     logger.info(
-        "agent_performance_snapshot.finished",
+        "agent.task.performance_snapshot.finished",
         agents_processed=agents_processed,
         agents_failed=agents_failed,
         total_rows_written=total_rows_written,

@@ -182,7 +182,7 @@ class PermissionDenied(Exception):
         try:
             await enforcer.require_action("agent-uuid", "trade")
         except PermissionDenied as exc:
-            logger.warning("action_blocked", reason=exc.reason)
+            logger.warning("agent.permission.action.blocked", reason=exc.reason)
     """
 
     def __init__(
@@ -324,7 +324,7 @@ class PermissionEnforcer:
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
-                    "permission_enforcer.periodic_flush_error",
+                    "agent.permission.enforcer.periodic_flush_error",
                     error=str(exc),
                 )
 
@@ -372,12 +372,12 @@ class PermissionEnforcer:
         try:
             await self._persist_audit_entries(entries_to_flush)
             logger.debug(
-                "permission_enforcer.audit_flushed",
+                "agent.permission.enforcer.audit_flushed",
                 count=len(entries_to_flush),
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "permission_enforcer.audit_flush_error",
+                "agent.permission.enforcer.audit_flush_error",
                 count=len(entries_to_flush),
                 error=str(exc),
             )
@@ -413,7 +413,7 @@ class PermissionEnforcer:
                         agent_uuid = UUID(entry.agent_id)
                     except (ValueError, AttributeError):
                         logger.warning(
-                            "permission_enforcer.audit_invalid_agent_id",
+                            "agent.permission.enforcer.audit_invalid_agent_id",
                             agent_id=entry.agent_id,
                         )
                         continue
@@ -451,7 +451,7 @@ class PermissionEnforcer:
 
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "permission_enforcer.persist_error",
+                "agent.permission.enforcer.persist_error",
                 error=str(exc),
             )
             raise
@@ -518,7 +518,7 @@ class PermissionEnforcer:
                 has_cap = await self._capability_mgr.has_capability(agent_id, required_capability)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
-                    "permission_enforcer.capability_check_error",
+                    "agent.permission.enforcer.capability_check_error",
                     agent_id=agent_id,
                     action=action,
                     error=str(exc),
@@ -533,11 +533,20 @@ class PermissionEnforcer:
                     f"'{required_capability.value}' required for action '{action}'."
                 )
                 logger.info(
-                    "permission_enforcer.capability_denied",
+                    "agent.permission.enforcer.capability_denied",
                     agent_id=agent_id,
                     action=action,
                     required_capability=required_capability.value,
                 )
+                try:
+                    from agent.metrics import agent_permission_denials  # noqa: PLC0415
+
+                    agent_permission_denials.labels(
+                        agent_id=agent_id,
+                        capability=required_capability.value,
+                    ).inc()
+                except Exception:  # noqa: BLE001
+                    pass
 
         # ----------------------------------------------------------------
         # 2. Budget check (only for financial actions, only if cap passed)
@@ -553,7 +562,7 @@ class PermissionEnforcer:
                     trade_value = Decimal(str(raw_value))
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "permission_enforcer.trade_value_parse_error",
+                        "agent.permission.enforcer.trade_value_parse_error",
                         agent_id=agent_id,
                         action=action,
                         raw_value=str(raw_value),
@@ -567,7 +576,7 @@ class PermissionEnforcer:
                 budget_result = await self._budget_mgr.check_and_record(agent_id, trade_value)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
-                    "permission_enforcer.budget_check_error",
+                    "agent.permission.enforcer.budget_check_error",
                     agent_id=agent_id,
                     action=action,
                     error=str(exc),
@@ -583,11 +592,20 @@ class PermissionEnforcer:
                     else f"Budget check failed for action '{action}' (internal error)."
                 )
                 logger.info(
-                    "permission_enforcer.budget_denied",
+                    "agent.permission.enforcer.budget_denied",
                     agent_id=agent_id,
                     action=action,
                     reason=budget_reason,
                 )
+                try:
+                    from agent.metrics import agent_permission_denials  # noqa: PLC0415
+
+                    agent_permission_denials.labels(
+                        agent_id=agent_id,
+                        capability=f"budget:{action}",
+                    ).inc()
+                except Exception:  # noqa: BLE001
+                    pass
 
         # ----------------------------------------------------------------
         # 3. Assemble result
@@ -753,7 +771,7 @@ class PermissionEnforcer:
 
                 if not agent_id:
                     logger.warning(
-                        "permission_enforcer.require_no_agent_id",
+                        "agent.permission.enforcer.require_no_agent_id",
                         func=func.__name__,
                         capability=capability.value,
                     )
@@ -838,7 +856,7 @@ class PermissionEnforcer:
             agent_uuid = UUID(agent_id)
         except (ValueError, AttributeError) as exc:
             logger.warning(
-                "permission_enforcer.escalation_invalid_agent_id",
+                "agent.permission.enforcer.escalation_invalid_agent_id",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -847,7 +865,7 @@ class PermissionEnforcer:
         valid_priorities = {"low", "medium", "high", "critical"}
         if priority not in valid_priorities:
             logger.warning(
-                "permission_enforcer.escalation_invalid_priority",
+                "agent.permission.enforcer.escalation_invalid_priority",
                 agent_id=agent_id,
                 priority=priority,
             )
@@ -874,7 +892,7 @@ class PermissionEnforcer:
                 feedback_id = str(created.id)
 
             logger.info(
-                "permission_enforcer.escalation_logged",
+                "agent.permission.enforcer.escalation_logged",
                 agent_id=agent_id,
                 capability=capability.value,
                 feedback_id=feedback_id,
@@ -884,7 +902,7 @@ class PermissionEnforcer:
 
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "permission_enforcer.escalation_persist_error",
+                "agent.permission.enforcer.escalation_persist_error",
                 agent_id=agent_id,
                 capability=capability.value,
                 error=str(exc),

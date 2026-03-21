@@ -1,6 +1,6 @@
 # agent/ — TradeReady Platform Testing Agent
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-21 (logging system) -->
 
 > Autonomous AI agent for end-to-end testing of the AiTradingAgent platform using Pydantic AI + OpenRouter.
 
@@ -17,8 +17,13 @@ agent/
 ├── __init__.py              # Package root; exposes __version__ = "0.1.0"
 ├── __main__.py              # Entry point: asyncio.run(main()) — enables python -m agent
 ├── config.py                # AgentConfig (pydantic-settings BaseSettings)
-├── main.py                  # CLI parser, workflow dispatch, report persistence
-├── pyproject.toml           # Package config: tradeready-test-agent 0.1.0
+├── main.py                  # CLI parser, workflow dispatch, report persistence; uses configure_agent_logging()
+├── logging.py               # configure_agent_logging() — centralized structlog config with trace_id/span_id/agent_id context
+├── logging_middleware.py    # log_api_call() context manager, LLM cost estimator, set_agent_id()
+├── logging_writer.py        # LogBatchWriter — async batched DB persistence for API call logs
+├── metrics.py               # 16 Prometheus metrics in AGENT_REGISTRY (counters, histograms, gauges)
+├── server.py                # AgentServer with /metrics endpoint via asyncio.start_server; set_agent_id()
+├── pyproject.toml           # Package config: tradeready-test-agent 0.1.0; adds prometheus-client dependency
 ├── .env.example             # All required env vars with placeholder values
 ├── reports/                 # Default output directory for JSON report files
 │   └── .gitkeep
@@ -79,10 +84,13 @@ agent/
 │   └── ensemble/            # Ensemble combiner (signals, meta_learner, optimize_weights, run, validate, config)
 └── tests/
     ├── __init__.py
-    ├── test_config.py        # AgentConfig field validation and defaults
-    ├── test_models.py        # All 6 Pydantic output models
-    ├── test_rest_tools.py    # PlatformRESTClient and get_rest_tools() functions
-    └── test_sdk_tools.py     # get_sdk_tools() tool functions
+    ├── test_config.py              # AgentConfig field validation and defaults
+    ├── test_models.py              # All 6 Pydantic output models
+    ├── test_rest_tools.py          # PlatformRESTClient and get_rest_tools() functions
+    ├── test_sdk_tools.py           # get_sdk_tools() tool functions
+    ├── test_logging.py             # 25 tests for configure_agent_logging() and structlog context
+    ├── test_logging_middleware.py  # 24 tests for log_api_call() and LLM cost estimator
+    └── test_logging_writer.py      # 17 tests for LogBatchWriter async batching
 ```
 
 ## Key Classes and Functions
@@ -363,6 +371,7 @@ Defined in `agent/pyproject.toml` under `[project.dependencies]`:
 | `python-dotenv` | `>=1.0` | `.env` file loading (transitively used by pydantic-settings) |
 | `structlog` | `>=24.0` | Structured JSON logging |
 | `pydantic-settings` | `>=2.0` | `AgentConfig` BaseSettings with `.env` support |
+| `prometheus-client` | `>=0.20` | 16 Prometheus metrics in `AGENT_REGISTRY`; `/metrics` endpoint |
 
 Dev dependencies (`pip install -e "agent/[dev]"`):
 
@@ -404,7 +413,7 @@ The agent test suite is independent of the main platform test suite in `tests/`.
 
 `asyncio_mode = "auto"` is configured in `agent/pyproject.toml` — no `@pytest.mark.asyncio` decorator needed on async tests.
 
-The full agent test suite (including `agent/strategies/`) covers 901 tests.
+The full agent test suite (including `agent/strategies/` and new logging tests) covers 967 tests (901 + 25 + 24 + 17).
 
 ## Gotchas and Pitfalls
 
@@ -445,3 +454,4 @@ Each subdirectory has its own `CLAUDE.md` with full details. Read the local file
 - `2026-03-20` — Added `strategies/` directory to Directory Structure. Added strategy-specific optional dependencies table. Added `agent/strategies/CLAUDE.md` to Sub-CLAUDE.md Index.
 - `2026-03-20` — Added Docker section (Dockerfile + docker-compose `agent` profile). Updated `[ml]` and `[all]` optional dependency tables. Added checksum security gotcha (`agent/strategies/checksum.py`). Added no-CLI-API-key gotcha. Updated total test count to 901.
 - `2026-03-21` — Added `conversation/`, `memory/`, `permissions/`, `trading/` packages to Directory Structure. Updated `tools/` entry for new `agent_tools.py`. Added 4 new entries to Sub-CLAUDE.md Index.
+- `2026-03-21` — Agent Logging System (34 tasks, 5 phases): added `logging.py`, `logging_middleware.py`, `logging_writer.py`, `metrics.py` to Directory Structure. Added 3 new test files (66 tests). Added `prometheus-client` dependency. Updated test count to 967.

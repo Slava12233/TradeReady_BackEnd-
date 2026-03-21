@@ -1,8 +1,8 @@
 # Unit Tests
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-21 -->
 
-> 1184 unit tests across 70 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
+> 1203 unit tests across 72 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
 
 ## What This Module Does
 
@@ -82,6 +82,8 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_unified_metrics.py` | 15 | `calculate_unified_metrics` — ROI, PnL, Sharpe, Sortino, drawdown, win rate, profit factor, annualization |
 | `test_wallet_manager.py` | 5 | `WalletManager` — snapshot/restore wallets for battle isolation |
 | `test_ws_manager.py` | 23 | `WebSocketManager` — connect, subscribe, unsubscribe, broadcast, channel routing |
+| `test_agent_api_call_repo.py` | 9 | `AgentApiCallRepository` — bulk save, list by trace_id, aggregate latency/cost stats |
+| `test_agent_strategy_signal_repo.py` | 10 | `AgentStrategySignalRepository` — bulk save, list by source/action, daily attribution query |
 
 ## Mock Patterns
 
@@ -185,3 +187,4 @@ pytest tests/unit/ --cov=src --cov-report=html                  # with coverage
 - `2026-03-18` — Removed duplicate inventory rows. Verified 70 files on disk match 70 entries in the table.
 - `2026-03-19` — Synced test count: 1194 → 1184 (actual grep count of `def test_` / `async def test_` functions). 70 files confirmed.
 - `2026-03-20` — Verified: still 70 test files on disk. No new unit test files added this session.
+- `2026-03-21` — Added `test_agent_api_call_repo.py` (9 tests) and `test_agent_strategy_signal_repo.py` (10 tests) for Agent Logging System. File count: 70 → 72. Test count: 1184 → 1203.

@@ -1,6 +1,6 @@
 # Database Layer
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-21 -->
 
 > SQLAlchemy ORM models, async session management, and repository pattern for TimescaleDB/PostgreSQL.
 
@@ -49,6 +49,10 @@ All models inherit from `Base` (a plain `DeclarativeBase`). No mixins or abstrac
 - `Position` -- aggregated holdings per agent+symbol (unique per agent+symbol)
 - `TradingSession` -- session tracking for account resets
 - `PortfolioSnapshot` -- periodic equity snapshots (hypertable, 1-day chunks)
+- `AgentApiCall` -- per-tool API call log: trace_id, endpoint, latency, tokens, cost (migration 018)
+- `AgentStrategySignal` -- per-step strategy signal log: source, action, confidence (migration 018)
+- `AgentDecision.trace_id` -- new column on existing model linking decisions to distributed traces (migration 018)
+- `AgentFeedback.status`/`.resolution` -- feedback lifecycle columns with CHECK constraint (migration 019)
 
 **Backtesting:**
 - `BacktestSession` -- run config, progress, and final metrics (JSONB)
@@ -109,7 +113,7 @@ Trading tables (`balances`, `orders`, `trades`, `positions`, `portfolio_snapshot
 | Export | Description |
 |--------|-------------|
 | `Base` | Declarative base for Alembic `target_metadata` |
-| 24 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode` |
+| 26 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode`, `AgentApiCall`, `AgentStrategySignal` |
 
 ## Dependencies
 
@@ -152,4 +156,5 @@ Tests use mocked sessions from `tests/conftest.py`. The `get_async_session` depe
 
 ## Recent Changes
 
+- `2026-03-21` — Migration 018: added `AgentApiCall` and `AgentStrategySignal` tables; added `trace_id` column to `agent_decisions`. Migration 019: added `status`/`resolution` lifecycle columns to `agent_feedback` with CHECK constraint. Model count: 24 → 26.
 - `2026-03-17` -- Initial CLAUDE.md created

@@ -289,7 +289,7 @@ def label_candles(candles: list[dict], window: int = 20) -> list[RegimeType]:
     valid_ratios = atr_ratio[~np.isnan(atr_ratio)]
     if len(valid_ratios) == 0:
         # Not enough data — return all MEAN_REVERTING.
-        logger.warning("regime_labeler.insufficient_data", n_candles=n, window=window)
+        logger.warning("agent.strategy.regime.labeler.insufficient_data", n_candles=n, window=window)
         return [RegimeType.MEAN_REVERTING] * n
 
     median_ratio = float(np.median(valid_ratios))
@@ -319,7 +319,7 @@ def label_candles(candles: list[dict], window: int = 20) -> list[RegimeType]:
         labels.append(RegimeType.MEAN_REVERTING)
 
     logger.debug(
-        "regime_labeler.labelled",
+        "agent.strategy.regime.labeler.labelled",
         n_candles=n,
         window=window,
         trending=labels.count(RegimeType.TRENDING),
@@ -413,7 +413,7 @@ def generate_training_data(
         )
 
     logger.info(
-        "regime_labeler.training_data_generated",
+        "agent.strategy.regime.labeler.training_data_generated",
         input_candles=n,
         valid_rows=len(features_df),
         dropped_rows=n - len(features_df),

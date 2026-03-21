@@ -47,17 +47,17 @@ async def load_skill_context(config: AgentConfig) -> str:
     skill_path = config.platform_root / "docs" / "skill.md"
     try:
         content = skill_path.read_text(encoding="utf-8")
-        logger.debug("skill_context.loaded_from_disk", path=str(skill_path))
+        logger.debug("agent.api.skill_context.loaded_from_disk", path=str(skill_path))
         return content
     except FileNotFoundError:
         logger.debug(
-            "skill_context.file_not_found",
+            "agent.api.skill_context.file_not_found",
             path=str(skill_path),
             fallback="remote_api",
         )
     except OSError as exc:
         logger.warning(
-            "skill_context.disk_read_error",
+            "agent.api.skill_context.disk_read_error",
             path=str(skill_path),
             error=str(exc),
             fallback="remote_api",
@@ -81,19 +81,19 @@ async def load_skill_context(config: AgentConfig) -> str:
             else:
                 text = response.text
             logger.debug(
-                "skill_context.loaded_from_api",
+                "agent.api.skill_context.loaded_from_api",
                 url=url,
                 bytes=len(text),
             )
             return text
     except ImportError:
-        logger.warning("skill_context.httpx_not_installed", source="remote_api")
+        logger.warning("agent.api.skill_context.httpx_not_installed", source="remote_api")
     except Exception as exc:  # noqa: BLE001 — intentional catch-all; never crash
         logger.warning(
-            "skill_context.api_fetch_failed",
+            "agent.api.skill_context.api_fetch_failed",
             url=f"{config.platform_base_url}/api/v1/docs/skill",
             error=str(exc),
         )
 
-    logger.warning("skill_context.unavailable", reason="both_sources_failed")
+    logger.warning("agent.api.skill_context.unavailable", reason="both_sources_failed")
     return ""

@@ -70,7 +70,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
         # ------------------------------------------------------------------
         # Step 1: Get BTC price — verify non-zero
         # ------------------------------------------------------------------
-        log.info("smoke_test.step_1", action="get_price", symbol=_SMOKE_SYMBOL)
+        log.info("agent.workflow.smoke_test.step_1", action="get_price", symbol=_SMOKE_SYMBOL)
         try:
             price_result = await client.get_price(_SMOKE_SYMBOL)
             price_val = price_result.price
@@ -85,15 +85,15 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                     f"Step 1 PASS: {_SMOKE_SYMBOL} price fetched — {price_val} USDT"
                 )
                 metrics["btc_price"] = str(price_val)
-                log.info("smoke_test.step_1.pass", price=str(price_val))
+                log.info("agent.workflow.smoke_test.step_1.pass", price=str(price_val))
         except AgentExchangeError as exc:
             bugs_found.append(f"Step 1 FAIL: get_price raised {type(exc).__name__}: {exc}")
-            log.warning("smoke_test.step_1.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_1.fail", error=str(exc))
 
         # ------------------------------------------------------------------
         # Step 2: Get balance — verify USDT balance exists
         # ------------------------------------------------------------------
-        log.info("smoke_test.step_2", action="get_balance")
+        log.info("agent.workflow.smoke_test.step_2", action="get_balance")
         try:
             balances = await client.get_balance()
             usdt_balance = next(
@@ -122,19 +122,19 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 )
                 metrics["usdt_balance"] = str(usdt_balance.available)
                 log.info(
-                    "smoke_test.step_2.pass",
+                    "agent.workflow.smoke_test.step_2.pass",
                     usdt_total=str(usdt_balance.total),
                     usdt_available=str(usdt_balance.available),
                 )
         except AgentExchangeError as exc:
             bugs_found.append(f"Step 2 FAIL: get_balance raised {type(exc).__name__}: {exc}")
-            log.warning("smoke_test.step_2.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_2.fail", error=str(exc))
 
         # ------------------------------------------------------------------
         # Step 3: Get candles — verify historical data available
         # ------------------------------------------------------------------
         log.info(
-            "smoke_test.step_3",
+            "agent.workflow.smoke_test.step_3",
             action="get_candles",
             symbol=_SMOKE_SYMBOL,
             interval="1h",
@@ -156,7 +156,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 )
                 metrics["candle_count"] = len(candles)
                 log.info(
-                    "smoke_test.step_3.pass",
+                    "agent.workflow.smoke_test.step_3.pass",
                     candle_count=len(candles),
                     latest_close=str(latest_close),
                 )
@@ -164,13 +164,13 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"Step 3 FAIL: get_candles raised {type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_3.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_3.fail", error=str(exc))
 
         # ------------------------------------------------------------------
         # Step 4: Place tiny market buy — verify order accepted
         # ------------------------------------------------------------------
         log.info(
-            "smoke_test.step_4",
+            "agent.workflow.smoke_test.step_4",
             action="place_market_order",
             symbol=_SMOKE_SYMBOL,
             side="buy",
@@ -197,7 +197,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             metrics["test_order_id"] = placed_order_id
             metrics["test_order_status"] = order.status
             log.info(
-                "smoke_test.step_4.pass",
+                "agent.workflow.smoke_test.step_4.pass",
                 order_id=placed_order_id,
                 status=order.status,
                 executed_price=str(order.executed_price),
@@ -206,12 +206,12 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"Step 4 FAIL: place_market_order raised {type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_4.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_4.fail", error=str(exc))
 
         # ------------------------------------------------------------------
         # Step 5: Get positions — verify a BTC position exists after buy
         # ------------------------------------------------------------------
-        log.info("smoke_test.step_5", action="get_positions")
+        log.info("agent.workflow.smoke_test.step_5", action="get_positions")
         try:
             positions = await client.get_positions()
             btc_position = next(
@@ -241,7 +241,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 )
                 metrics["btc_position_qty"] = str(btc_position.quantity)
                 log.info(
-                    "smoke_test.step_5.pass",
+                    "agent.workflow.smoke_test.step_5.pass",
                     symbol=btc_position.symbol,
                     quantity=str(btc_position.quantity),
                 )
@@ -249,12 +249,12 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"Step 5 FAIL: get_positions raised {type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_5.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_5.fail", error=str(exc))
 
         # ------------------------------------------------------------------
         # Step 6: Get trade history — verify trade was recorded
         # ------------------------------------------------------------------
-        log.info("smoke_test.step_6", action="get_trade_history", limit=5)
+        log.info("agent.workflow.smoke_test.step_6", action="get_trade_history", limit=5)
         try:
             trades = await client.get_trade_history(limit=5)
             if not trades:
@@ -280,7 +280,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 )
                 metrics["trade_history_count"] = len(trades)
                 log.info(
-                    "smoke_test.step_6.pass",
+                    "agent.workflow.smoke_test.step_6.pass",
                     trade_count=len(trades),
                     latest_symbol=latest.symbol,
                     latest_side=latest.side,
@@ -289,12 +289,12 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"Step 6 FAIL: get_trade_history raised {type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_6.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_6.fail", error=str(exc))
 
         # ------------------------------------------------------------------
         # Step 7: Get performance metrics — verify calculation succeeds
         # ------------------------------------------------------------------
-        log.info("smoke_test.step_7", action="get_performance", period="all")
+        log.info("agent.workflow.smoke_test.step_7", action="get_performance", period="all")
         try:
             perf = await client.get_performance(period="all")
             # Performance is structurally valid if we get a response back;
@@ -310,7 +310,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             metrics["win_rate"] = str(perf.win_rate)
             metrics["total_trades"] = perf.total_trades
             log.info(
-                "smoke_test.step_7.pass",
+                "agent.workflow.smoke_test.step_7.pass",
                 sharpe=str(perf.sharpe_ratio),
                 win_rate=str(perf.win_rate),
                 total_trades=perf.total_trades,
@@ -319,7 +319,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"Step 7 FAIL: get_performance raised {type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_7.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_7.fail", error=str(exc))
 
     finally:
         await client.aclose()
@@ -336,7 +336,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
         timeout=15.0,
     ) as http:
         # Step 8: GET /api/v1/health
-        log.info("smoke_test.step_8", action="GET /api/v1/health")
+        log.info("agent.workflow.smoke_test.step_8", action="GET /api/v1/health")
         try:
             resp = await http.get("/api/v1/health")
             if resp.status_code == 200:
@@ -348,14 +348,14 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                     f"status={status_field!r}"
                 )
                 metrics["health_status"] = status_field
-                log.info("smoke_test.step_8.pass", health_status=status_field)
+                log.info("agent.workflow.smoke_test.step_8.pass", health_status=status_field)
             else:
                 bugs_found.append(
                     f"Step 8 FAIL: GET /api/v1/health returned HTTP {resp.status_code} "
                     f"(expected 200); body={resp.text[:200]}"
                 )
                 log.warning(
-                    "smoke_test.step_8.fail",
+                    "agent.workflow.smoke_test.step_8.fail",
                     http_status=resp.status_code,
                     body=resp.text[:200],
                 )
@@ -364,10 +364,10 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 f"Step 8 FAIL: GET /api/v1/health network error — "
                 f"{type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_8.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_8.fail", error=str(exc))
 
         # Step 9: GET /api/v1/market/prices
-        log.info("smoke_test.step_9", action="GET /api/v1/market/prices")
+        log.info("agent.workflow.smoke_test.step_9", action="GET /api/v1/market/prices")
         try:
             resp = await http.get("/api/v1/market/prices")
             if resp.status_code == 200:
@@ -379,7 +379,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                         "Step 9 FAIL: GET /api/v1/market/prices returned 200 but "
                         "'prices' list is empty — no market data available"
                     )
-                    log.warning("smoke_test.step_9.fail", reason="empty prices list")
+                    log.warning("agent.workflow.smoke_test.step_9.fail", reason="empty prices list")
                 else:
                     steps_completed += 1
                     findings.append(
@@ -388,7 +388,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                     )
                     metrics["market_price_count"] = price_count
                     log.info(
-                        "smoke_test.step_9.pass", price_count=price_count
+                        "agent.workflow.smoke_test.step_9.pass", price_count=price_count
                     )
             else:
                 bugs_found.append(
@@ -396,7 +396,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                     f"{resp.status_code} (expected 200); body={resp.text[:200]}"
                 )
                 log.warning(
-                    "smoke_test.step_9.fail",
+                    "agent.workflow.smoke_test.step_9.fail",
                     http_status=resp.status_code,
                     body=resp.text[:200],
                 )
@@ -405,13 +405,13 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 f"Step 9 FAIL: GET /api/v1/market/prices network error — "
                 f"{type(exc).__name__}: {exc}"
             )
-            log.warning("smoke_test.step_9.fail", error=str(exc))
+            log.warning("agent.workflow.smoke_test.step_9.fail", error=str(exc))
 
     # ------------------------------------------------------------------
     # Step 10: Compile results
     # ------------------------------------------------------------------
     log.info(
-        "smoke_test.step_10",
+        "agent.workflow.smoke_test.step_10",
         action="compile_results",
         steps_completed=steps_completed,
         bugs_found=len(bugs_found),
@@ -431,7 +431,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
         status = "fail"
 
     log.info(
-        "smoke_test.complete",
+        "agent.workflow.smoke_test.complete",
         status=status,
         steps_completed=steps_completed,
         steps_total=_STEPS_TOTAL,

@@ -23,6 +23,7 @@ from typing import Any
 import structlog
 
 from agent.config import AgentConfig
+from agent.logging_middleware import log_api_call
 
 logger = structlog.get_logger(__name__)
 
@@ -44,13 +45,16 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
         List of async tool functions ready to be passed to the Pydantic AI
         ``Agent`` constructor's ``tools=`` parameter.
     """
-    from agentexchange.async_client import AsyncAgentExchangeClient
-    from agentexchange.exceptions import AgentExchangeError
+    from agentexchange.async_client import AsyncAgentExchangeClient  # noqa: PLC0415
+    from agentexchange.exceptions import AgentExchangeError  # noqa: PLC0415
+
+    from agent.logging import get_trace_id  # noqa: PLC0415
 
     client = AsyncAgentExchangeClient(
         api_key=config.platform_api_key,
         api_secret=config.platform_api_secret,
         base_url=config.platform_base_url,
+        trace_id_provider=get_trace_id,
     )
 
     # ------------------------------------------------------------------
@@ -74,14 +78,16 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             ``{"error": "<message>"}``.
         """
         try:
-            result = await client.get_price(symbol)
-            return {
-                "symbol": result.symbol,
-                "price": str(result.price),
-                "timestamp": result.timestamp.isoformat(),
-            }
+            async with log_api_call("sdk", "get_price", symbol=symbol) as log_ctx:
+                result = await client.get_price(symbol)
+                log_ctx["response_status"] = 200
+                return {
+                    "symbol": result.symbol,
+                    "price": str(result.price),
+                    "timestamp": result.timestamp.isoformat(),
+                }
         except AgentExchangeError as exc:
-            logger.warning("get_price failed", symbol=symbol, error=str(exc))
+            logger.warning("agent.api.get_price.failed", symbol=symbol, error=str(exc))
             return {"error": str(exc)}
 
     async def get_candles(
@@ -112,22 +118,26 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             ``{"error": "<message>"}``.
         """
         try:
-            candles = await client.get_candles(symbol, interval=interval, limit=limit)
-            return [
-                {
-                    "time": c.time.isoformat(),
-                    "open": str(c.open),
-                    "high": str(c.high),
-                    "low": str(c.low),
-                    "close": str(c.close),
-                    "volume": str(c.volume),
-                    "trade_count": c.trade_count,
-                }
-                for c in candles
-            ]
+            async with log_api_call(
+                "sdk", "get_candles", symbol=symbol, interval=interval, limit=limit
+            ) as log_ctx:
+                candles = await client.get_candles(symbol, interval=interval, limit=limit)
+                log_ctx["response_status"] = 200
+                return [
+                    {
+                        "time": c.time.isoformat(),
+                        "open": str(c.open),
+                        "high": str(c.high),
+                        "low": str(c.low),
+                        "close": str(c.close),
+                        "volume": str(c.volume),
+                        "trade_count": c.trade_count,
+                    }
+                    for c in candles
+                ]
         except AgentExchangeError as exc:
             logger.warning(
-                "get_candles failed",
+                "agent.api.get_candles.failed",
                 symbol=symbol,
                 interval=interval,
                 limit=limit,
@@ -154,18 +164,20 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             ``{"error": "<message>"}``.
         """
         try:
-            balances = await client.get_balance()
-            return [
-                {
-                    "asset": b.asset,
-                    "available": str(b.available),
-                    "locked": str(b.locked),
-                    "total": str(b.total),
-                }
-                for b in balances
-            ]
+            async with log_api_call("sdk", "get_balance") as log_ctx:
+                balances = await client.get_balance()
+                log_ctx["response_status"] = 200
+                return [
+                    {
+                        "asset": b.asset,
+                        "available": str(b.available),
+                        "locked": str(b.locked),
+                        "total": str(b.total),
+                    }
+                    for b in balances
+                ]
         except AgentExchangeError as exc:
-            logger.warning("get_balance failed", error=str(exc))
+            logger.warning("agent.api.get_balance.failed", error=str(exc))
             return {"error": str(exc)}
 
     async def get_positions(ctx: Any) -> list[dict[str, Any]] | dict[str, Any]:  # noqa: ANN401
@@ -186,23 +198,25 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             ``{"error": "<message>"}``.
         """
         try:
-            positions = await client.get_positions()
-            return [
-                {
-                    "symbol": p.symbol,
-                    "asset": p.asset,
-                    "quantity": str(p.quantity),
-                    "avg_entry_price": str(p.avg_entry_price),
-                    "current_price": str(p.current_price),
-                    "market_value": str(p.market_value),
-                    "unrealized_pnl": str(p.unrealized_pnl),
-                    "unrealized_pnl_pct": str(p.unrealized_pnl_pct),
-                    "opened_at": p.opened_at.isoformat(),
-                }
-                for p in positions
-            ]
+            async with log_api_call("sdk", "get_positions") as log_ctx:
+                positions = await client.get_positions()
+                log_ctx["response_status"] = 200
+                return [
+                    {
+                        "symbol": p.symbol,
+                        "asset": p.asset,
+                        "quantity": str(p.quantity),
+                        "avg_entry_price": str(p.avg_entry_price),
+                        "current_price": str(p.current_price),
+                        "market_value": str(p.market_value),
+                        "unrealized_pnl": str(p.unrealized_pnl),
+                        "unrealized_pnl_pct": str(p.unrealized_pnl_pct),
+                        "opened_at": p.opened_at.isoformat(),
+                    }
+                    for p in positions
+                ]
         except AgentExchangeError as exc:
-            logger.warning("get_positions failed", error=str(exc))
+            logger.warning("agent.api.get_positions.failed", error=str(exc))
             return {"error": str(exc)}
 
     async def get_performance(
@@ -230,25 +244,27 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             returns ``{"error": "<message>"}``.
         """
         try:
-            perf = await client.get_performance(period=period)
-            return {
-                "period": perf.period,
-                "sharpe_ratio": str(perf.sharpe_ratio),
-                "sortino_ratio": str(perf.sortino_ratio),
-                "max_drawdown_pct": str(perf.max_drawdown_pct),
-                "max_drawdown_duration_days": perf.max_drawdown_duration_days,
-                "win_rate": str(perf.win_rate),
-                "profit_factor": str(perf.profit_factor),
-                "avg_win": str(perf.avg_win),
-                "avg_loss": str(perf.avg_loss),
-                "total_trades": perf.total_trades,
-                "avg_trades_per_day": str(perf.avg_trades_per_day),
-                "best_trade": str(perf.best_trade),
-                "worst_trade": str(perf.worst_trade),
-                "current_streak": perf.current_streak,
-            }
+            async with log_api_call("sdk", "get_performance", period=period) as log_ctx:
+                perf = await client.get_performance(period=period)
+                log_ctx["response_status"] = 200
+                return {
+                    "period": perf.period,
+                    "sharpe_ratio": str(perf.sharpe_ratio),
+                    "sortino_ratio": str(perf.sortino_ratio),
+                    "max_drawdown_pct": str(perf.max_drawdown_pct),
+                    "max_drawdown_duration_days": perf.max_drawdown_duration_days,
+                    "win_rate": str(perf.win_rate),
+                    "profit_factor": str(perf.profit_factor),
+                    "avg_win": str(perf.avg_win),
+                    "avg_loss": str(perf.avg_loss),
+                    "total_trades": perf.total_trades,
+                    "avg_trades_per_day": str(perf.avg_trades_per_day),
+                    "best_trade": str(perf.best_trade),
+                    "worst_trade": str(perf.worst_trade),
+                    "current_streak": perf.current_streak,
+                }
         except AgentExchangeError as exc:
-            logger.warning("get_performance failed", period=period, error=str(exc))
+            logger.warning("agent.api.get_performance.failed", period=period, error=str(exc))
             return {"error": str(exc)}
 
     async def get_trade_history(
@@ -274,23 +290,25 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             ``{"error": "<message>"}``.
         """
         try:
-            trades = await client.get_trade_history(limit=limit)
-            return [
-                {
-                    "trade_id": str(t.trade_id),
-                    "order_id": str(t.order_id),
-                    "symbol": t.symbol,
-                    "side": t.side,
-                    "quantity": str(t.quantity),
-                    "price": str(t.price),
-                    "fee": str(t.fee),
-                    "total": str(t.total),
-                    "executed_at": t.executed_at.isoformat(),
-                }
-                for t in trades
-            ]
+            async with log_api_call("sdk", "get_trade_history", limit=limit) as log_ctx:
+                trades = await client.get_trade_history(limit=limit)
+                log_ctx["response_status"] = 200
+                return [
+                    {
+                        "trade_id": str(t.trade_id),
+                        "order_id": str(t.order_id),
+                        "symbol": t.symbol,
+                        "side": t.side,
+                        "quantity": str(t.quantity),
+                        "price": str(t.price),
+                        "fee": str(t.fee),
+                        "total": str(t.total),
+                        "executed_at": t.executed_at.isoformat(),
+                    }
+                    for t in trades
+                ]
         except AgentExchangeError as exc:
-            logger.warning("get_trade_history failed", limit=limit, error=str(exc))
+            logger.warning("agent.api.get_trade_history.failed", limit=limit, error=str(exc))
             return {"error": str(exc)}
 
     # ------------------------------------------------------------------
@@ -325,22 +343,26 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             On failure returns ``{"error": "<message>"}``.
         """
         try:
-            order = await client.place_market_order(symbol, side, quantity)
-            return {
-                "order_id": str(order.order_id),
-                "status": order.status,
-                "symbol": order.symbol,
-                "side": order.side,
-                "type": order.type,
-                "executed_price": str(order.executed_price) if order.executed_price is not None else None,
-                "executed_quantity": str(order.executed_quantity) if order.executed_quantity is not None else None,
-                "fee": str(order.fee) if order.fee is not None else None,
-                "total_cost": str(order.total_cost) if order.total_cost is not None else None,
-                "filled_at": order.filled_at.isoformat() if order.filled_at is not None else None,
-            }
+            async with log_api_call(
+                "sdk", "place_market_order", symbol=symbol, side=side, quantity=quantity
+            ) as log_ctx:
+                order = await client.place_market_order(symbol, side, quantity)
+                log_ctx["response_status"] = 200
+                return {
+                    "order_id": str(order.order_id),
+                    "status": order.status,
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "type": order.type,
+                    "executed_price": str(order.executed_price) if order.executed_price is not None else None,
+                    "executed_quantity": str(order.executed_quantity) if order.executed_quantity is not None else None,
+                    "fee": str(order.fee) if order.fee is not None else None,
+                    "total_cost": str(order.total_cost) if order.total_cost is not None else None,
+                    "filled_at": order.filled_at.isoformat() if order.filled_at is not None else None,
+                }
         except AgentExchangeError as exc:
             logger.warning(
-                "place_market_order failed",
+                "agent.api.place_market_order.failed",
                 symbol=symbol,
                 side=side,
                 quantity=quantity,

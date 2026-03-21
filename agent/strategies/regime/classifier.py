@@ -24,9 +24,9 @@ Usage (programmatic):
     clf.train(features, labels)
     prediction, confidence = clf.predict(single_row_df)
     metrics = clf.evaluate(test_features, test_labels)
-    clf.save(Path("agent/strategies/regime/models/regime_classifier.joblib"))
+    clf.save(Path("agent/strategies/regime/models/agent.strategy.regime.classifier.joblib"))
 
-    loaded = RegimeClassifier.load(Path("agent/strategies/regime/models/regime_classifier.joblib"))
+    loaded = RegimeClassifier.load(Path("agent/strategies/regime/models/agent.strategy.regime.classifier.joblib"))
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 # Default model save path, relative to the repo root.
-DEFAULT_MODEL_PATH = Path("agent/strategies/regime/models/regime_classifier.joblib")
+DEFAULT_MODEL_PATH = Path("agent/strategies/regime/models/agent.strategy.regime.classifier.joblib")
 
 # XGBoost hyperparameters.
 # n_estimators=300: enough trees to generalise on ~5k samples without
@@ -159,7 +159,7 @@ class RegimeClassifier:
         X = features[self._feature_names].to_numpy(dtype=np.float32)
 
         logger.info(
-            "regime_classifier.training_start",
+            "agent.strategy.regime.classifier.training_start",
             n_samples=len(X),
             n_classes=len(unique_classes),
             classes=unique_classes,
@@ -185,7 +185,7 @@ class RegimeClassifier:
             )
 
         self._model.fit(X, y_int)
-        logger.info("regime_classifier.training_complete", n_samples=len(X))
+        logger.info("agent.strategy.regime.classifier.training_complete", n_samples=len(X))
 
     # ------------------------------------------------------------------
     # Prediction
@@ -298,7 +298,7 @@ class RegimeClassifier:
         }
 
         logger.info(
-            "regime_classifier.evaluation",
+            "agent.strategy.regime.classifier.evaluation",
             accuracy=round(accuracy, 4),
             per_class_f1={k: round(v, 4) for k, v in per_class_f1.items()},
             n_samples=len(X),
@@ -334,7 +334,7 @@ class RegimeClassifier:
             "backend": "xgboost" if self._use_xgboost else "random_forest",
         }
         joblib.dump(payload, path)
-        logger.info("regime_classifier.saved", path=str(path))
+        logger.info("agent.strategy.regime.classifier.saved", path=str(path))
 
         # Save SHA-256 sidecar for integrity verification on subsequent loads.
         try:
@@ -343,7 +343,7 @@ class RegimeClassifier:
             save_checksum(path)
         except Exception as exc_cs:  # noqa: BLE001
             logger.warning(
-                "regime_classifier.checksum_save_failed",
+                "agent.strategy.regime.classifier.checksum_save_failed",
                 path=str(path),
                 error=str(exc_cs),
             )
@@ -374,14 +374,14 @@ class RegimeClassifier:
             verify_checksum(path)
         except SecurityError as exc_sec:
             logger.error(
-                "regime_classifier.checksum_mismatch",
+                "agent.strategy.regime.classifier.checksum_mismatch",
                 path=str(path),
                 error=str(exc_sec),
             )
             raise
         except Exception as exc_cs:  # noqa: BLE001
             logger.warning(
-                "regime_classifier.checksum_check_failed",
+                "agent.strategy.regime.classifier.checksum_check_failed",
                 path=str(path),
                 error=str(exc_cs),
             )
@@ -410,7 +410,7 @@ class RegimeClassifier:
         instance._use_xgboost = payload["backend"] == "xgboost"
 
         logger.info(
-            "regime_classifier.loaded",
+            "agent.strategy.regime.classifier.loaded",
             path=str(path),
             backend=payload["backend"],
             n_classes=len(payload["label_encoder"]),
@@ -441,7 +441,7 @@ class RegimeClassifier:
             return True
         except ImportError:
             logger.warning(
-                "regime_classifier.xgboost_unavailable",
+                "agent.strategy.regime.classifier.xgboost_unavailable",
                 fallback="sklearn.RandomForestClassifier",
             )
             return False
@@ -516,30 +516,25 @@ async def _fetch_candles(base_url: str, api_key: str, symbol: str, limit: int, t
     return all_candles
 
 
-def _print_evaluation(metrics: dict[str, Any], split_name: str = "test") -> None:
-    """Print evaluation metrics in a human-readable format."""
-    print(f"\n=== {split_name.upper()} SET EVALUATION ===")
-    print(f"Accuracy : {metrics['accuracy']:.4f} ({metrics['accuracy'] * 100:.2f}%)")
-    print(f"Samples  : {metrics['n_samples']}")
-
-    print("\nPer-class F1 scores:")
-    for cls, f1 in sorted(metrics["per_class_f1"].items()):
-        print(f"  {cls:<20} {f1:.4f}")
-
-    classes = metrics["classes"]
-    cm = metrics["confusion_matrix"]
-    print("\nConfusion matrix (rows=true, cols=predicted):")
-    header = "               " + "  ".join(f"{c[:8]:>8}" for c in classes)
-    print(header)
-    for cls, row in zip(classes, cm):
-        row_str = "  ".join(f"{v:>8d}" for v in row)
-        print(f"  {cls:<13}  {row_str}")
-    print()
+def _log_evaluation(metrics: dict[str, Any], split_name: str = "test") -> None:
+    """Log evaluation metrics via structlog."""
+    logger.info(
+        "classifier.evaluation",
+        split=split_name,
+        accuracy=round(metrics["accuracy"], 4),
+        n_samples=metrics["n_samples"],
+        per_class_f1={cls: round(f1, 4) for cls, f1 in sorted(metrics["per_class_f1"].items())},
+    )
 
 
 async def _train_cli(args: argparse.Namespace, *, api_key: str = "") -> None:
     """CLI training entrypoint."""
-    print(f"Fetching {args.limit} x {args.timeframe} candles for {args.symbol} ...")
+    logger.info(
+        "classifier.fetching_candles",
+        limit=args.limit,
+        timeframe=args.timeframe,
+        symbol=args.symbol,
+    )
     candles = await _fetch_candles(
         base_url=args.data_url,
         api_key=api_key,
@@ -547,7 +542,7 @@ async def _train_cli(args: argparse.Namespace, *, api_key: str = "") -> None:
         limit=args.limit,
         timeframe=args.timeframe,
     )
-    print(f"Fetched {len(candles)} candles.")
+    logger.info("agent.strategy.regime.classifier.candles_fetched", count=len(candles))
 
     if len(candles) < 100:
         raise RuntimeError(
@@ -555,12 +550,14 @@ async def _train_cli(args: argparse.Namespace, *, api_key: str = "") -> None:
             "Check --data-url and PLATFORM_API_KEY."
         )
 
-    print("Generating features and labels ...")
+    logger.info("agent.strategy.regime.classifier.generating_features")
     features, labels = generate_training_data(candles, window=args.window)
-    print(f"Dataset: {len(features)} valid rows (after warm-up)")
-    print("Label distribution:")
-    for lbl, count in labels.value_counts().items():
-        print(f"  {lbl:<20} {count:>5d}  ({count / len(labels) * 100:.1f}%)")
+    label_dist = {str(lbl): int(count) for lbl, count in labels.value_counts().items()}
+    logger.info(
+        "classifier.dataset_ready",
+        n_rows=len(features),
+        label_distribution=label_dist,
+    )
 
     # Temporal train/test split (no shuffling — preserves temporal order).
     split_idx = int(len(features) * TRAIN_SPLIT)
@@ -568,25 +565,28 @@ async def _train_cli(args: argparse.Namespace, *, api_key: str = "") -> None:
     y_train = labels.iloc[:split_idx].reset_index(drop=True)
     X_test = features.iloc[split_idx:].reset_index(drop=True)
     y_test = labels.iloc[split_idx:].reset_index(drop=True)
-    print(f"\nTrain: {len(X_train)} samples | Test: {len(X_test)} samples")
+    logger.info("agent.strategy.regime.classifier.split_ready", train=len(X_train), test=len(X_test))
 
     clf = RegimeClassifier(seed=args.seed)
-    print(f"\nTraining RegimeClassifier (backend: {'xgboost' if clf._use_xgboost else 'random_forest'}) ...")
+    backend = "xgboost" if clf._use_xgboost else "random_forest"
+    logger.info("agent.strategy.regime.classifier.training_started", backend=backend)
     clf.train(X_train, y_train)
 
     metrics = clf.evaluate(X_test, y_test)
-    _print_evaluation(metrics, split_name="test")
+    _log_evaluation(metrics, split_name="test")
 
     accuracy = metrics["accuracy"]
     if accuracy < 0.70:
-        print(
-            f"WARNING: Accuracy {accuracy:.2%} is below the 70% acceptance threshold. "
-            "Consider increasing data volume or tuning hyperparameters."
+        logger.warning(
+            "classifier.accuracy_below_threshold",
+            accuracy=round(accuracy, 4),
+            threshold=0.70,
+            hint="Consider increasing data volume or tuning hyperparameters.",
         )
 
     model_path = Path(args.model_path)
     clf.save(model_path)
-    print(f"Model saved to: {model_path.resolve()}")
+    logger.info("agent.strategy.regime.classifier.model_saved", path=str(model_path.resolve()))
 
 
 def main() -> None:

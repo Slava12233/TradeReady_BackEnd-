@@ -111,7 +111,7 @@ def save_checksum(file_path: Path) -> Path:
     checksum_path = file_path.with_suffix(file_path.suffix + ".sha256")
     checksum_path.write_text(digest, encoding="ascii")
     logger.info(
-        "checksum.saved",
+        "agent.strategy.checksum.saved",
         path=str(file_path),
         digest_prefix=digest[:16],
         sidecar=str(checksum_path),
@@ -124,11 +124,11 @@ def verify_checksum(file_path: Path) -> bool:
 
     Behaviour:
 
-    - **No sidecar**: logs a WARNING at ``checksum.no_sidecar`` and returns
+    - **No sidecar**: logs a WARNING at ``agent.strategy.checksum.no_sidecar`` and returns
       ``True`` for backwards compatibility with pre-checksum model artifacts.
       Callers that require strict verification should check the return value
       and refuse to load the model when ``False`` would be safer.
-    - **Sidecar present, digest matches**: logs ``checksum.verified`` at INFO
+    - **Sidecar present, digest matches**: logs ``agent.strategy.checksum.verified`` at INFO
       and returns ``True``.
     - **Sidecar present, digest mismatches**: raises :class:`SecurityError`.
       The caller must not proceed.
@@ -148,7 +148,7 @@ def verify_checksum(file_path: Path) -> bool:
 
     if not checksum_path.exists():
         logger.warning(
-            "checksum.no_sidecar",
+            "agent.strategy.checksum.no_sidecar",
             path=str(file_path),
             expected_sidecar=str(checksum_path),
             msg="Loading model without integrity verification — no .sha256 sidecar found.",
@@ -166,7 +166,7 @@ def verify_checksum(file_path: Path) -> bool:
         )
 
     logger.info(
-        "checksum.verified",
+        "agent.strategy.checksum.verified",
         path=str(file_path),
         digest_prefix=actual[:16],
     )

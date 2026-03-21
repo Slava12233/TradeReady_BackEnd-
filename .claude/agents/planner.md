@@ -62,6 +62,18 @@ Then read the CLAUDE.md files for every module your plan will touch. Use the CLA
 | Scripts | `scripts/CLAUDE.md` |
 | Documentation | `docs/CLAUDE.md` |
 
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
+
 ## Your Role
 
 - Analyze requirements and create detailed implementation plans

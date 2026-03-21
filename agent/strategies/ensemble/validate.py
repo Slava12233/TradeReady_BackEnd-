@@ -52,7 +52,7 @@ from typing import Any
 
 import httpx
 import structlog
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from agent.strategies.ensemble.config import EnsembleConfig
 from agent.strategies.ensemble.run import EnsembleRunner
@@ -286,7 +286,7 @@ class EnsembleValidator:
                     end_dt = datetime.fromisoformat(latest_str).astimezone(UTC)
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             warn = f"Could not resolve data range from platform: {exc}. Using fallback."
-            log.warning("validator.date_range_failed", error=str(exc))
+            log.warning("agent.strategy.ensemble.validate.date_range_failed", error=str(exc))
             self._errors.append(warn)
 
         if end_dt is None:
@@ -386,7 +386,7 @@ class EnsembleValidator:
             when the backtest fails).
         """
         log.info(
-            "validator.run_strategy.start",
+            "agent.strategy.ensemble.validate.run_strategy.start",
             strategy=strategy_name,
             start=start,
             end=end,
@@ -403,7 +403,7 @@ class EnsembleValidator:
             await runner.initialize()
         except Exception as exc:  # noqa: BLE001
             err = f"EnsembleRunner.initialize() failed for {strategy_name}: {exc}"
-            log.error("validator.run_strategy.init_failed", strategy=strategy_name, error=str(exc))
+            log.error("agent.strategy.ensemble.validate.run_strategy.init_failed", strategy=strategy_name, error=str(exc))
             self._errors.append(err)
             return StrategyMetrics(
                 strategy_name=strategy_name,
@@ -414,7 +414,7 @@ class EnsembleValidator:
             ensemble_report = await runner.run_backtest(start=start, end=end)
         except Exception as exc:  # noqa: BLE001
             err = f"run_backtest failed for {strategy_name}: {exc}"
-            log.error("validator.run_strategy.backtest_failed", strategy=strategy_name, error=str(exc))
+            log.error("agent.strategy.ensemble.validate.run_strategy.backtest_failed", strategy=strategy_name, error=str(exc))
             self._errors.append(err)
             return StrategyMetrics(
                 strategy_name=strategy_name,
@@ -424,7 +424,7 @@ class EnsembleValidator:
         session_id = ensemble_report.session_id
         if session_id in ("error", "unknown"):
             err = f"Backtest session failed to start for {strategy_name} (session_id={session_id!r})"
-            log.warning("validator.run_strategy.bad_session", strategy=strategy_name, session_id=session_id)
+            log.warning("agent.strategy.ensemble.validate.run_strategy.bad_session", strategy=strategy_name, session_id=session_id)
             return StrategyMetrics(
                 strategy_name=strategy_name,
                 session_id=session_id,
@@ -437,7 +437,7 @@ class EnsembleValidator:
         metrics = await self._fetch_backtest_metrics(session_id, rest_client)
 
         log.info(
-            "validator.run_strategy.complete",
+            "agent.strategy.ensemble.validate.run_strategy.complete",
             strategy=strategy_name,
             session_id=session_id,
             sharpe=metrics.get("sharpe_ratio"),
@@ -488,7 +488,7 @@ class EnsembleValidator:
             data = resp.json()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             warn = f"Could not fetch results for session {session_id}: {exc}"
-            log.warning("validator.fetch_metrics.failed", session_id=session_id, error=str(exc))
+            log.warning("agent.strategy.ensemble.validate.fetch_metrics.failed", session_id=session_id, error=str(exc))
             self._errors.append(warn)
             return result
 
@@ -536,7 +536,7 @@ class EnsembleValidator:
         """
         results: list[StrategyMetrics] = []
         for start, end in periods:
-            log.info("validator.buyhold.start", start=start, end=end)
+            log.info("agent.strategy.ensemble.validate.buyhold.start", start=start, end=end)
             metrics = await self._run_buyhold_period(start, end, rest_client)
             results.append(metrics)
         return results
@@ -617,14 +617,14 @@ class EnsembleValidator:
                 if order_resp.status_code < 300:
                     orders_placed += 1
                     log.debug(
-                        "validator.buyhold.buy_placed",
+                        "agent.strategy.ensemble.validate.buyhold.buy_placed",
                         symbol=sym,
                         qty=qty,
                         session_id=session_id,
                     )
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 warn = f"Buy-and-hold: BUY {sym} failed: {exc}"
-                log.warning("validator.buyhold.order_failed", symbol=sym, error=str(exc))
+                log.warning("agent.strategy.ensemble.validate.buyhold.order_failed", symbol=sym, error=str(exc))
                 self._errors.append(warn)
 
         # Step through to completion without further trading.
@@ -649,7 +649,7 @@ class EnsembleValidator:
                 break
 
         log.info(
-            "validator.buyhold.session_done",
+            "agent.strategy.ensemble.validate.buyhold.session_done",
             session_id=session_id,
             completed=completed,
             orders_placed=orders_placed,
@@ -692,7 +692,7 @@ class EnsembleValidator:
 
         for idx, (start, end) in enumerate(periods):
             log.info(
-                "validator.comparison.period_start",
+                "agent.strategy.ensemble.validate.comparison.period_start",
                 period_index=idx,
                 start=start,
                 end=end,
@@ -734,7 +734,7 @@ class EnsembleValidator:
             )
             period_results.append(period_result)
             log.info(
-                "validator.comparison.period_done",
+                "agent.strategy.ensemble.validate.comparison.period_done",
                 period_index=idx,
                 winner=period_result.winner,
                 ensemble_vs_best=period_result.ensemble_vs_best_individual_sharpe,
@@ -931,7 +931,7 @@ class EnsembleValidator:
         generated_at = datetime.now(UTC).isoformat()
 
         log.info(
-            "validator.generate_report.start",
+            "agent.strategy.ensemble.validate.generate_report.start",
             report_id=report_id,
             n_periods=n_periods,
             symbols=self._symbols,
@@ -945,7 +945,7 @@ class EnsembleValidator:
                 f"Platform at {self._base_url} is not reachable. "
                 "All backtest runs will be skipped."
             )
-            log.error("validator.platform_unavailable", base_url=self._base_url)
+            log.error("agent.strategy.ensemble.validate.platform_unavailable", base_url=self._base_url)
             self._errors.append(warn)
 
             # Return empty report immediately.
@@ -972,7 +972,7 @@ class EnsembleValidator:
         # 2. Resolve backtest periods.
         periods = await self._resolve_periods(n_periods)
         log.info(
-            "validator.periods_resolved",
+            "agent.strategy.ensemble.validate.periods_resolved",
             n_periods=len(periods),
             first_start=periods[0][0] if periods else "none",
             last_end=periods[-1][1] if periods else "none",
@@ -987,7 +987,7 @@ class EnsembleValidator:
         improvement = self._compute_improvement_vs_baseline(period_results)
 
         log.info(
-            "validator.generate_report.done",
+            "agent.strategy.ensemble.validate.generate_report.done",
             report_id=report_id,
             ensemble_wins=ensemble_wins,
             improvement_vs_baseline=improvement,
@@ -1012,74 +1012,68 @@ class EnsembleValidator:
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 
-def _print_report_summary(report: EnsembleValidationReport) -> None:
-    """Print a human-readable summary of the validation report to stdout.
+def _log_report_summary(report: EnsembleValidationReport) -> None:
+    """Log a structured summary of the validation report via structlog.
 
     Args:
         report: Completed :class:`EnsembleValidationReport`.
     """
-    print()
-    print("=" * 70)
-    print("  ENSEMBLE VALIDATION REPORT")
-    print("=" * 70)
-    print(f"  Report ID        : {report.report_id}")
-    print(f"  Generated        : {report.generated_at}")
-    print(f"  Platform         : {report.base_url}  (available={report.platform_available})")
-    print(f"  Symbols          : {', '.join(report.symbols)}")
-    print(f"  Period length    : {report.period_days} days")
-    print(f"  Periods tested   : {report.summary.total_periods}")
-    print(f"  Periods with data: {report.summary.periods_with_data}")
-    print()
+    per_period_data = []
+    for pr in (report.per_period or []):
+        strategies_data = [
+            {
+                "name": m.strategy_name,
+                "sharpe": round(m.sharpe_ratio, 4) if m.sharpe_ratio is not None else None,
+                "roi_pct": round(m.roi_pct, 2) if m.roi_pct is not None else None,
+                "max_dd_pct": round(m.max_drawdown_pct, 2) if m.max_drawdown_pct is not None else None,
+                "win_rate": round(m.win_rate, 4) if m.win_rate is not None else None,
+                "error": m.error,
+            }
+            for m in pr.strategies
+        ]
+        per_period_data.append({
+            "period": pr.period_index,
+            "start": str(pr.start),
+            "end": str(pr.end),
+            "winner": pr.winner,
+            "ensemble_vs_best_individual_sharpe": (
+                round(pr.ensemble_vs_best_individual_sharpe, 4)
+                if pr.ensemble_vs_best_individual_sharpe is not None
+                else None
+            ),
+            "strategies": strategies_data,
+        })
 
-    if not report.per_period:
-        print("  No period results available.")
-    else:
-        for pr in report.per_period:
-            print(f"  Period {pr.period_index}: {pr.start} → {pr.end}")
-            print(f"    Winner : {pr.winner or 'none'}")
-            if pr.ensemble_vs_best_individual_sharpe is not None:
-                delta = pr.ensemble_vs_best_individual_sharpe
-                sign = "+" if delta >= 0 else ""
-                print(f"    Ensemble vs best individual Sharpe: {sign}{delta:.4f}")
-            for m in pr.strategies:
-                sharpe_str = f"{m.sharpe_ratio:.4f}" if m.sharpe_ratio is not None else "N/A"
-                roi_str = f"{m.roi_pct:.2f}%" if m.roi_pct is not None else "N/A"
-                dd_str = f"{m.max_drawdown_pct:.2f}%" if m.max_drawdown_pct is not None else "N/A"
-                wr_str = f"{m.win_rate:.2%}" if m.win_rate is not None else "N/A"
-                err_str = f"  [ERROR: {m.error[:60]}]" if m.error else ""
-                print(
-                    f"    {m.strategy_name:<15} Sharpe={sharpe_str:<8} "
-                    f"ROI={roi_str:<9} DD={dd_str:<8} WinRate={wr_str}{err_str}"
-                )
-            print()
+    avg_sharpe = {
+        name: round(avg, 4)
+        for name, avg in sorted(
+            report.summary.avg_sharpe_by_strategy.items(),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
+    }
 
-    print("-" * 70)
-    print("  SUMMARY")
-    print("-" * 70)
-    print("  Average Sharpe by strategy:")
-    for name, avg in sorted(
-        report.summary.avg_sharpe_by_strategy.items(),
-        key=lambda kv: kv[1],
-        reverse=True,
-    ):
-        wins = report.summary.best_strategy_counts.get(name, 0)
-        print(f"    {name:<15} avg_sharpe={avg:>7.4f}  period_wins={wins}")
-
-    print()
-    print(f"  Ensemble wins (beats all individuals): {report.ensemble_wins} / {report.summary.total_periods}")
-
-    if report.improvement_vs_baseline is not None:
-        sign = "+" if report.improvement_vs_baseline >= 0 else ""
-        print(f"  Ensemble vs Buy-and-Hold ROI delta:   {sign}{report.improvement_vs_baseline:.4f}%")
-    else:
-        print("  Ensemble vs Buy-and-Hold ROI delta:   N/A")
-
-    if report.errors:
-        print()
-        print(f"  Errors / warnings ({len(report.errors)}):")
-        for err in report.errors:
-            print(f"    - {err}")
-    print("=" * 70)
+    log.info(
+        "agent.strategy.ensemble.validate.report_summary",
+        report_id=report.report_id,
+        generated_at=str(report.generated_at),
+        base_url=report.base_url,
+        platform_available=report.platform_available,
+        symbols=report.symbols,
+        period_days=report.period_days,
+        total_periods=report.summary.total_periods,
+        periods_with_data=report.summary.periods_with_data,
+        ensemble_wins=report.ensemble_wins,
+        improvement_vs_baseline=(
+            round(report.improvement_vs_baseline, 4)
+            if report.improvement_vs_baseline is not None
+            else None
+        ),
+        avg_sharpe_by_strategy=avg_sharpe,
+        best_strategy_counts=report.summary.best_strategy_counts,
+        per_period=per_period_data,
+        errors=report.errors,
+    )
 
 
 async def _cli_main(
@@ -1103,21 +1097,18 @@ async def _cli_main(
     Returns:
         Exit code (0 = success, 1 = failure or unavailable platform).
     """
-    import logging  # noqa: PLC0415
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
 
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.add_log_level,
-            structlog.dev.ConsoleRenderer(),
-        ]
+    configure_agent_logging()
+
+    log.info(
+        "agent.strategy.ensemble.validate.starting",
+        n_periods=n_periods,
+        period_days=period_days,
+        base_url=base_url,
+        symbols=symbols,
+        strategies=ALL_STRATEGY_NAMES,
     )
-
-    print(f"\nStarting ensemble validation — {n_periods} periods × {period_days} days")
-    print(f"Platform  : {base_url}")
-    print(f"Symbols   : {', '.join(symbols)}")
-    print(f"Strategies: {', '.join(ALL_STRATEGY_NAMES)}")
 
     validator = EnsembleValidator(
         base_url=base_url,
@@ -1128,15 +1119,15 @@ async def _cli_main(
 
     report = await validator.generate_report(n_periods=n_periods)
 
-    # Print human-readable summary.
-    _print_report_summary(report)
+    # Log structured summary.
+    _log_report_summary(report)
 
     # Save JSON report.
     output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"ensemble-final-validation-{ts}.json"
     output_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
-    print(f"\nReport saved to: {output_path}")
+    log.info("agent.strategy.ensemble.validate.report_saved", path=str(output_path))
 
     # Return non-zero exit code if the platform was unavailable.
     return 0 if report.platform_available else 1

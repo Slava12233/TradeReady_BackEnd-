@@ -209,7 +209,7 @@ class SignalGenerator:
             candle data is available (e.g. ``rest_client`` is ``None``).
         """
         if not symbols:
-            self._log.warning("signal_generator.generate.no_symbols")
+            self._log.warning("agent.trade.signal_generator.generate.no_symbols")
             return []
 
         # ── Step 1: Fetch candles concurrently ──────────────────────────
@@ -218,7 +218,7 @@ class SignalGenerator:
         # If we could not fetch candles at all, return all-HOLD signals.
         if not candles_by_symbol:
             self._log.warning(
-                "signal_generator.generate.no_candles",
+                "agent.trade.signal_generator.generate.no_candles",
                 symbols=symbols,
             )
             return [self._hold_signal(sym, reason="no_candles") for sym in symbols]
@@ -228,7 +228,7 @@ class SignalGenerator:
             step_result = await self._runner.step(candles_by_symbol)
         except Exception as exc:  # noqa: BLE001
             self._log.error(
-                "signal_generator.generate.ensemble_step_failed",
+                "agent.trade.signal_generator.generate.ensemble_step_failed",
                 error=str(exc),
             )
             return [self._hold_signal(sym, reason="ensemble_error") for sym in symbols]
@@ -237,7 +237,7 @@ class SignalGenerator:
         signals = self._convert_step_result(step_result, symbols, candles_by_symbol)
 
         self._log.info(
-            "signal_generator.generate.complete",
+            "agent.trade.signal_generator.generate.complete",
             symbols=symbols,
             total=len(signals),
             non_hold=sum(1 for s in signals if s.action != "hold"),
@@ -265,7 +265,7 @@ class SignalGenerator:
             Symbols whose fetch failed are absent from the returned dict.
         """
         if self._rest is None:
-            self._log.debug("signal_generator.fetch_candles.no_rest_client")
+            self._log.debug("agent.trade.signal_generator.fetch_candles.no_rest_client")
             return {}
 
         async def _fetch_one(sym: str) -> tuple[str, list[dict[str, Any]] | Exception]:
@@ -293,14 +293,14 @@ class SignalGenerator:
         for item in results:
             if isinstance(item, Exception):
                 self._log.warning(
-                    "signal_generator.fetch_candles.gather_exception",
+                    "agent.trade.signal_generator.fetch_candles.gather_exception",
                     error=str(item),
                 )
                 continue
             sym, payload = item
             if isinstance(payload, Exception):
                 self._log.warning(
-                    "signal_generator.fetch_candles.fetch_failed",
+                    "agent.trade.signal_generator.fetch_candles.fetch_failed",
                     symbol=sym,
                     error=str(payload),
                 )

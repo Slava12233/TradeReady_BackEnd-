@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 import structlog
 
+from src.api.middleware.audit import AuditMiddleware
 from src.api.middleware.auth import AuthMiddleware
 from src.api.middleware.logging import LoggingMiddleware
 from src.api.middleware.rate_limit import RateLimitMiddleware
@@ -187,10 +188,14 @@ def create_app() -> FastAPI:
 
     # ── Custom middleware (registered in reverse execution order) ─────────────
     # Starlette executes middleware in LIFO order, so we add them outermost-last.
-    # Desired execution order: LoggingMiddleware → AuthMiddleware → RateLimitMiddleware → route
-    # Auth must run before RateLimitMiddleware so that request.state.account is
-    # populated before the rate-limiter reads it.
+    # Desired execution order:
+    #   LoggingMiddleware → AuthMiddleware → AuditMiddleware → RateLimitMiddleware → route
+    # Auth must run before AuditMiddleware so that request.state.account is
+    # available when the audit task reads it.
+    # AuditMiddleware must run before RateLimitMiddleware (audit is post-response
+    # and should not be gated by rate limits).
     application.add_middleware(RateLimitMiddleware)
+    application.add_middleware(AuditMiddleware)
     application.add_middleware(AuthMiddleware)
     application.add_middleware(LoggingMiddleware)
 

@@ -1,6 +1,6 @@
 # API Middleware
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Authentication, rate limiting, and structured request logging middleware for the FastAPI/Starlette API layer.
 
@@ -14,7 +14,8 @@ Three Starlette `BaseHTTPMiddleware` subclasses that run on every HTTP request i
 |------|---------|
 | `auth.py` | `AuthMiddleware` — resolves account/agent from `X-API-Key` or `Authorization: Bearer` headers; exposes `get_current_account` / `get_current_agent` FastAPI dependencies and `CurrentAccountDep` / `CurrentAgentDep` type aliases |
 | `rate_limit.py` | `RateLimitMiddleware` — per-account sliding-window rate limiter backed by Redis `INCR` + `EXPIRE`; injects `X-RateLimit-*` headers on every response |
-| `logging.py` | `LoggingMiddleware` — emits one structlog record per request with `request_id`, method, path, status, latency, client IP, and optional `account_id` |
+| `logging.py` | `LoggingMiddleware` — emits one structlog record per request with `request_id`, method, path, status, latency, client IP, `account_id`, and optional `trace_id` from `X-Trace-Id` header; increments `platform_api_errors` metric on 4xx/5xx |
+| `audit.py` | `AuditMiddleware` — fire-and-forget async writer that persists request metadata to the `audit_log` table; registered in `src/main.py` after other middleware |
 | `__init__.py` | One-line docstring; no re-exports |
 
 ## Architecture & Patterns
@@ -59,6 +60,7 @@ Five tiers (first prefix match wins):
 ### Logging
 
 - Generates a UUID4 `request_id` stored on `request.state.request_id` for correlation.
+- Reads optional `X-Trace-Id` header; stored on `request.state.trace_id` (always set, empty string when absent). Included in log records only when non-empty, enabling distributed-trace correlation.
 - Skips `/health` and `/metrics` to avoid liveness-probe noise.
 - Log level: `info` for 2xx/3xx, `warning` for 4xx, `error` for 5xx or exceptions.
 - Uses `structlog` (not stdlib `logging`).
@@ -90,6 +92,7 @@ All three are registered via `app.add_middleware(ClassName)` in `src/main.py`. T
 | `request.state.account` | `AuthMiddleware` | `Account` |
 | `request.state.agent` | `AuthMiddleware` | `Agent \| None` |
 | `request.state.request_id` | `LoggingMiddleware` | `str` (UUID4) |
+| `request.state.trace_id` | `LoggingMiddleware` | `str` (empty string when `X-Trace-Id` header is absent) |
 
 ## Dependencies
 
@@ -130,5 +133,7 @@ All three are registered via `app.add_middleware(ClassName)` in `src/main.py`. T
 
 ## Recent Changes
 
+- `2026-03-21` — `LoggingMiddleware` now reads `X-Trace-Id` header; stored as `request.state.trace_id` and added to log records when non-empty. Also increments `platform_api_errors` Prometheus metric on 4xx/5xx responses.
+- `2026-03-21` — `audit.py` added: `AuditMiddleware` is a fire-and-forget Starlette middleware that writes every non-health request to the `audit_log` table. Registered in `src/main.py`.
 - `2026-03-20` — Added `backtest` (6000/min) and `training` (3000/min) rate limit tiers; rate tier count increased from 3 to 5.
 - `2026-03-17` — Initial CLAUDE.md created

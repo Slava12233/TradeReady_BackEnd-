@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,7 +40,7 @@ from typing import Any
 import structlog
 
 from agent.config import AgentConfig
-from agent.strategies.evolutionary.battle_runner import BattleRunner, FAILURE_FITNESS
+from agent.strategies.evolutionary.battle_runner import FAILURE_FITNESS, BattleRunner
 from agent.strategies.evolutionary.config import EvolutionConfig
 from agent.strategies.evolutionary.genome import StrategyGenome
 from agent.strategies.evolutionary.population import Population, PopulationStats
@@ -136,7 +135,7 @@ def _save_json(path: Path, data: Any) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
-    logger.info("evolve.saved_file", path=str(path))
+    logger.info("agent.strategy.evolutionary.evolve.saved_file", path=str(path))
 
 
 # Module-level variable that tracks the platform strategy ID created for the
@@ -188,7 +187,7 @@ async def _save_champion_strategy(
             )
             if "error" in result:
                 logger.warning(
-                    "evolve.champion_strategy_save_failed",
+                    "agent.strategy.evolutionary.evolve.champion_strategy_save_failed",
                     generation=generation,
                     error=result["error"],
                 )
@@ -196,7 +195,7 @@ async def _save_champion_strategy(
             strategy_id = str(result.get("strategy_id", ""))
             _champion_strategy_id = strategy_id
             logger.info(
-                "evolve.champion_strategy_created",
+                "agent.strategy.evolutionary.evolve.champion_strategy_created",
                 strategy_id=strategy_id,
                 generation=generation,
             )
@@ -212,7 +211,7 @@ async def _save_champion_strategy(
             )
             if "error" in result:
                 logger.warning(
-                    "evolve.champion_version_save_failed",
+                    "agent.strategy.evolutionary.evolve.champion_version_save_failed",
                     strategy_id=strategy_id,
                     generation=generation,
                     error=result["error"],
@@ -220,13 +219,13 @@ async def _save_champion_strategy(
                 # Non-fatal: return the existing strategy_id anyway.
             else:
                 logger.info(
-                    "evolve.champion_version_created",
+                    "agent.strategy.evolutionary.evolve.champion_version_created",
                     strategy_id=strategy_id,
                     generation=generation,
                 )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "evolve.champion_strategy_exception",
+            "agent.strategy.evolutionary.evolve.champion_strategy_exception",
             generation=generation,
             error=str(exc),
         )
@@ -340,7 +339,7 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
             # One-time provisioning of battle agents.
             await runner.setup_agents(cfg.population_size)
             logger.info(
-                "evolve.agents_provisioned",
+                "agent.strategy.evolutionary.evolve.agents_provisioned",
                 count=cfg.population_size,
             )
 
@@ -375,7 +374,7 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
 
                 except Exception as exc:  # noqa: BLE001
                     log.error(
-                        "evolve.generation_failed",
+                        "agent.strategy.evolutionary.evolve.generation_failed",
                         error=str(exc),
                         battle_id=battle_id,
                     )
@@ -386,7 +385,7 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
                 best_genome: StrategyGenome = population.best(fitness_scores)
 
                 log.info(
-                    "evolve.generation_stats",
+                    "agent.strategy.evolutionary.evolve.generation_stats",
                     best=round(stats.best, 4),
                     avg=round(stats.mean, 4),
                     worst=round(stats.worst, 4),
@@ -434,7 +433,7 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
 
                 if convergence.converged:
                     log.info(
-                        "evolve.converged",
+                        "agent.strategy.evolutionary.evolve.converged",
                         threshold=cfg.convergence_threshold,
                         stale=convergence.stale_generations,
                         gen=gen_number,
@@ -576,25 +575,9 @@ def _configure_logging() -> None:
     Mirrors the logging setup used by the main agent entry point so that
     evolution log output is consistent with the rest of the platform.
     """
-    structlog.configure(
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.stdlib.BoundLogger,
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
-    logging.basicConfig(
-        stream=sys.stderr,
-        level=logging.INFO,
-        format="%(message)s",
-    )
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
+
+    configure_agent_logging()
 
 
 async def _main(argv: list[str] | None = None) -> int:
@@ -613,8 +596,8 @@ async def _main(argv: list[str] | None = None) -> int:
     try:
         cfg = EvolutionConfig()
     except Exception as exc:  # noqa: BLE001
-        logger.error("evolve.config_load_failed", error=str(exc))
-        print(f"[error] Failed to load EvolutionConfig: {exc}", file=sys.stderr)
+        logger.error("agent.strategy.evolutionary.evolve.config_load_failed", error=str(exc))
+        print(f"[error] Failed to load EvolutionConfig: {exc}", file=sys.stderr)  # noqa: T201
         return 1
 
     # Apply CLI overrides via model_copy so Pydantic validators still run.
@@ -641,7 +624,7 @@ async def _main(argv: list[str] | None = None) -> int:
         cfg = cfg.model_copy(update=overrides)
 
     logger.info(
-        "evolve.start",
+        "agent.strategy.evolutionary.evolve.start",
         generations=cfg.generations,
         population_size=cfg.population_size,
         seed=cfg.seed,
@@ -660,8 +643,8 @@ async def _main(argv: list[str] | None = None) -> int:
     try:
         summary = await run_evolution(cfg)
     except Exception as exc:  # noqa: BLE001
-        logger.error("evolve.fatal_error", error=str(exc), exc_info=True)
-        print(f"[error] Evolution failed: {exc}", file=sys.stderr)
+        logger.error("agent.strategy.evolutionary.evolve.fatal_error", error=str(exc), exc_info=True)
+        print(f"[error] Evolution failed: {exc}", file=sys.stderr)  # noqa: T201
         return 1
 
     # Persist results to disk.
@@ -696,7 +679,7 @@ async def _main(argv: list[str] | None = None) -> int:
     )
 
     logger.info(
-        "evolve.complete",
+        "agent.strategy.evolutionary.evolve.complete",
         generations_run=gens_run,
         champion_fitness=champ_fitness,
         champion_generation=champ_gen,

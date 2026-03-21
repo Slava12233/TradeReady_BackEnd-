@@ -1,0 +1,41 @@
+# Development Context Log
+
+<!-- Maintained by the context-manager agent. Summarizes all development activity so future conversations have full context. -->
+
+## Current State
+
+**Active work:** Project bootstrapped with Claude Code agentic layer
+**Last session:** {{DATE}} — Initial setup with Claude Code Starter Kit
+**Next steps:** Begin development, review generated CLAUDE.md files
+**Blocked:** None
+
+## What's Built
+
+<!-- Update this table as the project grows -->
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+
+## Key Design Decisions
+
+<!-- Record architectural decisions here — these are never pruned -->
+
+| Date | Decision | Reasoning |
+|------|----------|-----------|
+| {{DATE}} | Claude Code agentic layer with 14 agents | Automated code review, testing, context tracking, and deployment validation |
+
+## Recent Activity
+
+### {{DATE}} — Project Bootstrap
+
+**Changes:**
+- Generated CLAUDE.md files across the codebase
+- Configured custom agents in `.claude/agents/`
+- Set up skills: sync-context, bootstrap-project
+- Created code-style, testing, and security rules
+
+**Decisions:**
+- CLAUDE.md hierarchy follows directory structure for lazy-loaded navigation
+- Mandatory agent sequence: code-reviewer → test-runner → context-manager after every change
+
+---

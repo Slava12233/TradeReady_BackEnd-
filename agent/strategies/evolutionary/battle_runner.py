@@ -168,22 +168,22 @@ class BattleRunner:
                 )
                 response.raise_for_status()
                 token: str = response.json()["token"]
-                logger.info("battle_runner.jwt_acquired")
+                logger.info("agent.strategy.evolutionary.battle_runner.jwt_acquired")
                 return token
         except httpx.HTTPStatusError as exc:
             msg = (
                 f"JWT acquisition failed: HTTP {exc.response.status_code} — "
                 f"{exc.response.text[:200]}"
             )
-            logger.error("battle_runner.jwt_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.jwt_failed", error=msg)
             raise RuntimeError(msg) from exc
         except httpx.RequestError as exc:
             msg = f"JWT acquisition failed (network): {exc}"
-            logger.error("battle_runner.jwt_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.jwt_failed", error=msg)
             raise RuntimeError(msg) from exc
         except KeyError as exc:
             msg = "JWT acquisition failed: response did not contain 'token' key"
-            logger.error("battle_runner.jwt_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.jwt_failed", error=msg)
             raise RuntimeError(msg) from exc
 
     # ── Lifecycle helpers ─────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ class BattleRunner:
             RuntimeError: If any agent creation request fails.
         """
         logger.info(
-            "battle_runner.setup_agents.start",
+            "agent.strategy.evolutionary.battle_runner.setup_agents.start",
             population_size=population_size,
         )
         self._agent_ids = []
@@ -251,7 +251,7 @@ class BattleRunner:
             if isinstance(result, Exception):
                 msg = f"Agent creation failed for '{names[i]}': {result}"
                 logger.error(
-                    "battle_runner.create_agent_failed",
+                    "agent.strategy.evolutionary.battle_runner.create_agent_failed",
                     name=names[i],
                     error=msg,
                 )
@@ -259,14 +259,14 @@ class BattleRunner:
             agent_id = str(result)
             self._agent_ids.append(agent_id)
             logger.debug(
-                "battle_runner.agent_created",
+                "agent.strategy.evolutionary.battle_runner.agent_created",
                 index=i,
                 agent_id=agent_id,
                 name=names[i],
             )
 
         logger.info(
-            "battle_runner.setup_agents.complete",
+            "agent.strategy.evolutionary.battle_runner.setup_agents.complete",
             count=len(self._agent_ids),
         )
         return list(self._agent_ids)
@@ -298,15 +298,15 @@ class BattleRunner:
                 f"Agent creation failed for '{name}': "
                 f"HTTP {exc.response.status_code} — {exc.response.text[:200]}"
             )
-            logger.error("battle_runner.create_agent_failed", name=name, error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.create_agent_failed", name=name, error=msg)
             raise RuntimeError(msg) from exc
         except httpx.RequestError as exc:
             msg = f"Agent creation failed for '{name}' (network): {exc}"
-            logger.error("battle_runner.create_agent_failed", name=name, error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.create_agent_failed", name=name, error=msg)
             raise RuntimeError(msg) from exc
         except KeyError as exc:
             msg = f"Agent creation response missing 'agent_id' key for '{name}'"
-            logger.error("battle_runner.create_agent_failed", name=name, error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.create_agent_failed", name=name, error=msg)
             raise RuntimeError(msg) from exc
 
     async def reset_agents(self) -> None:
@@ -317,11 +317,11 @@ class BattleRunner:
         can continue even if individual resets fail.
         """
         if not self._agent_ids:
-            logger.warning("battle_runner.reset_agents.no_agents")
+            logger.warning("agent.strategy.evolutionary.battle_runner.reset_agents.no_agents")
             return
 
         logger.info(
-            "battle_runner.reset_agents.start",
+            "agent.strategy.evolutionary.battle_runner.reset_agents.start",
             count=len(self._agent_ids),
             generation=self._generation,
         )
@@ -338,17 +338,17 @@ class BattleRunner:
                         json={"confirm": True},
                     )
                     response.raise_for_status()
-                    logger.debug("battle_runner.agent_reset", agent_id=agent_id)
+                    logger.debug("agent.strategy.evolutionary.battle_runner.agent_reset", agent_id=agent_id)
                 except httpx.HTTPStatusError as exc:
                     logger.warning(
-                        "battle_runner.agent_reset_failed",
+                        "agent.strategy.evolutionary.battle_runner.agent_reset_failed",
                         agent_id=agent_id,
                         status=exc.response.status_code,
                         body=exc.response.text[:200],
                     )
                 except httpx.RequestError as exc:
                     logger.warning(
-                        "battle_runner.agent_reset_failed",
+                        "agent.strategy.evolutionary.battle_runner.agent_reset_failed",
                         agent_id=agent_id,
                         error=str(exc),
                     )
@@ -358,7 +358,7 @@ class BattleRunner:
 
         self._generation += 1
         logger.info(
-            "battle_runner.reset_agents.complete",
+            "agent.strategy.evolutionary.battle_runner.reset_agents.complete",
             generation=self._generation,
         )
 
@@ -386,7 +386,7 @@ class BattleRunner:
             raise ValueError(msg)
 
         logger.info(
-            "battle_runner.assign_strategies.start",
+            "agent.strategy.evolutionary.battle_runner.assign_strategies.start",
             count=len(genomes),
             generation=self._generation,
         )
@@ -413,7 +413,7 @@ class BattleRunner:
                         # Dict write is safe: each task touches a different key.
                         self._strategy_ids[agent_id] = strategy_id
                         logger.debug(
-                            "battle_runner.strategy_created",
+                            "agent.strategy.evolutionary.battle_runner.strategy_created",
                             agent_id=agent_id,
                             strategy_id=strategy_id,
                             generation=current_generation,
@@ -427,14 +427,14 @@ class BattleRunner:
                             generation=current_generation,
                         )
                         logger.debug(
-                            "battle_runner.strategy_version_created",
+                            "agent.strategy.evolutionary.battle_runner.strategy_version_created",
                             agent_id=agent_id,
                             strategy_id=strategy_id,
                             generation=current_generation,
                         )
                 except (httpx.HTTPStatusError, httpx.RequestError, RuntimeError) as exc:
                     logger.warning(
-                        "battle_runner.assign_strategy_failed",
+                        "agent.strategy.evolutionary.battle_runner.assign_strategy_failed",
                         agent_id=agent_id,
                         index=i,
                         error=str(exc),
@@ -448,7 +448,7 @@ class BattleRunner:
         await asyncio.gather(*assign_tasks, return_exceptions=True)
 
         logger.info(
-            "battle_runner.assign_strategies.complete",
+            "agent.strategy.evolutionary.battle_runner.assign_strategies.complete",
             generation=self._generation,
         )
 
@@ -508,7 +508,7 @@ class BattleRunner:
         )
         if "error" in result:
             logger.warning(
-                "battle_runner.strategy_version_failed",
+                "agent.strategy.evolutionary.battle_runner.strategy_version_failed",
                 strategy_id=strategy_id,
                 error=result["error"],
             )
@@ -550,7 +550,7 @@ class BattleRunner:
         # Step 1: Create battle.
         battle_id = await self._create_battle(preset, start_time, end_time)
         logger.info(
-            "battle_runner.battle_created",
+            "agent.strategy.evolutionary.battle_runner.battle_created",
             battle_id=battle_id,
             preset=preset,
             start=start_time,
@@ -560,22 +560,22 @@ class BattleRunner:
         # Step 2: Add participants.
         await self._add_participants(battle_id)
         logger.info(
-            "battle_runner.participants_added",
+            "agent.strategy.evolutionary.battle_runner.participants_added",
             battle_id=battle_id,
             count=len(self._agent_ids),
         )
 
         # Step 3: Start battle.
         await self._start_battle(battle_id)
-        logger.info("battle_runner.battle_started", battle_id=battle_id)
+        logger.info("agent.strategy.evolutionary.battle_runner.battle_started", battle_id=battle_id)
 
         # Step 4: Drive stepping loop.
         await self._run_step_loop(battle_id)
-        logger.info("battle_runner.step_loop_complete", battle_id=battle_id)
+        logger.info("agent.strategy.evolutionary.battle_runner.step_loop_complete", battle_id=battle_id)
 
         # Step 5: Stop battle to calculate rankings.
         await self._stop_battle(battle_id)
-        logger.info("battle_runner.battle_stopped", battle_id=battle_id)
+        logger.info("agent.strategy.evolutionary.battle_runner.battle_stopped", battle_id=battle_id)
 
         return battle_id
 
@@ -618,15 +618,15 @@ class BattleRunner:
                 f"Battle creation failed: "
                 f"HTTP {exc.response.status_code} — {exc.response.text[:200]}"
             )
-            logger.error("battle_runner.create_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.create_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
         except httpx.RequestError as exc:
             msg = f"Battle creation failed (network): {exc}"
-            logger.error("battle_runner.create_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.create_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
         except KeyError as exc:
             msg = "Battle creation response missing 'battle_id' key"
-            logger.error("battle_runner.create_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.create_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
 
     async def _add_participants(self, battle_id: str) -> None:
@@ -656,11 +656,11 @@ class BattleRunner:
                         f"Failed to add agent {agent_id} to battle {battle_id}: "
                         f"HTTP {exc.response.status_code} — {exc.response.text[:200]}"
                     )
-                    logger.error("battle_runner.add_participant_failed", error=msg)
+                    logger.error("agent.strategy.evolutionary.battle_runner.add_participant_failed", error=msg)
                     raise RuntimeError(msg) from exc
                 except httpx.RequestError as exc:
                     msg = f"Failed to add agent {agent_id} (network): {exc}"
-                    logger.error("battle_runner.add_participant_failed", error=msg)
+                    logger.error("agent.strategy.evolutionary.battle_runner.add_participant_failed", error=msg)
                     raise RuntimeError(msg) from exc
 
         participant_tasks = [_register_one(agent_id) for agent_id in self._agent_ids]
@@ -690,11 +690,11 @@ class BattleRunner:
                 f"Battle start failed for {battle_id}: "
                 f"HTTP {exc.response.status_code} — {exc.response.text[:200]}"
             )
-            logger.error("battle_runner.start_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.start_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
         except httpx.RequestError as exc:
             msg = f"Battle start failed for {battle_id} (network): {exc}"
-            logger.error("battle_runner.start_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.start_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
 
     async def _run_step_loop(self, battle_id: str) -> None:
@@ -715,7 +715,7 @@ class BattleRunner:
             battle_id: UUID of the active battle.
         """
         logger.info(
-            "battle_runner.step_loop.start",
+            "agent.strategy.evolutionary.battle_runner.step_loop.start",
             battle_id=battle_id,
             max_attempts=_MAX_POLL_ATTEMPTS,
         )
@@ -735,7 +735,7 @@ class BattleRunner:
 
                 if attempt % 20 == 0 or is_complete:
                     logger.info(
-                        "battle_runner.step_loop.progress",
+                        "agent.strategy.evolutionary.battle_runner.step_loop.progress",
                         battle_id=battle_id,
                         step=step,
                         total=total,
@@ -745,7 +745,7 @@ class BattleRunner:
 
                 if is_complete:
                     logger.info(
-                        "battle_runner.step_loop.complete",
+                        "agent.strategy.evolutionary.battle_runner.step_loop.complete",
                         battle_id=battle_id,
                         total_steps=step,
                     )
@@ -756,13 +756,13 @@ class BattleRunner:
                 # server-side; treat it as a completion signal.
                 if exc.response.status_code == 409:
                     logger.info(
-                        "battle_runner.step_loop.already_complete",
+                        "agent.strategy.evolutionary.battle_runner.step_loop.already_complete",
                         battle_id=battle_id,
                         attempt=attempt,
                     )
                     return
                 logger.warning(
-                    "battle_runner.step_loop.http_error",
+                    "agent.strategy.evolutionary.battle_runner.step_loop.http_error",
                     battle_id=battle_id,
                     status=exc.response.status_code,
                     body=exc.response.text[:200],
@@ -781,7 +781,7 @@ class BattleRunner:
 
             except httpx.RequestError as exc:
                 logger.warning(
-                    "battle_runner.step_loop.network_error",
+                    "agent.strategy.evolutionary.battle_runner.step_loop.network_error",
                     battle_id=battle_id,
                     error=str(exc),
                     attempt=attempt,
@@ -792,7 +792,7 @@ class BattleRunner:
             await asyncio.sleep(_POLL_INTERVAL_SECONDS)
 
         logger.warning(
-            "battle_runner.step_loop.timeout",
+            "agent.strategy.evolutionary.battle_runner.step_loop.timeout",
             battle_id=battle_id,
             max_attempts=_MAX_POLL_ATTEMPTS,
         )
@@ -813,7 +813,7 @@ class BattleRunner:
             # Treat this as success.
             if exc.response.status_code == 409:
                 logger.debug(
-                    "battle_runner.stop_battle.already_stopped",
+                    "agent.strategy.evolutionary.battle_runner.stop_battle.already_stopped",
                     battle_id=battle_id,
                 )
                 return
@@ -821,11 +821,11 @@ class BattleRunner:
                 f"Battle stop failed for {battle_id}: "
                 f"HTTP {exc.response.status_code} — {exc.response.text[:200]}"
             )
-            logger.error("battle_runner.stop_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.stop_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
         except httpx.RequestError as exc:
             msg = f"Battle stop failed for {battle_id} (network): {exc}"
-            logger.error("battle_runner.stop_battle_failed", error=msg)
+            logger.error("agent.strategy.evolutionary.battle_runner.stop_battle_failed", error=msg)
             raise RuntimeError(msg) from exc
 
     # ── Fitness extraction ────────────────────────────────────────────────────
@@ -847,7 +847,7 @@ class BattleRunner:
             Dict mapping agent_id → fitness score.  Contains an entry for
             every agent in :attr:`_agent_ids`.
         """
-        logger.info("battle_runner.get_fitness.start", battle_id=battle_id)
+        logger.info("agent.strategy.evolutionary.battle_runner.get_fitness.start", battle_id=battle_id)
 
         raw_results = await self._fetch_battle_results(battle_id)
         fitness_map: dict[str, float] = {}
@@ -857,7 +857,7 @@ class BattleRunner:
 
         if not raw_results:
             logger.warning(
-                "battle_runner.get_fitness.no_results",
+                "agent.strategy.evolutionary.battle_runner.get_fitness.no_results",
                 battle_id=battle_id,
             )
             return fitness_map
@@ -892,7 +892,7 @@ class BattleRunner:
 
                 fitness_map[agent_id] = fitness
                 logger.debug(
-                    "battle_runner.fitness_computed",
+                    "agent.strategy.evolutionary.battle_runner.fitness_computed",
                     agent_id=agent_id,
                     sharpe=sharpe,
                     drawdown=drawdown,
@@ -900,14 +900,14 @@ class BattleRunner:
                 )
             except (TypeError, ValueError) as exc:
                 logger.warning(
-                    "battle_runner.fitness_parse_error",
+                    "agent.strategy.evolutionary.battle_runner.fitness_parse_error",
                     agent_id=agent_id,
                     error=str(exc),
                 )
                 fitness_map[agent_id] = FAILURE_FITNESS
 
         logger.info(
-            "battle_runner.get_fitness.complete",
+            "agent.strategy.evolutionary.battle_runner.get_fitness.complete",
             battle_id=battle_id,
             scores={aid: round(f, 4) for aid, f in fitness_map.items()},
         )
@@ -934,7 +934,7 @@ class BattleRunner:
             return data  # type: ignore[return-value]
         except httpx.HTTPStatusError as exc:
             logger.warning(
-                "battle_runner.fetch_results_failed",
+                "agent.strategy.evolutionary.battle_runner.fetch_results_failed",
                 battle_id=battle_id,
                 status=exc.response.status_code,
                 body=exc.response.text[:200],
@@ -942,7 +942,7 @@ class BattleRunner:
             return []
         except httpx.RequestError as exc:
             logger.warning(
-                "battle_runner.fetch_results_failed",
+                "agent.strategy.evolutionary.battle_runner.fetch_results_failed",
                 battle_id=battle_id,
                 error=str(exc),
             )
@@ -993,17 +993,17 @@ class BattleRunner:
                 f"/api/v1/battles/{battle_id}"
             )
             response.raise_for_status()
-            logger.info("battle_runner.cleanup.complete", battle_id=battle_id)
+            logger.info("agent.strategy.evolutionary.battle_runner.cleanup.complete", battle_id=battle_id)
         except httpx.HTTPStatusError as exc:
             logger.warning(
-                "battle_runner.cleanup_failed",
+                "agent.strategy.evolutionary.battle_runner.cleanup_failed",
                 battle_id=battle_id,
                 status=exc.response.status_code,
                 body=exc.response.text[:200],
             )
         except httpx.RequestError as exc:
             logger.warning(
-                "battle_runner.cleanup_failed",
+                "agent.strategy.evolutionary.battle_runner.cleanup_failed",
                 battle_id=battle_id,
                 error=str(exc),
             )

@@ -488,7 +488,7 @@ class IntentRouter:
             router.register(IntentType.TRADE, my_trade_handler)
         """
         self._registry[intent] = handler
-        self._log.debug("router.handler_registered", intent=intent.value)
+        self._log.debug("agent.session.router.handler_registered", intent=intent.value)
 
     def classify(self, message: str) -> IntentType:
         """Classify a user message and return the best-matching intent.
@@ -509,7 +509,7 @@ class IntentRouter:
         """
         stripped = message.strip()
         if not stripped:
-            self._log.debug("router.classify.empty_message")
+            self._log.debug("agent.session.router.classify.empty_message")
             return IntentType.GENERAL
 
         # 1. Slash-command check ─────────────────────────────────────────────
@@ -519,7 +519,7 @@ class IntentRouter:
             intent = _SLASH_COMMANDS.get(token)
             if intent is not None:
                 self._log.debug(
-                    "router.classify.slash_command",
+                    "agent.session.router.classify.slash_command",
                     token=token,
                     intent=intent.value,
                 )
@@ -532,7 +532,7 @@ class IntentRouter:
         for pattern, intent in _REGEX_RULES:
             if pattern.search(stripped):
                 self._log.debug(
-                    "router.classify.regex_match",
+                    "agent.session.router.classify.regex_match",
                     intent=intent.value,
                     pattern=pattern.pattern[:60],
                 )
@@ -543,14 +543,14 @@ class IntentRouter:
         for keyword_set, intent in _KEYWORD_RULES:
             if tokens & keyword_set:
                 self._log.debug(
-                    "router.classify.keyword_match",
+                    "agent.session.router.classify.keyword_match",
                     intent=intent.value,
                     matched_keywords=list(tokens & keyword_set),
                 )
                 return intent
 
         # 4. GENERAL fallback ────────────────────────────────────────────────
-        self._log.debug("router.classify.fallback", intent=IntentType.GENERAL.value)
+        self._log.debug("agent.session.router.classify.fallback", intent=IntentType.GENERAL.value)
         return IntentType.GENERAL
 
     def get_handler(self, intent: IntentType) -> HandlerFn:
@@ -570,7 +570,7 @@ class IntentRouter:
         handler = self._registry.get(intent)
         if handler is None:
             self._log.warning(
-                "router.get_handler.missing",
+                "agent.session.router.get_handler.missing",
                 intent=intent.value,
                 fallback=IntentType.GENERAL.value,
             )
@@ -595,7 +595,7 @@ class IntentRouter:
         intent = self.classify(message)
         handler = self.get_handler(intent)
         self._log.info(
-            "router.route",
+            "agent.session.router.route",
             intent=intent.value,
             message_preview=message[:80],
         )

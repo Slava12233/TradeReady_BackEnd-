@@ -8,6 +8,11 @@ Each log record contains:
 
 - ``request_id``  — UUID4 correlation ID injected into ``request.state`` so
   that route handlers and downstream services can emit correlated log lines.
+- ``trace_id``    — Optional caller-supplied trace ID from the ``X-Trace-Id``
+  request header.  When present it is stored on ``request.state.trace_id`` and
+  included in the log record so that distributed-tracing systems (Jaeger,
+  Zipkin, Datadog, etc.) can correlate platform logs with upstream spans.
+  Omitted from logs when the header is absent.
 - ``method``      — HTTP verb.
 - ``path``        — URL path (without query string).
 - ``status``      — HTTP response status code.
@@ -26,6 +31,7 @@ Example log output (JSON renderer configured externally)::
     {
         "event": "http.request",
         "request_id": "4b3e8f1a-...",
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
         "method": "POST",
         "path": "/api/v1/trade/order",
         "status": 200,
@@ -89,13 +95,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
     1. Generates a ``request_id`` (UUID4) and stores it on
        ``request.state.request_id`` so that downstream code can reference it.
-    2. Records the start time.
-    3. Calls the next middleware / route handler.
-    4. On completion (or exception), logs method, path, status, latency, and
+    2. Reads the optional ``X-Trace-Id`` header and stores it on
+       ``request.state.trace_id`` (empty string when absent).  When non-empty
+       it is added as a ``trace_id`` field in the log record so that
+       distributed traces can be correlated with platform logs.
+    3. Records the start time.
+    4. Calls the next middleware / route handler.
+    5. On completion (or exception), logs method, path, status, latency, and
        optional account_id.
-    5. Skips logging for paths in ``_SKIP_LOG_PATHS`` (``/health``,
+    6. Skips logging for paths in ``_SKIP_LOG_PATHS`` (``/health``,
        ``/metrics``) to reduce noise.
-    6. Propagates exceptions unchanged after logging a 500-level record.
+    7. Propagates exceptions unchanged after logging a 500-level record.
 
     Example::
 
@@ -127,6 +137,13 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
 
+        # Propagate the optional caller-supplied trace ID from the
+        # X-Trace-Id header so that upstream spans can be correlated with
+        # platform log records.  Always set on request.state so that
+        # downstream handlers can read it without guarding against AttributeError.
+        trace_id: str = request.headers.get("X-Trace-Id", "")
+        request.state.trace_id = trace_id
+
         if path in _SKIP_LOG_PATHS:
             return await call_next(request)
 
@@ -157,6 +174,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 "latency_ms": latency_ms,
                 "ip": ip,
             }
+            if trace_id:
+                log_kwargs["trace_id"] = trace_id
             if account_id is not None:
                 log_kwargs["account_id"] = account_id
 
@@ -166,5 +185,13 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 logger.warning("http.request", **log_kwargs)
             else:
                 logger.info("http.request", **log_kwargs)
+
+            if status >= 400:
+                from src.monitoring.metrics import platform_api_errors  # noqa: PLC0415
+
+                platform_api_errors.labels(
+                    endpoint=path,
+                    status_code=str(status),
+                ).inc()
 
         return response

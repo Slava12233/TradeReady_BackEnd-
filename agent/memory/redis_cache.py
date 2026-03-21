@@ -237,20 +237,34 @@ class RedisMemoryCache:
             # pattern; if not found, return None (full miss).
             raw: str | None = await redis.get(f"agent:memory:*:{memory_id}")
             if raw is not None:
+                try:
+                    from agent.logging import get_agent_id  # noqa: PLC0415
+                    from agent.metrics import agent_memory_cache_hits  # noqa: PLC0415
+
+                    agent_memory_cache_hits.labels(agent_id=get_agent_id()).inc()
+                except Exception:  # noqa: BLE001
+                    pass
                 return _json_to_memory(raw)
 
             # Fallback: scan all agent-scoped keys for this memory_id.
             # This is O(N) over matching keys — acceptable because cache hits
             # are expected to be the common path after cache_memory() is called
             # with the agent_id present.
-            logger.debug("get_cached_miss_on_wildcard", memory_id=memory_id)
+            logger.debug("agent.memory.cache_miss", memory_id=memory_id)
+            try:
+                from agent.logging import get_agent_id  # noqa: PLC0415
+                from agent.metrics import agent_memory_cache_misses  # noqa: PLC0415
+
+                agent_memory_cache_misses.labels(agent_id=get_agent_id()).inc()
+            except Exception:  # noqa: BLE001
+                pass
             return None
         except RedisError as exc:
-            logger.error("get_cached_redis_error", memory_id=memory_id, error=str(exc))
+            logger.error("agent.memory.get_cached.redis_error", memory_id=memory_id, error=str(exc))
             return None
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             logger.warning(
-                "get_cached_deserialise_error", memory_id=memory_id, error=str(exc)
+                "agent.memory.get_cached.deserialise_error", memory_id=memory_id, error=str(exc)
             )
             return None
 
@@ -274,15 +288,31 @@ class RedisMemoryCache:
             key = _memory_key(agent_id, memory_id)
             raw: str | None = await redis.get(key)
             if raw is None:
+                logger.debug("agent.memory.cache_miss", memory_id=memory_id)
+                try:
+                    from agent.logging import get_agent_id  # noqa: PLC0415
+                    from agent.metrics import agent_memory_cache_misses  # noqa: PLC0415
+
+                    agent_memory_cache_misses.labels(agent_id=get_agent_id() or agent_id).inc()
+                except Exception:  # noqa: BLE001
+                    pass
                 return None
             memory = _json_to_memory(raw)
+            logger.debug("agent.memory.cache_hit", memory_id=memory_id)
+            try:
+                from agent.logging import get_agent_id  # noqa: PLC0415
+                from agent.metrics import agent_memory_cache_hits  # noqa: PLC0415
+
+                agent_memory_cache_hits.labels(agent_id=get_agent_id() or agent_id).inc()
+            except Exception:  # noqa: BLE001
+                pass
             # Update the recent sorted set score on each access.
             score = datetime.now(UTC).timestamp()
             await redis.zadd(_recent_key(agent_id), {memory_id: score})
             return memory
         except RedisError as exc:
             logger.error(
-                "get_cached_for_agent_redis_error",
+                "agent.memory.get_cached_for_agent.redis_error",
                 agent_id=agent_id,
                 memory_id=memory_id,
                 error=str(exc),
@@ -290,7 +320,7 @@ class RedisMemoryCache:
             return None
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             logger.warning(
-                "get_cached_for_agent_deserialise_error",
+                "agent.memory.get_cached_for_agent.deserialise_error",
                 agent_id=agent_id,
                 memory_id=memory_id,
                 error=str(exc),
@@ -327,14 +357,13 @@ class RedisMemoryCache:
                 await pipe.execute()
 
             logger.debug(
-                "cache_memory_stored",
-                agent_id=memory.agent_id,
+                "agent.memory.cache_write",
                 memory_id=memory.id,
                 ttl=effective_ttl,
             )
         except RedisError as exc:
             logger.error(
-                "cache_memory_redis_error",
+                "agent.memory.cache_memory.redis_error",
                 agent_id=memory.agent_id,
                 memory_id=memory.id,
                 error=str(exc),
@@ -360,11 +389,11 @@ class RedisMemoryCache:
                 await pipe.execute()
 
             logger.debug(
-                "cache_invalidated", agent_id=agent_id, memory_id=memory_id
+                "agent.memory.invalidate.complete", agent_id=agent_id, memory_id=memory_id
             )
         except RedisError as exc:
             logger.error(
-                "invalidate_redis_error",
+                "agent.memory.invalidate.redis_error",
                 agent_id=agent_id,
                 memory_id=memory_id,
                 error=str(exc),
@@ -394,7 +423,7 @@ class RedisMemoryCache:
             return ids
         except RedisError as exc:
             logger.error(
-                "get_recent_ids_redis_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.get_recent_ids.redis_error", agent_id=agent_id, error=str(exc)
             )
             return []
 
@@ -417,9 +446,10 @@ class RedisMemoryCache:
         try:
             redis = await self._get_redis()
             await redis.hset(_working_key(agent_id), key, value)
+            logger.debug("agent.memory.working_set", key=key)
         except RedisError as exc:
             logger.error(
-                "set_working_redis_error",
+                "agent.memory.set_working.redis_error",
                 agent_id=agent_id,
                 key=key,
                 error=str(exc),
@@ -439,10 +469,11 @@ class RedisMemoryCache:
         try:
             redis = await self._get_redis()
             value: str | None = await redis.hget(_working_key(agent_id), key)
+            logger.debug("agent.memory.working_get", key=key)
             return value
         except RedisError as exc:
             logger.error(
-                "get_working_redis_error",
+                "agent.memory.get_working.redis_error",
                 agent_id=agent_id,
                 key=key,
                 error=str(exc),
@@ -464,7 +495,7 @@ class RedisMemoryCache:
             return await redis.hgetall(_working_key(agent_id))
         except RedisError as exc:
             logger.error(
-                "get_all_working_redis_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.get_all_working.redis_error", agent_id=agent_id, error=str(exc)
             )
             return {}
 
@@ -480,10 +511,10 @@ class RedisMemoryCache:
         try:
             redis = await self._get_redis()
             await redis.delete(_working_key(agent_id))
-            logger.debug("working_memory_cleared", agent_id=agent_id)
+            logger.debug("agent.memory.clear_working.complete", agent_id=agent_id)
         except RedisError as exc:
             logger.error(
-                "clear_working_redis_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.clear_working.redis_error", agent_id=agent_id, error=str(exc)
             )
 
     # ── Hot state shortcuts ───────────────────────────────────────────────────
@@ -503,7 +534,7 @@ class RedisMemoryCache:
             await redis.set(_regime_key(agent_id), regime, ex=ttl)
         except RedisError as exc:
             logger.error(
-                "set_regime_redis_error",
+                "agent.memory.set_regime.redis_error",
                 agent_id=agent_id,
                 regime=regime,
                 error=str(exc),
@@ -523,7 +554,7 @@ class RedisMemoryCache:
             return await redis.get(_regime_key(agent_id))
         except RedisError as exc:
             logger.error(
-                "get_regime_redis_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.get_regime.redis_error", agent_id=agent_id, error=str(exc)
             )
             return None
 
@@ -546,11 +577,11 @@ class RedisMemoryCache:
             await redis.set(_signals_key(agent_id), payload, ex=ttl)
         except RedisError as exc:
             logger.error(
-                "set_signals_redis_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.set_signals.redis_error", agent_id=agent_id, error=str(exc)
             )
         except (TypeError, ValueError) as exc:
             logger.error(
-                "set_signals_serialise_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.set_signals.serialise_error", agent_id=agent_id, error=str(exc)
             )
 
     async def get_signals(self, agent_id: str) -> dict[str, Any] | None:
@@ -571,11 +602,11 @@ class RedisMemoryCache:
             return json.loads(raw)  # type: ignore[return-value]
         except RedisError as exc:
             logger.error(
-                "get_signals_redis_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.get_signals.redis_error", agent_id=agent_id, error=str(exc)
             )
             return None
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning(
-                "get_signals_deserialise_error", agent_id=agent_id, error=str(exc)
+                "agent.memory.get_signals.deserialise_error", agent_id=agent_id, error=str(exc)
             )
             return None

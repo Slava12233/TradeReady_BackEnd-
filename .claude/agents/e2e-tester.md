@@ -3,6 +3,7 @@ name: e2e-tester
 description: "End-to-end tester that runs live scenarios against the running platform, creating real accounts, agents, trades, backtests, and battles — all visible in the UI. Returns user credentials for UI verification."
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
+memory: project
 ---
 
 # E2E Live Tester Agent
@@ -18,6 +19,18 @@ Before doing anything, read these files to understand the platform:
 3. `src/api/routes/CLAUDE.md` — all REST endpoints, auth patterns
 4. `scripts/e2e_full_scenario_live.py` — reference implementation of a full E2E scenario
 5. `scripts/CLAUDE.md` — existing scripts and their purpose
+
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
 
 ## What You Do
 

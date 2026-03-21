@@ -1,0 +1,101 @@
+groups:
+  - name: agent-alerts
+    rules:
+      - alert: AgentUnhealthy
+        expr: agent_health_status == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} is unhealthy"
+          description: "Agent health status has been 0 for 5 minutes"
+
+      - alert: AgentHighErrorRate
+        expr: rate(agent_api_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} has high API error rate"
+          description: "API error rate for agent {{ $labels.agent_id }} on channel {{ $labels.channel }} exceeds 0.1 req/s for 5 minutes"
+
+      - alert: AgentHighLLMCost
+        expr: increase(agent_llm_cost_usd_total[1h]) > 5.0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} LLM cost exceeds $5/hour"
+          description: "Agent {{ $labels.agent_id }} has spent more than $5 on LLM calls in the last hour using model {{ $labels.model }}"
+
+      - alert: AgentBudgetExhausted
+        expr: agent_budget_usage_ratio > 0.95
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} budget nearly exhausted"
+          description: "Agent {{ $labels.agent_id }} budget utilization for limit_type {{ $labels.limit_type }} is above 95%"
+
+      - alert: AgentDecisionDrop
+        expr: rate(agent_decisions_total[15m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} stopped making decisions"
+          description: "Agent {{ $labels.agent_id }} has not made any decisions in 30 minutes"
+
+      - alert: AgentMemoryCacheLow
+        expr: >
+          agent_memory_cache_hits_total
+          / (agent_memory_cache_hits_total + agent_memory_cache_misses_total) < 0.5
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} memory cache hit rate below 50%"
+          description: "Agent {{ $labels.agent_id }} Redis memory cache hit ratio has been below 50% for the past hour"
+
+      - alert: AgentConsecutiveErrors
+        expr: agent_consecutive_errors >= 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} has consecutive errors"
+          description: "Agent {{ $labels.agent_id }} has accumulated {{ $value }} consecutive errors"
+
+      - alert: AgentDegraded
+        expr: agent_health_status == 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} is degraded"
+          description: "Agent {{ $labels.agent_id }} health status has been degraded (0.5) for 15 minutes"
+
+      - alert: PlatformIngestionStale
+        expr: platform_price_ingestion_lag_seconds > 60
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Price ingestion pipeline is stalled"
+          description: "Platform price ingestion lag is {{ $value }}s — feed may be disconnected from exchange"
+
+      - alert: PlatformHighOrderLatency
+        expr: histogram_quantile(0.95, rate(platform_order_latency_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Platform order processing latency is high"
+          description: "P95 order latency for {{ $labels.order_type }} orders exceeds 500ms"
+
+      - alert: PlatformHighAPIErrorRate
+        expr: rate(platform_api_errors_total[5m]) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Platform API error rate is high"
+          description: "API endpoint {{ $labels.endpoint }} is returning {{ $labels.status_code }} errors at >1 req/s"

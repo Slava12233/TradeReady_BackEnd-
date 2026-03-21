@@ -49,8 +49,26 @@ Pipeline Results:
 - context-manager: updated N files
 ```
 
+### 5. Capture feedback (optional)
+
+After reporting pipeline results, ask the user:
+
+> **Were the code-reviewer findings useful?** [all-useful / some-useful / not-useful / skip]
+
+If the user responds (not "skip"):
+1. Log the feedback to the activity log:
+```bash
+echo '{"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","tool":"feedback","target":"code-reviewer","feedback":"RESPONSE"}' >> development/agent-activity-log.jsonl
+```
+2. If "not-useful", ask briefly what was wrong (optional — don't block workflow)
+3. Update `.claude/agent-memory/code-reviewer/MEMORY.md` with any patterns to avoid
+
+If the user skips or doesn't respond, proceed without logging.
+
 ## Rules
 - Run agents sequentially, not in parallel (each depends on the previous)
 - If code-reviewer finds CRITICAL issues, stop and report before running test-runner
 - If tests fail, report the failures clearly with file:line references
 - Always run context-manager as the final step
+- Feedback capture is optional — never block the workflow waiting for feedback
+- If feedback indicates false positives, update agent memory to prevent recurrence

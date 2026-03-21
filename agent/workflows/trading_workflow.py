@@ -18,6 +18,7 @@ Runs the full live-trading lifecycle using the TradeReady platform:
 from __future__ import annotations
 
 import asyncio
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -148,8 +149,32 @@ async def run_trading_workflow(config: AgentConfig) -> WorkflowResult:
         )
 
         try:
+            from agent.logging_middleware import estimate_llm_cost  # noqa: PLC0415
+
+            _llm_start = time.monotonic()
             signal_result = await trading_agent.run(signal_prompt)
+            _llm_latency_ms = round((time.monotonic() - _llm_start) * 1000, 2)
+
             signal: TradeSignal = signal_result.output
+            _input_tokens: int | None = getattr(
+                getattr(signal_result, "usage", None), "input_tokens", None
+            )
+            _output_tokens: int | None = getattr(
+                getattr(signal_result, "usage", None), "output_tokens", None
+            )
+            log.info(
+                "agent.llm.completed",
+                model=config.agent_model,
+                purpose="trade_analysis",
+                input_tokens=_input_tokens,
+                output_tokens=_output_tokens,
+                latency_ms=_llm_latency_ms,
+                cost_estimate_usd=estimate_llm_cost(
+                    config.agent_model,
+                    _input_tokens or 0,
+                    _output_tokens or 0,
+                ),
+            )
             log.info(
                 "signal_generated",
                 symbol=signal.symbol,
@@ -169,6 +194,12 @@ async def run_trading_workflow(config: AgentConfig) -> WorkflowResult:
         except Exception as exc:  # noqa: BLE001 — Pydantic AI may raise various types
             bugs_found.append(f"LLM agent failed to generate TradeSignal: {exc}")
             log.error("signal_generation_failed", error=str(exc))
+            log.error(
+                "agent.llm.failed",
+                model=config.agent_model,
+                purpose="trade_analysis",
+                error=str(exc),
+            )
             return WorkflowResult(
                 workflow_name="trading_workflow",
                 status="partial",
@@ -511,8 +542,32 @@ async def run_trading_workflow(config: AgentConfig) -> WorkflowResult:
 
         market_analysis: MarketAnalysis | None = None
         try:
+            from agent.logging_middleware import estimate_llm_cost  # noqa: PLC0415
+
+            _eval_start = time.monotonic()
             eval_result = await evaluation_agent.run(evaluation_prompt)
+            _eval_latency_ms = round((time.monotonic() - _eval_start) * 1000, 2)
+
             market_analysis = eval_result.output
+            _eval_input_tokens: int | None = getattr(
+                getattr(eval_result, "usage", None), "input_tokens", None
+            )
+            _eval_output_tokens: int | None = getattr(
+                getattr(eval_result, "usage", None), "output_tokens", None
+            )
+            log.info(
+                "agent.llm.completed",
+                model=config.agent_model,
+                purpose="trade_analysis",
+                input_tokens=_eval_input_tokens,
+                output_tokens=_eval_output_tokens,
+                latency_ms=_eval_latency_ms,
+                cost_estimate_usd=estimate_llm_cost(
+                    config.agent_model,
+                    _eval_input_tokens or 0,
+                    _eval_output_tokens or 0,
+                ),
+            )
             findings.append(
                 f"Post-trade analysis for {market_analysis.symbol}: "
                 f"trend={market_analysis.trend}, "
@@ -533,6 +588,12 @@ async def run_trading_workflow(config: AgentConfig) -> WorkflowResult:
                 f"Evaluation agent (MarketAnalysis) failed: {exc}"
             )
             log.error("evaluation_failed", error=str(exc))
+            log.error(
+                "agent.llm.failed",
+                model=config.agent_model,
+                purpose="trade_analysis",
+                error=str(exc),
+            )
 
         steps_completed += 1
 

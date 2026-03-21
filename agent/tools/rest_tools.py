@@ -16,6 +16,8 @@ import httpx
 import structlog
 
 from agent.config import AgentConfig
+from agent.logging import get_trace_id
+from agent.logging_middleware import log_api_call
 
 logger = structlog.get_logger(__name__)
 
@@ -75,6 +77,20 @@ class PlatformRESTClient:
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
+    def _trace_headers(self) -> dict[str, str]:
+        """Return a headers dict carrying the current trace ID, if one is set.
+
+        Returns:
+            A dict with the ``X-Trace-Id`` key when a trace ID is active in the
+            current ``asyncio`` context, or an empty dict otherwise.  Pass the
+            result as the ``headers`` keyword argument to ``httpx`` request
+            methods to propagate the trace across service boundaries.
+        """
+        trace_id = get_trace_id()
+        if trace_id:
+            return {"X-Trace-Id": trace_id}
+        return {}
+
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Execute an authenticated GET request and return parsed JSON.
 
@@ -89,19 +105,19 @@ class PlatformRESTClient:
             httpx.HTTPStatusError: On non-2xx responses after logging.
         """
         try:
-            response = await self._client.get(path, params=params)
+            response = await self._client.get(path, params=params, headers=self._trace_headers())
             response.raise_for_status()
             return response.json()  # type: ignore[no-any-return]
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "REST GET %s failed: status=%s body=%s",
-                path,
-                exc.response.status_code,
-                exc.response.text[:200],
+                "agent.api.get.http_error",
+                path=path,
+                status=exc.response.status_code,
+                body=exc.response.text[:200],
             )
             raise
         except httpx.RequestError as exc:
-            logger.error("REST GET %s network error: %s", path, exc)
+            logger.error("agent.api.get.network_error", path=path, error=str(exc))
             raise
 
     async def _post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -118,21 +134,21 @@ class PlatformRESTClient:
             httpx.HTTPStatusError: On non-2xx responses after logging.
         """
         try:
-            response = await self._client.post(path, json=body)
+            response = await self._client.post(path, json=body, headers=self._trace_headers())
             response.raise_for_status()
             if not response.content:
                 return {}
             return response.json()  # type: ignore[no-any-return]
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "REST POST %s failed: status=%s body=%s",
-                path,
-                exc.response.status_code,
-                exc.response.text[:200],
+                "agent.api.post.http_error",
+                path=path,
+                status=exc.response.status_code,
+                body=exc.response.text[:200],
             )
             raise
         except httpx.RequestError as exc:
-            logger.error("REST POST %s network error: %s", path, exc)
+            logger.error("agent.api.post.network_error", path=path, error=str(exc))
             raise
 
     # ── Backtest methods ──────────────────────────────────────────────────────
@@ -164,17 +180,22 @@ class PlatformRESTClient:
             Dict with keys: ``session_id``, ``status``, ``total_steps``,
             ``estimated_pairs``, ``agent_id``.
         """
-        return await self._post(
-            "/api/v1/backtest/create",
-            {
-                "start_time": start_time,
-                "end_time": end_time,
-                "pairs": symbols if symbols else None,
-                "candle_interval": interval,
-                "starting_balance": starting_balance,
-                "strategy_label": strategy_label,
-            },
-        )
+        async with log_api_call("rest", "/api/v1/backtest/create", method="POST") as ctx:
+            response = await self._client.post(
+                "/api/v1/backtest/create",
+                headers=self._trace_headers(),
+                json={
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "pairs": symbols if symbols else None,
+                    "candle_interval": interval,
+                    "starting_balance": starting_balance,
+                    "strategy_label": strategy_label,
+                },
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
 
     async def start_backtest(self, session_id: str) -> dict[str, Any]:
         """Start a created backtest session.
@@ -189,7 +210,14 @@ class PlatformRESTClient:
         Returns:
             Dict with keys: ``status`` (``"running"``), ``session_id``.
         """
-        return await self._post(f"/api/v1/backtest/{session_id}/start")
+        path = f"/api/v1/backtest/{session_id}/start"
+        async with log_api_call("rest", path, method="POST") as ctx:
+            response = await self._client.post(path, headers=self._trace_headers())
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            if not response.content:
+                return {}
+            return response.json()  # type: ignore[no-any-return]
 
     async def step_backtest_batch(self, session_id: str, steps: int) -> dict[str, Any]:
         """Advance the backtest sandbox by N candle steps.
@@ -207,10 +235,14 @@ class PlatformRESTClient:
             ``total_steps``, ``progress_pct``, ``prices``, ``orders_filled``,
             ``portfolio``, ``is_complete``, ``remaining_steps``.
         """
-        return await self._post(
-            f"/api/v1/backtest/{session_id}/step/batch",
-            {"steps": steps},
-        )
+        path = f"/api/v1/backtest/{session_id}/step/batch"
+        async with log_api_call("rest", path, method="POST") as ctx:
+            response = await self._client.post(path, headers=self._trace_headers(), json={"steps": steps})
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            if not response.content:
+                return {}
+            return response.json()  # type: ignore[no-any-return]
 
     async def backtest_trade(
         self,
@@ -249,7 +281,14 @@ class PlatformRESTClient:
         }
         if price is not None:
             body["price"] = price
-        return await self._post(f"/api/v1/backtest/{session_id}/trade/order", body)
+        path = f"/api/v1/backtest/{session_id}/trade/order"
+        async with log_api_call("rest", path, method="POST") as ctx:
+            response = await self._client.post(path, headers=self._trace_headers(), json=body)
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            if not response.content:
+                return {}
+            return response.json()  # type: ignore[no-any-return]
 
     async def get_backtest_results(self, session_id: str) -> dict[str, Any]:
         """Retrieve full results for a completed or cancelled backtest session.
@@ -264,7 +303,12 @@ class PlatformRESTClient:
             ``status``, ``config``, ``summary``, ``metrics``, ``by_pair``.
             ``metrics`` may be ``None`` if there was insufficient data.
         """
-        return await self._get(f"/api/v1/backtest/{session_id}/results")
+        path = f"/api/v1/backtest/{session_id}/results"
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(path, headers=self._trace_headers())
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
 
     async def get_backtest_candles(
         self,
@@ -289,10 +333,16 @@ class PlatformRESTClient:
             Dict with keys: ``symbol``, ``interval``, ``candles`` (list of OHLCV
             dicts), ``count``.
         """
-        return await self._get(
-            f"/api/v1/backtest/{session_id}/market/candles/{symbol}",
-            params={"interval": interval, "limit": limit},
-        )
+        path = f"/api/v1/backtest/{session_id}/market/candles/{symbol}"
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(
+                path,
+                headers=self._trace_headers(),
+                params={"interval": interval, "limit": limit},
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
 
     # ── Strategy methods ──────────────────────────────────────────────────────
 
@@ -325,7 +375,13 @@ class PlatformRESTClient:
         }
         if description:
             body["description"] = description
-        return await self._post("/api/v1/strategies", body)
+        async with log_api_call("rest", "/api/v1/strategies", method="POST") as ctx:
+            response = await self._client.post("/api/v1/strategies", headers=self._trace_headers(), json=body)
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            if not response.content:
+                return {}
+            return response.json()  # type: ignore[no-any-return]
 
     async def test_strategy(
         self,
@@ -361,17 +417,25 @@ class PlatformRESTClient:
             ``episodes_total``, ``episodes_completed``, ``progress_pct``,
             ``version``.
         """
-        return await self._post(
-            f"/api/v1/strategies/{strategy_id}/test",
-            {
-                "version": version,
-                "episodes": episodes,
-                "date_range": date_range,
-                "randomize_dates": randomize_dates,
-                "episode_duration_days": episode_duration_days,
-                "starting_balance": starting_balance,
-            },
-        )
+        path = f"/api/v1/strategies/{strategy_id}/test"
+        async with log_api_call("rest", path, method="POST") as ctx:
+            response = await self._client.post(
+                path,
+                headers=self._trace_headers(),
+                json={
+                    "version": version,
+                    "episodes": episodes,
+                    "date_range": date_range,
+                    "randomize_dates": randomize_dates,
+                    "episode_duration_days": episode_duration_days,
+                    "starting_balance": starting_balance,
+                },
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            if not response.content:
+                return {}
+            return response.json()  # type: ignore[no-any-return]
 
     async def get_test_results(self, strategy_id: str, test_id: str) -> dict[str, Any]:
         """Get test run status and results for a specific test run.
@@ -390,7 +454,12 @@ class PlatformRESTClient:
             ``version``, ``results`` (nullable), ``recommendations`` (nullable),
             ``config``.
         """
-        return await self._get(f"/api/v1/strategies/{strategy_id}/tests/{test_id}")
+        path = f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(path, headers=self._trace_headers())
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
 
     async def create_version(
         self,
@@ -417,7 +486,14 @@ class PlatformRESTClient:
         body: dict[str, Any] = {"definition": definition}
         if change_notes is not None:
             body["change_notes"] = change_notes
-        return await self._post(f"/api/v1/strategies/{strategy_id}/versions", body)
+        path = f"/api/v1/strategies/{strategy_id}/versions"
+        async with log_api_call("rest", path, method="POST") as ctx:
+            response = await self._client.post(path, headers=self._trace_headers(), json=body)
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            if not response.content:
+                return {}
+            return response.json()  # type: ignore[no-any-return]
 
     async def compare_versions(
         self,
@@ -441,10 +517,16 @@ class PlatformRESTClient:
             ``v2`` (metrics dict), ``improvements`` (delta values; positive means
             v2 is better), ``verdict`` (human-readable summary string).
         """
-        return await self._get(
-            f"/api/v1/strategies/{strategy_id}/compare-versions",
-            params={"v1": v1, "v2": v2},
-        )
+        path = f"/api/v1/strategies/{strategy_id}/compare-versions"
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(
+                path,
+                headers=self._trace_headers(),
+                params={"v1": v1, "v2": v2},
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
 
 
 # ── Tool factory ──────────────────────────────────────────────────────────────

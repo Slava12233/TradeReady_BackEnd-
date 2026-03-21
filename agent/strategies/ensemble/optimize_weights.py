@@ -39,7 +39,6 @@ CLI
 from __future__ import annotations
 
 import asyncio
-import json
 import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -607,7 +606,7 @@ class WeightOptimizer:
             get them sorted by Sharpe ratio.
         """
         log.info(
-            "weight_optimizer.start",
+            "agent.strategy.ensemble.optimize_weights.start",
             configs=len(self._configs),
             seed=self._seed,
             backtest_days=self._backtest_days,
@@ -617,17 +616,17 @@ class WeightOptimizer:
             # Discover data range once; re-use for all configurations.
             start_iso, end_iso = await self._resolve_date_range(client, self._backtest_days)
             log.info(
-                "weight_optimizer.date_range",
+                "agent.strategy.ensemble.optimize_weights.date_range",
                 start=start_iso,
                 end=end_iso,
             )
 
             for cfg in self._configs:
-                log.info("weight_optimizer.evaluating", config=cfg.name)
+                log.info("agent.strategy.ensemble.optimize_weights.evaluating", config=cfg.name)
                 result = await self._run_single_backtest(client, cfg, start_iso, end_iso)
                 self._results.append(result)
                 log.info(
-                    "weight_optimizer.evaluated",
+                    "agent.strategy.ensemble.optimize_weights.evaluated",
                     config=cfg.name,
                     sharpe=result.sharpe_ratio,
                     roi=result.roi_pct,
@@ -671,7 +670,7 @@ class WeightOptimizer:
             A :class:`ConfigResult` for the OOS evaluation period.
         """
         log.info(
-            "weight_optimizer.oos_validation",
+            "agent.strategy.ensemble.optimize_weights.oos_validation",
             config=optimal_config.name,
             oos_days=self._oos_days,
         )
@@ -690,7 +689,7 @@ class WeightOptimizer:
             oos_end_iso = oos_end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
             log.info(
-                "weight_optimizer.oos_period",
+                "agent.strategy.ensemble.optimize_weights.oos_period",
                 oos_start=oos_start_iso,
                 oos_end=oos_end_iso,
             )
@@ -704,7 +703,7 @@ class WeightOptimizer:
             result = await self._run_single_backtest(client, oos_config, oos_start_iso, oos_end_iso)
 
         log.info(
-            "weight_optimizer.oos_complete",
+            "agent.strategy.ensemble.optimize_weights.oos_complete",
             sharpe=result.sharpe_ratio,
             roi=result.roi_pct,
         )
@@ -750,7 +749,7 @@ class WeightOptimizer:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
-        log.info("weight_optimizer.saved", path=str(path))
+        log.info("agent.strategy.ensemble.optimize_weights.saved", path=str(path))
         return result
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -781,7 +780,7 @@ class WeightOptimizer:
                     end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 )
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            log.warning("weight_optimizer.data_range_failed", error=str(exc))
+            log.warning("agent.strategy.ensemble.optimize_weights.data_range_failed", error=str(exc))
 
         # Fallback
         end_dt = _FALLBACK_END
@@ -1004,12 +1003,9 @@ async def _cli_main(
         max_iterations: Max iterations per backtest trading loop.
         batch_size: Candle steps per iteration.
     """
-    structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.JSONRenderer(),
-        ]
-    )
+    from agent.logging import configure_agent_logging  # noqa: PLC0415
+
+    configure_agent_logging()
 
     optimizer = WeightOptimizer(
         base_url=base_url,
@@ -1020,7 +1016,7 @@ async def _cli_main(
         oos_days=oos_days,
     )
 
-    log.info("cli.optimize_weights.start", base_url=base_url, seed=seed)
+    log.info("agent.strategy.ensemble.optimize_weights.cli.start", base_url=base_url, seed=seed)
 
     # Run all 12 configurations
     await optimizer.run_optimization()
@@ -1029,7 +1025,7 @@ async def _cli_main(
     ranked = optimizer.rank_results()
     optimal = ranked[0]
     log.info(
-        "cli.optimize_weights.optimal",
+        "agent.strategy.ensemble.optimize_weights.cli.optimal",
         config=optimal.config_name,
         sharpe=optimal.sharpe_ratio,
         roi=optimal.roi_pct,
@@ -1060,18 +1056,17 @@ async def _cli_main(
         oos_period=oos_period,
     )
 
-    # Print summary to stdout
-    print(f"\nWeight optimization complete — {len(ranked)} configs evaluated")
-    print(f"Optimal configuration: {final_result.optimal_config_name}")
-    print(f"Optimal weights: {json.dumps(final_result.optimal_weights, indent=2)}")
-    print(f"\n{final_result.comparison_table}")
-    if oos_result:
-        print(
-            f"\nOOS validation — sharpe={oos_result.sharpe_ratio} "
-            f"roi={oos_result.roi_pct}% "
-            f"trades={oos_result.total_trades}"
-        )
-    print(f"\nResults saved to: {output_path}")
+    # Log optimization summary.
+    log.info(
+        "agent.strategy.ensemble.optimize_weights.complete",
+        configs_evaluated=len(ranked),
+        optimal_config=final_result.optimal_config_name,
+        optimal_weights=final_result.optimal_weights,
+        oos_sharpe=str(oos_result.sharpe_ratio) if oos_result else None,
+        oos_roi_pct=str(oos_result.roi_pct) if oos_result else None,
+        oos_trades=oos_result.total_trades if oos_result else None,
+        output_path=str(output_path),
+    )
 
 
 def main() -> None:

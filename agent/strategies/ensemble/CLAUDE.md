@@ -1,6 +1,6 @@
 # agent/strategies/ensemble/ — Ensemble Signal Combiner
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Combines signals from RL, evolutionary, and regime strategy sources into a single `ConsensusSignal` using weighted voting, with optional weight optimisation via backtest grid search.
 
@@ -130,3 +130,4 @@ python -m agent.strategies.ensemble.validate \
 ## Recent Changes
 
 - `2026-03-20` — Initial CLAUDE.md created.
+- `2026-03-21` — `run.py` integrates `LogBatchWriter`: after each step, per-strategy signal data (source, action, confidence, symbol) is written to the `agent_strategy_signals` DB table via async batched flush. `run.py`, `meta_learner.py`, and `config.py` all call `configure_agent_logging()` at startup and use standardized event names.

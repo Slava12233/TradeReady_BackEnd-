@@ -92,7 +92,7 @@ async def _poll_test_run(
             result = await client.get_test_results(strategy_id, test_id)
         except Exception as exc:  # noqa: BLE001 — log and retry
             logger.warning(
-                "strategy_workflow.poll_error",
+                "agent.workflow.strategy.poll_error",
                 label=label,
                 test_id=test_id,
                 error=str(exc),
@@ -104,7 +104,7 @@ async def _poll_test_run(
         status = result.get("status", "unknown")
         progress = result.get("progress_pct", 0)
         logger.debug(
-            "strategy_workflow.polling",
+            "agent.workflow.strategy.polling",
             label=label,
             test_id=test_id,
             status=status,
@@ -114,7 +114,7 @@ async def _poll_test_run(
 
         if status in _TERMINAL_STATUSES:
             logger.info(
-                "strategy_workflow.test_terminal",
+                "agent.workflow.strategy.test_terminal",
                 label=label,
                 test_id=test_id,
                 status=status,
@@ -124,7 +124,7 @@ async def _poll_test_run(
         await asyncio.sleep(_POLL_INTERVAL_SECONDS)
     else:
         logger.warning(
-            "strategy_workflow.poll_timeout",
+            "agent.workflow.strategy.poll_timeout",
             label=label,
             test_id=test_id,
             elapsed_s=_POLL_TIMEOUT_SECONDS,
@@ -264,12 +264,12 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
     v2_version: int = 2
 
     log = logger.bind(workflow="strategy_workflow")
-    log.info("strategy_workflow.start")
+    log.info("agent.workflow.strategy.start")
 
     async with PlatformRESTClient(config) as client:
 
         # ── Step 1: Create V1 strategy ────────────────────────────────────────
-        log.info("strategy_workflow.step", step=1, description="create_strategy_v1")
+        log.info("agent.workflow.strategy.step", step=1, description="create_strategy_v1")
         try:
             create_resp = await client.create_strategy(
                 name="SMA Crossover V1 (Agent Test)",
@@ -283,7 +283,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         except Exception as exc:  # noqa: BLE001
             bug = f"POST /api/v1/strategies failed: {exc}"
             bugs_found.append(bug)
-            log.error("strategy_workflow.create_failed", error=str(exc))
+            log.error("agent.workflow.strategy.create_failed", error=str(exc))
             return WorkflowResult(
                 workflow_name="strategy_workflow",
                 status="fail",
@@ -318,14 +318,14 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         metrics["strategy_status_after_create"] = create_resp.get("status")
         steps_completed += 1
         log.info(
-            "strategy_workflow.step_ok",
+            "agent.workflow.strategy.step_ok",
             step=1,
             strategy_id=strategy_id,
             version=v1_version,
         )
 
         # ── Step 2: Trigger V1 test run ───────────────────────────────────────
-        log.info("strategy_workflow.step", step=2, description="trigger_v1_test")
+        log.info("agent.workflow.strategy.step", step=2, description="trigger_v1_test")
         try:
             test_resp = await client.test_strategy(
                 strategy_id=strategy_id,
@@ -338,7 +338,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"POST /api/v1/strategies/{strategy_id}/test (V1) failed: {exc}"
             )
-            log.error("strategy_workflow.v1_test_trigger_failed", error=str(exc))
+            log.error("agent.workflow.strategy.v1_test_trigger_failed", error=str(exc))
             # Continue as partial — we cannot poll without a test_id
             return WorkflowResult(
                 workflow_name="strategy_workflow",
@@ -376,11 +376,11 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         metrics["v1_test_run_id"] = v1_test_id
         steps_completed += 1
         log.info(
-            "strategy_workflow.step_ok", step=2, v1_test_id=v1_test_id
+            "agent.workflow.strategy.step_ok", step=2, v1_test_id=v1_test_id
         )
 
         # ── Step 3: Poll V1 test until terminal ───────────────────────────────
-        log.info("strategy_workflow.step", step=3, description="poll_v1_test")
+        log.info("agent.workflow.strategy.step", step=3, description="poll_v1_test")
         v1_final = await _poll_test_run(client, strategy_id, v1_test_id, label="V1")
         v1_status = v1_final.get("status", "unknown")
 
@@ -406,14 +406,14 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         v1_results_data = v1_final.get("results") or {}
         metrics.update(_extract_metrics(v1_final, "v1"))
         log.info(
-            "strategy_workflow.step_ok",
+            "agent.workflow.strategy.step_ok",
             step=3,
             v1_status=v1_status,
             v1_roi=v1_results_data.get("avg_roi_pct"),
         )
 
         # ── Step 4: LLM reviews V1 results and proposes improvements ──────────
-        log.info("strategy_workflow.step", step=4, description="llm_review_v1")
+        log.info("agent.workflow.strategy.step", step=4, description="llm_review_v1")
         llm_improvement_notes = ""
         try:
             from pydantic_ai import Agent  # noqa: PLC0415 — lazy import
@@ -444,14 +444,38 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
                     "Keep responses under 200 words."
                 ),
             )
+            from agent.logging_middleware import estimate_llm_cost  # noqa: PLC0415
+
+            _llm_start = time.monotonic()
             review_result = await review_agent.run(review_prompt)
+            _llm_latency_ms = round((time.monotonic() - _llm_start) * 1000, 2)
+
             llm_improvement_notes = review_result.output
+            _input_tokens: int | None = getattr(
+                getattr(review_result, "usage", None), "input_tokens", None
+            )
+            _output_tokens: int | None = getattr(
+                getattr(review_result, "usage", None), "output_tokens", None
+            )
+            log.info(
+                "agent.llm.completed",
+                model=config.agent_cheap_model,
+                purpose="strategy_review",
+                input_tokens=_input_tokens,
+                output_tokens=_output_tokens,
+                latency_ms=_llm_latency_ms,
+                cost_estimate_usd=estimate_llm_cost(
+                    config.agent_cheap_model,
+                    _input_tokens or 0,
+                    _output_tokens or 0,
+                ),
+            )
             findings.append(
                 f"LLM improvement review: {llm_improvement_notes[:300]}"
                 + ("..." if len(llm_improvement_notes) > 300 else "")
             )
             log.info(
-                "strategy_workflow.llm_review_ok",
+                "agent.workflow.strategy.llm_review_ok",
                 notes_length=len(llm_improvement_notes),
             )
         except Exception as exc:  # noqa: BLE001 — non-critical; fallback to hardcoded V2
@@ -459,12 +483,18 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
                 f"LLM review skipped (non-critical): {exc}. "
                 "Using deterministic parameter improvements for V2."
             )
-            log.warning("strategy_workflow.llm_review_failed", error=str(exc))
+            log.warning("agent.workflow.strategy.llm_review_failed", error=str(exc))
+            log.error(
+                "agent.llm.failed",
+                model=config.agent_cheap_model,
+                purpose="strategy_review",
+                error=str(exc),
+            )
 
         steps_completed += 1
 
         # ── Step 5: Build V2 definition ───────────────────────────────────────
-        log.info("strategy_workflow.step", step=5, description="build_v2_definition")
+        log.info("agent.workflow.strategy.step", step=5, description="build_v2_definition")
         v2_definition = _build_v2_definition(v1_results_data)
         findings.append(
             "V2 definition derived from V1 results: "
@@ -477,7 +507,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         steps_completed += 1
 
         # ── Step 6: Create V2 version ─────────────────────────────────────────
-        log.info("strategy_workflow.step", step=6, description="create_v2_version")
+        log.info("agent.workflow.strategy.step", step=6, description="create_v2_version")
         change_notes = (
             "V2: Tighter RSI entry filter (rsi_below=50), volume confirmation "
             "(volume_above_ma=1.2), tighter stop-loss, trailing stop added, "
@@ -496,7 +526,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"POST /api/v1/strategies/{strategy_id}/versions failed: {exc}"
             )
-            log.error("strategy_workflow.v2_create_failed", error=str(exc))
+            log.error("agent.workflow.strategy.v2_create_failed", error=str(exc))
             return WorkflowResult(
                 workflow_name="strategy_workflow",
                 status="partial",
@@ -533,14 +563,14 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         metrics["v2_version_number"] = v2_version
         steps_completed += 1
         log.info(
-            "strategy_workflow.step_ok",
+            "agent.workflow.strategy.step_ok",
             step=6,
             v2_version=v2_version,
             version_id=version_resp.get("version_id"),
         )
 
         # ── Step 7: Trigger V2 test run ───────────────────────────────────────
-        log.info("strategy_workflow.step", step=7, description="trigger_v2_test")
+        log.info("agent.workflow.strategy.step", step=7, description="trigger_v2_test")
         try:
             v2_test_resp = await client.test_strategy(
                 strategy_id=strategy_id,
@@ -553,7 +583,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
             bugs_found.append(
                 f"POST /api/v1/strategies/{strategy_id}/test (V2) failed: {exc}"
             )
-            log.error("strategy_workflow.v2_test_trigger_failed", error=str(exc))
+            log.error("agent.workflow.strategy.v2_test_trigger_failed", error=str(exc))
             return WorkflowResult(
                 workflow_name="strategy_workflow",
                 status="partial",
@@ -590,11 +620,11 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         metrics["v2_test_run_id"] = v2_test_id
         steps_completed += 1
         log.info(
-            "strategy_workflow.step_ok", step=7, v2_test_id=v2_test_id
+            "agent.workflow.strategy.step_ok", step=7, v2_test_id=v2_test_id
         )
 
         # ── Step 8: Poll V2 test until terminal ───────────────────────────────
-        log.info("strategy_workflow.step", step=8, description="poll_v2_test")
+        log.info("agent.workflow.strategy.step", step=8, description="poll_v2_test")
         v2_final = await _poll_test_run(client, strategy_id, v2_test_id, label="V2")
         v2_status = v2_final.get("status", "unknown")
 
@@ -620,14 +650,14 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         v2_results_data = v2_final.get("results") or {}
         metrics.update(_extract_metrics(v2_final, "v2"))
         log.info(
-            "strategy_workflow.step_ok",
+            "agent.workflow.strategy.step_ok",
             step=8,
             v2_status=v2_status,
             v2_roi=v2_results_data.get("avg_roi_pct"),
         )
 
         # ── Step 9: Compare V1 vs V2 ──────────────────────────────────────────
-        log.info("strategy_workflow.step", step=9, description="compare_versions")
+        log.info("agent.workflow.strategy.step", step=9, description="compare_versions")
         comparison: dict[str, Any] = {}
         try:
             comparison = await client.compare_versions(
@@ -640,7 +670,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
                 f"GET /api/v1/strategies/{strategy_id}/compare-versions failed "
                 f"(non-critical): {exc}"
             )
-            log.warning("strategy_workflow.compare_failed", error=str(exc))
+            log.warning("agent.workflow.strategy.compare_failed", error=str(exc))
 
         if "error" in comparison:
             findings.append(
@@ -679,7 +709,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
             steps_completed += 1
 
         # ── Step 10: Surface recommendations from test engine ─────────────────
-        log.info("strategy_workflow.step", step=10, description="surface_recommendations")
+        log.info("agent.workflow.strategy.step", step=10, description="surface_recommendations")
         for label, final_resp in [("V1", v1_final), ("V2", v2_final)]:
             recs = final_resp.get("recommendations") or []
             if isinstance(recs, list) and recs:
@@ -691,7 +721,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         steps_completed += 1
 
         # ── Step 11: Validate versioning behaviour ────────────────────────────
-        log.info("strategy_workflow.step", step=11, description="validate_versioning")
+        log.info("agent.workflow.strategy.step", step=11, description="validate_versioning")
         if v2_version == v1_version + 1:
             findings.append(
                 f"Version auto-increment validated: V1={v1_version}, V2={v2_version} "
@@ -705,7 +735,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
         steps_completed += 1
 
         # ── Step 12: Compile final status ─────────────────────────────────────
-        log.info("strategy_workflow.step", step=12, description="compile_result")
+        log.info("agent.workflow.strategy.step", step=12, description="compile_result")
         steps_completed += 1
 
     # ── Determine overall workflow status ─────────────────────────────────────
@@ -730,7 +760,7 @@ async def run_strategy_workflow(config: AgentConfig) -> WorkflowResult:
             )
 
     log.info(
-        "strategy_workflow.complete",
+        "agent.workflow.strategy.complete",
         status=final_status,
         steps_completed=steps_completed,
         steps_total=steps_total,

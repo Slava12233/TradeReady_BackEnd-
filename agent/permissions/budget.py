@@ -318,13 +318,13 @@ class BudgetManager:
                     return _BudgetLimits.from_json(raw)
                 except (json.JSONDecodeError, KeyError, InvalidOperation) as exc:
                     logger.warning(
-                        "budget_manager.limits_deserialise_error",
+                        "agent.budget.limits_deserialise_error",
                         agent_id=agent_id,
                         error=str(exc),
                     )
         except RedisError as exc:
             logger.warning(
-                "budget_manager.limits_redis_read_error",
+                "agent.budget.limits_redis_read_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -360,7 +360,7 @@ class BudgetManager:
             agent_uuid = UUID(agent_id)
         except (ValueError, AttributeError) as exc:
             logger.warning(
-                "budget_manager.invalid_agent_id",
+                "agent.budget.invalid_agent_id",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -374,7 +374,7 @@ class BudgetManager:
                     budget = await repo.get_by_agent(agent_uuid)
                 except AgentBudgetNotFoundError:
                     logger.debug(
-                        "budget_manager.no_budget_record",
+                        "agent.budget.no_budget_record",
                         agent_id=agent_id,
                     )
                     return self._default_limits()
@@ -422,7 +422,7 @@ class BudgetManager:
 
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "budget_manager.db_load_error",
+                "agent.budget.db_load_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -475,7 +475,7 @@ class BudgetManager:
             )
         except (RedisError, TypeError, ValueError) as exc:
             logger.debug(
-                "budget_manager.limits_cache_write_error",
+                "agent.budget.limits_cache_write_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -494,7 +494,7 @@ class BudgetManager:
             await redis.delete(_limits_key(agent_id))
         except RedisError as exc:
             logger.debug(
-                "budget_manager.limits_cache_invalidate_error",
+                "agent.budget.limits_cache_invalidate_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -525,13 +525,13 @@ class BudgetManager:
             return trades_today, exposure_today, loss_today
         except RedisError as exc:
             logger.warning(
-                "budget_manager.counter_read_redis_error",
+                "agent.budget.counter_read_redis_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
         except (InvalidOperation, ValueError) as exc:
             logger.warning(
-                "budget_manager.counter_parse_error",
+                "agent.budget.counter_parse_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -577,7 +577,7 @@ class BudgetManager:
                     return 0, _ZERO, _ZERO
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "budget_manager.counter_db_read_error",
+                "agent.budget.counter_db_read_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -625,13 +625,13 @@ class BudgetManager:
 
         except RedisError as exc:
             logger.warning(
-                "budget_manager.persist_redis_error",
+                "agent.budget.persist_redis_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "budget_manager.persist_error",
+                "agent.budget.persist_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -670,7 +670,7 @@ class BudgetManager:
                 except AgentBudgetNotFoundError:
                     # No budget record — nothing to persist.
                     logger.debug(
-                        "budget_manager.persist_no_record",
+                        "agent.budget.persist_no_record",
                         agent_id=agent_id,
                     )
                     return
@@ -688,7 +688,7 @@ class BudgetManager:
                     await repo.increment_loss_today(agent_uuid, delta=loss_delta)
 
             logger.debug(
-                "budget_manager.persisted",
+                "agent.budget.persisted",
                 agent_id=agent_id,
                 trades_today=trades_today,
                 exposure_today=str(exposure_today),
@@ -697,7 +697,7 @@ class BudgetManager:
 
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "budget_manager.persist_db_error",
+                "agent.budget.persist_db_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -733,6 +733,25 @@ class BudgetManager:
         limits = await self._resolve_limits(agent_id)
         trades_today, exposure_today, loss_today = await self._read_counters(agent_id)
 
+        # Emit budget usage ratio metrics (best-effort)
+        try:
+            from agent.metrics import agent_budget_usage  # noqa: PLC0415
+
+            if limits.max_trades_per_day > 0:
+                agent_budget_usage.labels(
+                    agent_id=agent_id, limit_type="daily_trades"
+                ).set(trades_today / limits.max_trades_per_day)
+            if limits.max_exposure_usdt > _ZERO:
+                agent_budget_usage.labels(
+                    agent_id=agent_id, limit_type="exposure"
+                ).set(float(exposure_today / limits.max_exposure_usdt))
+            if limits.max_daily_loss_usdt > _ZERO:
+                agent_budget_usage.labels(
+                    agent_id=agent_id, limit_type="daily_loss"
+                ).set(float(loss_today / limits.max_daily_loss_usdt))
+        except Exception:  # noqa: BLE001
+            pass
+
         # Derive remaining headroom for the result.
         remaining_trades = max(0, limits.max_trades_per_day - trades_today)
         remaining_exposure = max(_ZERO, limits.max_exposure_usdt - exposure_today)
@@ -745,7 +764,7 @@ class BudgetManager:
                 f"{limits.max_position_size_usdt} USDT."
             )
             logger.info(
-                "budget_manager.check.denied.position_size",
+                "agent.budget.check.denied.position_size",
                 agent_id=agent_id,
                 trade_value=str(trade_value),
                 limit=str(limits.max_position_size_usdt),
@@ -765,7 +784,7 @@ class BudgetManager:
                 f"(trades_today={trades_today})."
             )
             logger.info(
-                "budget_manager.check.denied.trade_count",
+                "agent.budget.check.denied.trade_count",
                 agent_id=agent_id,
                 trades_today=trades_today,
                 limit=limits.max_trades_per_day,
@@ -787,7 +806,7 @@ class BudgetManager:
                 f"(current exposure={exposure_today} USDT)."
             )
             logger.info(
-                "budget_manager.check.denied.exposure",
+                "agent.budget.check.denied.exposure",
                 agent_id=agent_id,
                 projected_exposure=str(projected_exposure),
                 limit=str(limits.max_exposure_usdt),
@@ -807,7 +826,7 @@ class BudgetManager:
                 f"(loss_today={loss_today} USDT)."
             )
             logger.info(
-                "budget_manager.check.denied.loss_limit",
+                "agent.budget.check.denied.loss_limit",
                 agent_id=agent_id,
                 loss_today=str(loss_today),
                 limit=str(limits.max_daily_loss_usdt),
@@ -821,7 +840,7 @@ class BudgetManager:
             )
 
         logger.debug(
-            "budget_manager.check.allowed",
+            "agent.budget.check.allowed",
             agent_id=agent_id,
             trade_value=str(trade_value),
             trades_today=trades_today,
@@ -867,13 +886,13 @@ class BudgetManager:
                 await pipe.execute()
 
             logger.info(
-                "budget_manager.trade_recorded",
+                "agent.budget.trade_recorded",
                 agent_id=agent_id,
                 trade_value=str(trade_value),
             )
         except RedisError as exc:
             logger.error(
-                "budget_manager.record_trade_redis_error",
+                "agent.budget.record_trade_redis_error",
                 agent_id=agent_id,
                 trade_value=str(trade_value),
                 error=str(exc),
@@ -934,7 +953,7 @@ class BudgetManager:
         """
         if loss_amount <= _ZERO:
             logger.debug(
-                "budget_manager.record_loss_skipped_non_positive",
+                "agent.budget.record_loss_skipped_non_positive",
                 agent_id=agent_id,
                 loss_amount=str(loss_amount),
             )
@@ -951,13 +970,13 @@ class BudgetManager:
                 await pipe.execute()
 
             logger.info(
-                "budget_manager.loss_recorded",
+                "agent.budget.loss_recorded",
                 agent_id=agent_id,
                 loss_amount=str(loss_amount),
             )
         except RedisError as exc:
             logger.error(
-                "budget_manager.record_loss_redis_error",
+                "agent.budget.record_loss_redis_error",
                 agent_id=agent_id,
                 loss_amount=str(loss_amount),
                 error=str(exc),
@@ -1048,12 +1067,12 @@ class BudgetManager:
                 await pipe.execute()
 
             logger.info(
-                "budget_manager.daily_reset_redis",
+                "agent.budget.daily_reset_redis",
                 agent_id=agent_id,
             )
         except RedisError as exc:
             logger.error(
-                "budget_manager.daily_reset_redis_error",
+                "agent.budget.daily_reset_redis_error",
                 agent_id=agent_id,
                 error=str(exc),
             )
@@ -1067,23 +1086,23 @@ class BudgetManager:
                 try:
                     await repo.reset_daily(agent_uuid)
                     logger.info(
-                        "budget_manager.daily_reset_db",
+                        "agent.budget.daily_reset_db",
                         agent_id=agent_id,
                     )
                 except AgentBudgetNotFoundError:
                     logger.debug(
-                        "budget_manager.daily_reset_no_record",
+                        "agent.budget.daily_reset_no_record",
                         agent_id=agent_id,
                     )
         except (ValueError, AttributeError) as exc:
             logger.warning(
-                "budget_manager.invalid_agent_id",
+                "agent.budget.invalid_agent_id",
                 agent_id=agent_id,
                 error=str(exc),
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "budget_manager.daily_reset_db_error",
+                "agent.budget.daily_reset_db_error",
                 agent_id=agent_id,
                 error=str(exc),
             )

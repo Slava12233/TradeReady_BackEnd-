@@ -268,7 +268,7 @@ class RiskMiddleware:
             )
         """
         log = self._log.bind(symbol=signal.symbol, side=signal.side, size_pct=signal.size_pct)
-        log.info("middleware.process_signal.start", confidence=signal.confidence)
+        log.info("agent.strategy.risk.middleware.process_signal.start", confidence=signal.confidence)
 
         # ------------------------------------------------------------------
         # Step 1: Fetch fresh portfolio state.
@@ -280,14 +280,14 @@ class RiskMiddleware:
         try:
             portfolio, positions, recent_pnl = await self._fetch_portfolio_state()
             log.debug(
-                "middleware.portfolio_fetched",
+                "agent.strategy.risk.middleware.portfolio_fetched",
                 equity=portfolio.get("equity", "unknown"),
                 positions_count=len(positions),
                 recent_pnl=str(recent_pnl),
             )
         except Exception as exc:  # noqa: BLE001
             error_msg = f"Portfolio fetch failed: {exc}"
-            log.error("middleware.portfolio_fetch_error", error=error_msg)
+            log.error("agent.strategy.risk.middleware.portfolio_fetch_error", error=error_msg)
             return self._error_decision(signal=signal, error=error_msg)
 
         # ------------------------------------------------------------------
@@ -300,7 +300,7 @@ class RiskMiddleware:
                 recent_pnl=recent_pnl,
             )
             log.info(
-                "middleware.risk_assessed",
+                "agent.strategy.risk.middleware.risk_assessed",
                 verdict=assessment.verdict,
                 drawdown_pct=f"{assessment.drawdown_pct:.4f}",
                 correlation_risk=assessment.correlation_risk,
@@ -308,7 +308,7 @@ class RiskMiddleware:
             )
         except Exception as exc:  # noqa: BLE001
             error_msg = f"Risk assessment failed: {exc}"
-            log.error("middleware.risk_assess_error", error=error_msg)
+            log.error("agent.strategy.risk.middleware.risk_assess_error", error=error_msg)
             return self._error_decision(signal=signal, error=error_msg)
 
         # ------------------------------------------------------------------
@@ -320,7 +320,7 @@ class RiskMiddleware:
             self._veto_pipeline._positions = positions  # noqa: SLF001 — intentional refresh
             veto = self._veto_pipeline.evaluate(signal=signal, risk_assessment=assessment)
             log.info(
-                "middleware.veto_decision",
+                "agent.strategy.risk.middleware.veto_decision",
                 action=veto.action,
                 original_size_pct=veto.original_size_pct,
                 adjusted_size_pct=veto.adjusted_size_pct,
@@ -328,7 +328,7 @@ class RiskMiddleware:
             )
         except Exception as exc:  # noqa: BLE001
             error_msg = f"Veto pipeline failed: {exc}"
-            log.error("middleware.veto_error", error=error_msg)
+            log.error("agent.strategy.risk.middleware.veto_error", error=error_msg)
             return self._error_decision(signal=signal, assessment=assessment, error=error_msg)
 
         # ------------------------------------------------------------------
@@ -336,7 +336,7 @@ class RiskMiddleware:
         # ------------------------------------------------------------------
         if veto.action == "VETOED":
             log.info(
-                "middleware.signal_vetoed",
+                "agent.strategy.risk.middleware.signal_vetoed",
                 symbol=signal.symbol,
                 side=signal.side,
                 reason=veto.reason,
@@ -357,7 +357,7 @@ class RiskMiddleware:
                 drawdown_pct=assessment.drawdown_pct,
             )
             log.info(
-                "middleware.dynamic_sizing",
+                "agent.strategy.risk.middleware.dynamic_sizing",
                 veto_adjusted_size_pct=veto.adjusted_size_pct,
                 final_size_pct=final_size,
                 atr=atr,
@@ -367,11 +367,11 @@ class RiskMiddleware:
         except Exception as exc:  # noqa: BLE001
             # Sizing failure falls back to the veto-adjusted size (safe default).
             error_msg = f"Dynamic sizing failed (fallback to veto size): {exc}"
-            log.warning("middleware.sizing_error", error=error_msg)
+            log.warning("agent.strategy.risk.middleware.sizing_error", error=error_msg)
             final_size = veto.adjusted_size_pct
 
         log.info(
-            "middleware.process_signal.complete",
+            "agent.strategy.risk.middleware.process_signal.complete",
             symbol=signal.symbol,
             side=signal.side,
             veto_action=veto.action,
@@ -427,20 +427,20 @@ class RiskMiddleware:
         # Guard: do not attempt execution on vetoed or errored decisions.
         if execution_decision.veto_decision.action == "VETOED":
             log.debug(
-                "middleware.execute_skipped.vetoed",
+                "agent.strategy.risk.middleware.execute_skipped.vetoed",
                 reason=execution_decision.veto_decision.reason,
             )
             return execution_decision
 
         if execution_decision.error is not None:
             log.debug(
-                "middleware.execute_skipped.prior_error",
+                "agent.strategy.risk.middleware.execute_skipped.prior_error",
                 error=execution_decision.error,
             )
             return execution_decision
 
         if execution_decision.executed:
-            log.debug("middleware.execute_skipped.already_executed")
+            log.debug("agent.strategy.risk.middleware.execute_skipped.already_executed")
             return execution_decision
 
         # Compute order quantity from equity and final size fraction.
@@ -449,7 +449,7 @@ class RiskMiddleware:
         quantity_usdt = (equity * final_size).quantize(Decimal("0.01"))
 
         log.info(
-            "middleware.execute.computing_quantity",
+            "agent.strategy.risk.middleware.execute.computing_quantity",
             equity=str(equity),
             final_size_pct=execution_decision.final_size_pct,
             quantity_usdt=str(quantity_usdt),
@@ -468,7 +468,7 @@ class RiskMiddleware:
             quantity = (quantity_usdt / price).quantize(Decimal("0.00000001"))
 
             log.info(
-                "middleware.execute.placing_order",
+                "agent.strategy.risk.middleware.execute.placing_order",
                 symbol=signal.symbol,
                 side=signal.side,
                 quantity=str(quantity),
@@ -487,7 +487,7 @@ class RiskMiddleware:
             order_id = str(order_resp.order_id) if hasattr(order_resp, "order_id") else str(order_resp)
 
             log.info(
-                "middleware.execute.order_placed",
+                "agent.strategy.risk.middleware.execute.order_placed",
                 symbol=signal.symbol,
                 side=signal.side,
                 order_id=order_id,
@@ -502,7 +502,7 @@ class RiskMiddleware:
         except Exception as exc:  # noqa: BLE001
             error_msg = f"Order placement failed for {signal.symbol}: {exc}"
             log.error(
-                "middleware.execute.order_failed",
+                "agent.strategy.risk.middleware.execute.order_failed",
                 symbol=signal.symbol,
                 side=signal.side,
                 error=error_msg,
@@ -571,7 +571,7 @@ class RiskMiddleware:
             # If PnL is unavailable, pass zero so the halt check is
             # conservative (it will not trigger, but won't crash).
             recent_pnl = Decimal("0")
-            self._log.warning("middleware.pnl_fetch_failed", fallback="0")
+            self._log.warning("agent.strategy.risk.middleware.pnl_fetch_failed", fallback="0")
 
         return portfolio, positions, recent_pnl
 

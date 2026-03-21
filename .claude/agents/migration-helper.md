@@ -3,6 +3,7 @@ name: migration-helper
 description: "Generates and validates Alembic migrations for safety. Checks for destructive operations, enforces two-phase NOT NULL, hypertable PK rules, and rollback paths. Use before running any migration."
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
+memory: project
 ---
 
 # Migration Helper Agent
@@ -17,6 +18,18 @@ Before doing ANY work, read these two files for current project conventions:
 2. `src/database/CLAUDE.md` -- model conventions, column types, relationship patterns
 
 Then read `alembic/env.py` to confirm the async migration runner pattern.
+
+## Memory Protocol
+
+Before starting work:
+1. Read your `MEMORY.md` for patterns, conventions, and learnings from previous runs
+2. Apply relevant learnings to the current task
+
+After completing work:
+1. Note any new patterns, issues, or conventions discovered
+2. Update your `MEMORY.md` with actionable learnings (not raw logs)
+3. Keep memory under 100 lines — when consolidating, move older entries to `old-memories/` as dated `.md` files before removing them from MEMORY.md
+4. Move entries that are no longer relevant to `old-memories/` before removing from MEMORY.md
 
 ## Core Responsibilities
 

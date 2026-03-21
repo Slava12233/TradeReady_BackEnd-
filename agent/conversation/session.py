@@ -40,6 +40,7 @@ Usage::
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -259,7 +260,7 @@ class AgentSession:
                 )
                 self._is_active = db_session.is_active
                 self._session_id = db_session.id
-                self._log.info("session.resumed", session_id=str(self._session_id))
+                self._log.info("agent.session.resumed", session_id=str(self._session_id))
                 return
 
             # Try to find an existing active session first
@@ -268,7 +269,7 @@ class AgentSession:
                 self._session_id = existing.id
                 self._is_active = True
                 self._log.info(
-                    "session.found_active",
+                    "agent.session.found_active",
                     session_id=str(self._session_id),
                 )
                 return
@@ -287,10 +288,10 @@ class AgentSession:
             self._session_id = created.id
             self._is_active = True
             self._log = self._log.bind(session_id=str(self._session_id))
-            self._log.info("session.created", title=self._title)
+            self._log.info("agent.session.created", title=self._title)
 
         except (AgentSessionNotFoundError, DatabaseError) as exc:
-            self._log.exception("session.start.failed", error=str(exc))
+            self._log.exception("agent.session.start.failed", error=str(exc))
             raise SessionError(f"Failed to start conversation session: {exc}") from exc
 
     async def add_message(
@@ -349,13 +350,13 @@ class AgentSession:
             await self._persist_message(message_record, AgentMessageRepository)
             await self._increment_message_count(AgentSessionRepository)
             self._log.info(
-                "session.message_added",
+                "agent.session.message_added",
                 role=role,
                 tokens=actual_tokens,
                 total_tokens=self._total_tokens,
             )
         except DatabaseError as exc:
-            self._log.exception("session.add_message.failed", role=role, error=str(exc))
+            self._log.exception("agent.session.add_message.failed", role=role, error=str(exc))
             raise SessionError(f"Failed to persist message: {exc}") from exc
 
         # Auto-trigger summarisation when message volume grows large
@@ -363,7 +364,7 @@ class AgentSession:
             count = await self._get_message_count(AgentMessageRepository)
             if count >= self._summary_threshold:
                 self._log.info(
-                    "session.auto_summarise",
+                    "agent.session.auto_summarise",
                     count=count,
                     threshold=self._summary_threshold,
                 )
@@ -371,7 +372,7 @@ class AgentSession:
         except (SessionError, DatabaseError, Exception) as exc:  # noqa: BLE001
             # Summarisation failure must never block message persistence
             self._log.warning(
-                "session.auto_summarise.skipped",
+                "agent.session.auto_summarise.skipped",
                 error=str(exc),
             )
 
@@ -417,7 +418,7 @@ class AgentSession:
                 AgentMessageRepository, limit=self._recent_messages * 2
             )
         except DatabaseError as exc:
-            self._log.exception("session.get_context.failed", error=str(exc))
+            self._log.exception("agent.session.get_context.failed", error=str(exc))
             raise SessionError(f"Failed to load messages for context: {exc}") from exc
 
         # Build context newest-to-oldest, stopping when budget is exhausted
@@ -435,7 +436,7 @@ class AgentSession:
         selected.reverse()
 
         self._log.debug(
-            "session.context_built",
+            "agent.session.context_built",
             messages_included=len(selected),
             tokens_used=tokens_used,
             max_tokens=effective_max,
@@ -469,17 +470,17 @@ class AgentSession:
         )
         from src.utils.exceptions import DatabaseError  # noqa: PLC0415
 
-        self._log.info("session.summarise.start")
+        self._log.info("agent.session.summarise.start")
 
         try:
             all_messages = await self._list_messages(AgentMessageRepository, limit=1000)
         except DatabaseError as exc:
-            self._log.exception("session.summarise.list_failed", error=str(exc))
+            self._log.exception("agent.session.summarise.list_failed", error=str(exc))
             raise SessionError(f"Failed to list messages for summarisation: {exc}") from exc
 
         if len(all_messages) <= self._recent_messages:
             self._log.debug(
-                "session.summarise.skipped_too_few",
+                "agent.session.summarise.skipped_too_few",
                 count=len(all_messages),
                 threshold=self._recent_messages,
             )
@@ -488,7 +489,7 @@ class AgentSession:
         # Split: messages to summarise vs recent messages to keep
         messages_to_summarise = all_messages[: -self._recent_messages]
         self._log.info(
-            "session.summarise.compressing",
+            "agent.session.summarise.compressing",
             to_summarise=len(messages_to_summarise),
             to_keep=self._recent_messages,
         )
@@ -506,18 +507,18 @@ class AgentSession:
                 except DatabaseError as exc:
                     # Non-fatal: log and continue deleting others
                     self._log.warning(
-                        "session.summarise.delete_failed",
+                        "agent.session.summarise.delete_failed",
                         message_id=str(old_msg.id),
                         error=str(exc),
                     )
 
             self._log.info(
-                "session.summarise.complete",
+                "agent.session.summarise.complete",
                 deleted=len(messages_to_summarise),
                 summary_length=len(summary_text),
             )
         except DatabaseError as exc:
-            self._log.exception("session.summarise.write_failed", error=str(exc))
+            self._log.exception("agent.session.summarise.write_failed", error=str(exc))
             raise SessionError(f"Failed to write summary message: {exc}") from exc
 
     async def end(self) -> None:
@@ -547,7 +548,7 @@ class AgentSession:
         )
         from src.utils.exceptions import DatabaseError  # noqa: PLC0415
 
-        self._log.info("session.end.start")
+        self._log.info("agent.session.end.start")
 
         # Build a closing summary from the recent messages
         summary: str | None = None
@@ -559,7 +560,7 @@ class AgentSession:
                 summary = await self._generate_summary(list(recent))
         except (DatabaseError, Exception) as exc:  # noqa: BLE001
             # Summary generation failure must not prevent session closure
-            self._log.warning("session.end.summary_failed", error=str(exc))
+            self._log.warning("agent.session.end.summary_failed", error=str(exc))
 
         try:
             await self._close_session_record(
@@ -567,12 +568,12 @@ class AgentSession:
             )
             self._is_active = False
             self._log.info(
-                "session.ended",
+                "agent.session.ended",
                 session_id=str(self._session_id),
                 total_tokens=self._total_tokens,
             )
         except DatabaseError as exc:
-            self._log.exception("session.end.failed", error=str(exc))
+            self._log.exception("agent.session.end.failed", error=str(exc))
             raise SessionError(f"Failed to close session: {exc}") from exc
 
     # ------------------------------------------------------------------
@@ -833,8 +834,11 @@ class AgentSession:
         )
 
         # Attempt LLM-based summarisation if httpx and an API key are available
+        _llm_model = "openrouter:google/gemini-2.0-flash-001"
         try:
             import httpx  # noqa: PLC0415
+
+            from agent.logging_middleware import estimate_llm_cost  # noqa: PLC0415
 
             api_key = self._get_openrouter_key()
             if not api_key:
@@ -847,14 +851,32 @@ class AgentSession:
                 "max_tokens": 400,
             }
 
+            _llm_start = time.monotonic()
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json=payload,
                     headers={"Authorization": f"Bearer {api_key}"},
                 )
+                _llm_latency_ms = round((time.monotonic() - _llm_start) * 1000, 2)
                 if response.status_code == 200:
                     data = response.json()
+                    usage = data.get("usage") or {}
+                    _input_tokens: int | None = usage.get("prompt_tokens")
+                    _output_tokens: int | None = usage.get("completion_tokens")
+                    self._log.info(
+                        "agent.llm.completed",
+                        model=_llm_model,
+                        purpose="session_summarization",
+                        input_tokens=_input_tokens,
+                        output_tokens=_output_tokens,
+                        latency_ms=_llm_latency_ms,
+                        cost_estimate_usd=estimate_llm_cost(
+                            _llm_model,
+                            _input_tokens or 0,
+                            _output_tokens or 0,
+                        ),
+                    )
                     choices = data.get("choices", [])
                     if choices:
                         content: str = str(
@@ -862,7 +884,7 @@ class AgentSession:
                         )
                         if content:
                             self._log.debug(
-                                "session.summarise.llm_success",
+                                "agent.session.summarise.llm_success",
                                 length=len(content),
                             )
                             return content.strip()
@@ -871,7 +893,13 @@ class AgentSession:
 
         except (ImportError, Exception) as exc:  # noqa: BLE001
             self._log.warning(
-                "session.summarise.llm_failed",
+                "agent.session.summarise.llm_failed",
+                error=str(exc),
+            )
+            self._log.error(
+                "agent.llm.failed",
+                model=_llm_model,
+                purpose="session_summarization",
                 error=str(exc),
             )
             return self._fallback_summary(messages_text)

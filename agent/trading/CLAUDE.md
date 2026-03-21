@@ -1,6 +1,6 @@
 # agent/trading/ — Trading Loop, Signal Generator, Executor, Monitor, Journal, Strategy Manager, A/B Testing
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-21 (logging instrumentation) -->
 
 > Autonomous trading system: an observe-analyse-decide-execute-record cycle, multi-strategy signal generation, position monitoring, trade journaling with LLM reflections, performance tracking, and A/B test framework.
 
@@ -375,3 +375,4 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 ## Recent Changes
 
 - `2026-03-21` — Initial CLAUDE.md created.
+- `2026-03-21` — Logging instrumentation added: `loop.py` generates a fresh `trace_id` per tick and passes it to `LogBatchWriter` for async DB persistence; includes EMA-based anomaly detection on tick latency. `journal.py` wraps every LLM call with `log_api_call()` context manager from `agent.logging_middleware`. `journal.py` and `loop.py` both call `configure_agent_logging()` at startup.

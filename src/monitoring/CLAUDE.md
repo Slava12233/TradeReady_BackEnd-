@@ -1,6 +1,6 @@
 # Monitoring
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-21 -->
 
 > Health checks and Prometheus metrics exposure for platform infrastructure observability.
 
@@ -15,6 +15,7 @@ The health endpoint drives Docker/Kubernetes liveness and readiness checks, Graf
 | File | Purpose |
 |------|---------|
 | `health.py` | `GET /health` route with three async probe helpers (Redis, DB, ingestion) |
+| `metrics.py` | 4 platform Prometheus metrics: `platform_orders_total`, `platform_order_latency_seconds`, `platform_api_errors_total`, `platform_price_ingestion_lag_seconds` |
 | `__init__.py` | Empty package marker |
 | `src/main.py` (lines 276-278) | Mounts Prometheus ASGI app at `/metrics` via `prometheus_client.make_asgi_app()` |
 
@@ -87,7 +88,7 @@ Standard Prometheus text exposition format. No authentication required. Mounted 
 
 **Add a new health probe:** Write an `async def _probe_<name>()` function returning a tuple, add it to the `asyncio.gather` call in `health_check()`, and include the result in the response body. Update status resolution logic if the new probe should affect the overall status.
 
-**Add custom Prometheus metrics:** Register counters/histograms/gauges anywhere in the codebase using `prometheus_client`. They will automatically appear at `/metrics` since `make_asgi_app()` serves all registered collectors.
+**Add custom Prometheus metrics:** Register counters/histograms/gauges anywhere in the codebase using `prometheus_client`. They will automatically appear at `/metrics` since `make_asgi_app()` serves all registered collectors. Platform metrics live in `src/monitoring/metrics.py`; agent metrics use a separate `AGENT_REGISTRY` in `agent/metrics.py` and are served from the agent's own `/metrics` port.
 
 ## Gotchas & Pitfalls
 
@@ -99,4 +100,5 @@ Standard Prometheus text exposition format. No authentication required. Mounted 
 
 ## Recent Changes
 
+- `2026-03-21` — Added `metrics.py` with 4 platform Prometheus metrics: `platform_orders_total` (counter, labeled by side/symbol), `platform_order_latency_seconds` (histogram, wired into `src/order_engine/engine.py`), `platform_api_errors_total` (counter, incremented by `LoggingMiddleware` on 4xx/5xx), `platform_price_ingestion_lag_seconds` (gauge, updated by `src/price_ingestion/service.py`).
 - `2026-03-17` -- Initial CLAUDE.md created

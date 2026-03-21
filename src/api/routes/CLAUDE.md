@@ -1,6 +1,6 @@
 # API Routes
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-21 -->
 
 > FastAPI route modules implementing all REST endpoints for the AI Agent Crypto Trading Platform.
 
@@ -89,7 +89,7 @@ For agent- and battle-scoped endpoints, routes manually verify `resource.account
 | `PUT` | `/account/risk-profile` | 200 | Update risk limits (agent or account) |
 | `POST` | `/account/reset` | 200 | Destructive reset to starting balance (requires `confirm: true`) |
 
-### agents.py — 14 endpoints
+### agents.py — 17 endpoints
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
@@ -107,6 +107,9 @@ For agent- and battle-scoped endpoints, routes manually verify `resource.account
 | `GET` | `/agents/{id}/risk-profile` | 200 | Get agent risk limits |
 | `PUT` | `/agents/{id}/risk-profile` | 200 | Update agent risk limits |
 | `GET` | `/agents/{id}/skill.md` | 200 | Download agent-specific skill file (plaintext) |
+| `GET` | `/agents/{id}/decisions/trace/{trace_id}` | 200 | Fetch all decisions linked to a distributed trace ID |
+| `GET` | `/agents/{id}/decisions/analyze` | 200 | Analyze decision patterns: confidence distribution, outcome correlation |
+| `PATCH` | `/agents/{id}/feedback/{feedback_id}` | 200 | Update feedback status/resolution (agent_feedback lifecycle) |
 
 ### trading.py — 7 endpoints
 
@@ -293,5 +296,6 @@ Follow the pattern in `backtest.py`: call `engine._get_active(session_id)` to ge
 
 ## Recent Changes
 
+- `2026-03-21` — `agents.py` gained 3 new endpoints: `GET /decisions/trace/{trace_id}` (distributed trace lookup), `GET /decisions/analyze` (decision pattern analysis), `PATCH /feedback/{feedback_id}` (feedback lifecycle management). Total agents.py endpoints: 14 → 17.
 - `2026-03-20` — `backtest.py` `/backtest/create` interval parameter now accepts string shorthand (`"1h"`, `"5m"`) in addition to raw seconds integers, via `parse_interval()` from `src/utils/helpers.py`.
 - `2026-03-17` — Initial CLAUDE.md created
