@@ -1,6 +1,6 @@
 # agent/strategies/ — Agent Trading Strategy System
 
-<!-- last-updated: 2026-03-21 (configure_agent_logging migration) -->
+<!-- last-updated: 2026-03-22 -->
 
 > Five complementary strategy implementations that can operate independently or together through the ensemble combiner. All strategies execute against the platform's backtest or live sandbox APIs using existing SDK and REST tool integrations.
 
@@ -8,13 +8,16 @@
 
 The `agent/strategies/` package provides a complete multi-strategy trading agent layer:
 
-| Sub-package | Approach | Primary use |
-|-------------|----------|-------------|
+| Sub-package / file | Approach | Primary use |
+|-------------------|----------|-------------|
 | `rl/` | PPO reinforcement learning via Stable-Baselines3 | Learn portfolio weights from raw market observations |
 | `evolutionary/` | Genetic algorithm over `StrategyGenome` parameter vectors | Optimise RSI/MACD rule-based strategies via battle-based fitness |
 | `regime/` | Market regime classification (XGBoost / RandomForest) | Select the best rule-based strategy for the current market condition |
 | `risk/` | Portfolio-level risk overlay | Gate and resize every trade signal before execution |
 | `ensemble/` | Weighted meta-learner | Combine RL + EVOLVED + REGIME signals into a single `ConsensusSignal` |
+| `walk_forward.py` | Rolling walk-forward validation | Compute WFE for RL and evolutionary strategies; WFE >= 50% required to deploy |
+| `drift.py` | Distribution drift detection | `DriftDetector` (Page-Hinkley test) on log-returns; integrated into `TradingLoop._observe()` |
+| `retrain.py` | Retraining orchestrator | `RetrainOrchestrator`: 4 schedules (ensemble 8h, regime 7d, genome 7d, PPO 30d) with A/B gate |
 
 The strategies layer sits **above** the platform API. It consumes `PlatformRESTClient` and `AsyncAgentExchangeClient` from `agent/tools/` but has no direct DB access. All fitness evaluation happens through the platform's backtest or battle APIs.
 
@@ -68,7 +71,7 @@ Pydantic v2 `BaseSettings`, env prefix `RL_`. Key fields:
 | `n_steps` | `2048` | Steps per env per update |
 | `total_timesteps` | `500_000` | Total training budget |
 | `n_envs` | `4` | Parallel training environments |
-| `reward_type` | `"sharpe"` | One of: `pnl`, `sharpe`, `sortino`, `drawdown` |
+| `reward_type` | `"sharpe"` | One of: `pnl`, `sharpe`, `sortino`, `drawdown`, `composite` |
 | `env_symbols` | `["BTCUSDT","ETHUSDT","SOLUSDT"]` | Assets for `TradeReady-Portfolio-v0` |
 | `train_start` / `train_end` | `2024-01-01` / `2024-10-01` | ISO-8601 training window |
 | `val_start` / `val_end` | `2024-10-01` / `2024-12-01` | ISO-8601 validation window |
@@ -194,7 +197,7 @@ Labels market candles into four regime types and trains a classifier (XGBoost pr
 
 #### Key class: `RegimeClassifier` (`classifier.py`)
 
-5-feature input vector: ADX, ATR/close, RSI, MACD line, close-vs-SMA20 distance. XGBoost preferred; falls back to `RandomForestClassifier` if xgboost is not installed.
+6-feature input vector: ADX, ATR/close, Bollinger Band width, RSI-14, MACD histogram, volume_ratio (current volume / 20-period SMA of volume). XGBoost preferred; falls back to `RandomForestClassifier` if xgboost is not installed.
 
 | Method | Description |
 |--------|-------------|
@@ -234,10 +237,10 @@ Portfolio-level risk checks that complement the platform's built-in per-order ri
 
 | File | Key class / function | Purpose |
 |------|---------------------|---------|
-| `risk_agent.py` | `RiskAgent`, `RiskConfig`, `RiskAssessment`, `TradeApproval` | Assess portfolio state; gate proposed trades |
-| `veto.py` | `VetoPipeline`, `VetoDecision` | 6-gate sequential pipeline: HALT → confidence → exposure → sector → drawdown |
-| `sizing.py` | `DynamicSizer`, `SizerConfig` | Volatility- and drawdown-adjusted position sizing |
-| `middleware.py` | `RiskMiddleware`, `ExecutionDecision` | Wires `RiskAgent`, `VetoPipeline`, `DynamicSizer` into a single async middleware layer |
+| `risk_agent.py` | `RiskAgent`, `RiskConfig`, `RiskAssessment`, `TradeApproval`, `DrawdownProfile`, `DrawdownTier` | Assess portfolio state; gate proposed trades; tiered drawdown-based size reduction |
+| `veto.py` | `VetoPipeline`, `VetoDecision` | 6-gate sequential pipeline: HALT → confidence → exposure → sector → drawdown; `scale_factor` on `VetoDecision` |
+| `sizing.py` | `DynamicSizer`, `SizerConfig`, `KellyFractionalSizer`, `HybridSizer`, `SizingMethod` | Volatility-/drawdown-/Kelly-adjusted position sizing |
+| `middleware.py` | `RiskMiddleware`, `ExecutionDecision` | Wires `RiskAgent`, `VetoPipeline`, `DynamicSizer` into a single async middleware; step 5 adds correlation-aware size reduction |
 
 #### Key class: `RiskAgent` (`risk_agent.py`)
 
@@ -248,6 +251,14 @@ Portfolio-level risk checks that complement the platform's built-in per-order ri
 - `"OK"` — within acceptable bounds
 
 `check_trade(signal, assessment) -> TradeApproval` — pre-trade check combining the assessment verdict with signal-level size limits.
+
+`DrawdownProfile` + `DrawdownTier`: tiered size reduction schedule as drawdown deepens. Three presets:
+
+| Preset | Tier thresholds | Behaviour |
+|--------|----------------|-----------|
+| `AGGRESSIVE` | 5 % / 10 % / 15 % | Reduce to 75% / 50% / 25% |
+| `MODERATE` | 3 % / 6 % / 10 % | Reduce to 70% / 45% / 20% |
+| `CONSERVATIVE` | 2 % / 4 % / 7 % | Reduce to 60% / 35% / 10% |
 
 #### Key class: `VetoPipeline` (`veto.py`)
 
@@ -377,6 +388,10 @@ The `risk/` overlay is inserted between the MetaLearner output and order executi
 
 ## Recent Changes
 
+- `2026-03-22` — Tasks 28/31/attribution: Added `retrain.py` (`RetrainOrchestrator`, 4 schedules, A/B gate, 57 tests), `drift.py` (`DriftDetector` Page-Hinkley test, integrated into `TradingLoop`), `ensemble/attribution.py` (`AttributionLoader`, `AttributionResult`, auto-pause via `StrategyCircuitBreaker`, 45 tests). All 37/37 Trading Agent Master Plan tasks complete.
+- `2026-03-22` — Task 29: Added `walk_forward.py` with rolling walk-forward validation. `WalkForwardConfig` (env prefix `WF_`), `WindowResult`, `WalkForwardResult` Pydantic models; `generate_windows()`, `compute_wfe()` pure functions; `run_walk_forward()` algorithm-agnostic orchestrator; `walk_forward_rl()` integration (mocked SB3 train/eval via `asyncio.to_thread`); `walk_forward_evolutionary()` integration (mocked BattleRunner via `_create_evo_battle_runner` factory); `TrainingRunner.walk_forward_train()` synchronous wrapper; `walk_forward_evolve()` in `evolve.py`. WFE < 50% triggers `overfit_warning=True` and `is_deployable=False`. Report written as JSON to `walk_forward_results/`. CLI entry point via `python -m agent.strategies.walk_forward --strategy rl`. 94 unit tests in `agent/tests/test_walk_forward.py`.
+- `2026-03-22` — Task 28: Added `retrain.py` with `RetrainOrchestrator`. Manages 4 retraining schedules: ensemble weights (8h), regime classifier (7d), genome population (7d, 2–3 new generations), PPO RL (30d, rolling 6-month window). A/B gate on all deployments (`_build_comparison` + `min_improvement` threshold). All training callables injectable for testing. 57 unit tests in `agent/tests/test_retrain.py`.
+- `2026-03-22` — Phase 1 branch + Phase 2 independent upgrades. Regime: `volume_ratio` added as 6th feature (189 tests). RL: `composite` reward type + 5 config fields. Evolutionary: 5-factor OOS composite fitness, `oos_split_ratio`, `get_detailed_metrics()`. Risk: `KellyFractionalSizer`, `HybridSizer`, `SizingMethod`; `DrawdownProfile`/`DrawdownTier` + 3 presets; `_check_correlation()` step 5 in middleware; `scale_factor` on `VetoDecision`. Ensemble: `StrategyCircuitBreaker` (Redis-backed, 3 triggers, TTL). 361 new tests.
 - `2026-03-20` — Perf fixes, security fixes, CLI --api-key removed.
 - `2026-03-21` — All strategy submodules migrated to `configure_agent_logging()`: `rl/` (5 files), `evolutionary/` (2 files), `ensemble/` (3 files), `regime/` (2 files) now call `configure_agent_logging()` at startup and use standardized structlog event names. `ensemble/run.py` adds `LogBatchWriter` for per-strategy signal persistence to `agent_strategy_signals` DB table.
 

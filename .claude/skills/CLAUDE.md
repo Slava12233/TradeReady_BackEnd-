@@ -1,6 +1,6 @@
 # .claude/skills/ — Reusable Skill Workflows
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Slash-command workflows invoked with `/skill-name` to run multi-step tasks.
 
@@ -18,6 +18,7 @@ Contains skill subdirectories, each with a `SKILL.md` file that defines a reusab
 | `sync-context` | `/sync-context` | `sync-context/SKILL.md` | Scan all CLAUDE.md files, fix stale inventories, create missing ones, update development/context.md |
 | `plan-to-tasks` | `/plan-to-tasks <file>` | `plan-to-tasks/SKILL.md` | Read a plan file, discover agents, match tasks to agents, create task files in `development/tasks/` |
 | `analyze-agents` | `/analyze-agents` | `analyze-agents/SKILL.md` | Analyze agent activity logs and memory files to generate improvement report in `development/agent-analysis/` |
+| `c-level-report` | `/c-level-report` | `c-level-report/SKILL.md` | Generates comprehensive C-level executive reports with real-time metrics (KPIs, risk, roadmap). Saves to `development/C-level_reports/` |
 
 ## Patterns
 
@@ -35,6 +36,7 @@ Contains skill subdirectories, each with a `SKILL.md` file that defines a reusab
 
 ## Recent Changes
 
+- `2026-03-23` — `/c-level-report` skill created. Files: `SKILL.md`, `templates/report-template.md`, `examples/sample-report.md`. Tools: Read, Write, Grep, Glob, Bash. Output: `development/C-level_reports/report-YYYY-MM-DD.md`
 - `2026-03-21` — `/analyze-agents` skill created (Task 13 of Agent Memory & Learning System)
 - `2026-03-21` — `/review-changes` updated with feedback capture (Task 14 of Agent Memory & Learning System)
 - `2026-03-21` — Initial CLAUDE.md created

@@ -40,3 +40,5 @@ Not fixed; deferred by design — fix before promotion to shared/prod infra:
 - `src/api/middleware/` — auth and rate limiting middleware
 - `src/order_engine/` — order execution (financial integrity)
 - `src/risk/` — circuit breaker, position limits (fail-closed required)
+- [project_platform_context.md](project_platform_context.md) — Platform is a simulated crypto exchange with multi-agent architecture; agent strategies layer operates above the platform API
+- [findings_phase2_risk.md](findings_phase2_risk.md) — Phase 2 risk management security review findings (Tasks 16-21): key patterns found and issues fixed

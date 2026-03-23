@@ -22,17 +22,33 @@ log = structlog.get_logger(__name__)
 
 def _build_reward(config: Any) -> Any:
     """Instantiate the reward function specified by config.reward_type."""
+    from tradeready_gym.rewards.composite import CompositeReward
     from tradeready_gym.rewards.drawdown_penalty_reward import DrawdownPenaltyReward
     from tradeready_gym.rewards.pnl_reward import PnLReward
     from tradeready_gym.rewards.sharpe_reward import SharpeReward
     from tradeready_gym.rewards.sortino_reward import SortinoReward
 
     match config.reward_type:
-        case "pnl":       return PnLReward()
-        case "sharpe":    return SharpeReward(window=config.sharpe_window)
-        case "sortino":   return SortinoReward(window=config.sharpe_window)
-        case "drawdown":  return DrawdownPenaltyReward(penalty_coeff=config.drawdown_penalty_coeff)
-        case _:           raise ValueError(f"Unknown reward_type: {config.reward_type!r}")
+        case "pnl":
+            return PnLReward()
+        case "sharpe":
+            return SharpeReward(window=config.sharpe_window)
+        case "sortino":
+            return SortinoReward(window=config.sharpe_window)
+        case "drawdown":
+            return DrawdownPenaltyReward(penalty_coeff=config.drawdown_penalty_coeff)
+        case "composite":
+            return CompositeReward(
+                sortino_weight=config.composite_sortino_weight,
+                pnl_weight=config.composite_pnl_weight,
+                activity_weight=config.composite_activity_weight,
+                drawdown_weight=config.composite_drawdown_weight,
+                sortino_window=config.sharpe_window,
+                activity_bonus=config.composite_activity_bonus,
+                starting_balance=config.starting_balance,
+            )
+        case _:
+            raise ValueError(f"Unknown reward_type: {config.reward_type!r}")
 
 
 def _env_factory(config: Any, start: str, end: str) -> Any:
@@ -184,7 +200,7 @@ def main() -> None:
                    help="Random seed (default: 42).")
     p.add_argument("--n-envs", type=int, default=None, metavar="N",
                    help="Parallel training environments (default: 4).")
-    p.add_argument("--reward", choices=["pnl", "sharpe", "sortino", "drawdown"], default=None,
+    p.add_argument("--reward", choices=["pnl", "sharpe", "sortino", "drawdown", "composite"], default=None,
                    help="Reward function (default: sharpe).")
     p.add_argument("--base-url", type=str, default=None, metavar="URL",
                    help="Platform REST API base URL.")

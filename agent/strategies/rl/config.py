@@ -224,9 +224,12 @@ class RLConfig(BaseSettings):
     reward_type: str = Field(
         default="sharpe",
         description=(
-            "Reward function variant.  Choices: 'pnl', 'sharpe', 'sortino', 'drawdown'. "
+            "Reward function variant.  Choices: 'pnl', 'sharpe', 'sortino', 'drawdown', "
+            "'composite'.  "
             "'sharpe' is the default because raw PnL rewards encourage excessive risk-taking "
-            "while Sharpe incentivises risk-adjusted returns."
+            "while Sharpe incentivises risk-adjusted returns.  "
+            "'composite' combines Sortino + normalised PnL + activity bonus + drawdown penalty "
+            "with configurable weights; designed for aggressive 10% monthly targets."
         ),
     )
     drawdown_penalty_coeff: float = Field(
@@ -240,8 +243,56 @@ class RLConfig(BaseSettings):
     sharpe_window: int = Field(
         default=50,
         description=(
-            "Rolling window length (in steps) for the SharpeReward and SortinoReward "
-            "calculations.  50 steps at 1h timeframe covers ~2 trading days."
+            "Rolling window length (in steps) for the SharpeReward, SortinoReward, "
+            "and CompositeReward Sortino sub-component calculations.  "
+            "50 steps at 1h timeframe covers ~2 trading days."
+        ),
+    )
+
+    # ── Composite reward weights ───────────────────────────────────────────────
+    # These are only used when reward_type='composite'.  All four weights must
+    # sum to 1.0; the validator below enforces this constraint.
+
+    composite_sortino_weight: float = Field(
+        default=0.4,
+        description=(
+            "Weight for the Sortino ratio increment component of CompositeReward.  "
+            "0.4 is the dominant term: optimising Sortino drives risk-adjusted returns "
+            "without penalising large upside moves."
+        ),
+    )
+    composite_pnl_weight: float = Field(
+        default=0.3,
+        description=(
+            "Weight for the normalised PnL component of CompositeReward.  "
+            "0.3 keeps a direct profit incentive so the agent is not purely "
+            "risk-ratio focused."
+        ),
+    )
+    composite_activity_weight: float = Field(
+        default=0.2,
+        description=(
+            "Weight for the activity bonus/penalty component of CompositeReward.  "
+            "0.2 gives enough signal to prevent the degenerate 'always hold cash' "
+            "policy without overwhelming PnL and Sortino incentives."
+        ),
+    )
+    composite_drawdown_weight: float = Field(
+        default=0.1,
+        description=(
+            "Weight for the drawdown penalty component of CompositeReward.  "
+            "0.1 provides a continuous underwater penalty.  Kept small so it "
+            "does not interfere with recovery trades."
+        ),
+    )
+    composite_activity_bonus: float = Field(
+        default=1.0,
+        description=(
+            "Magnitude of the per-step activity bonus when a trade is placed.  "
+            "The inactivity penalty mirrors this value, scaled by consecutive "
+            "idle steps and capped at 1.0× after sortino_window steps of inactivity.  "
+            "1.0 is tuned so 5 idle steps produce the same magnitude as one "
+            "active-step bonus."
         ),
     )
 
@@ -341,7 +392,7 @@ class RLConfig(BaseSettings):
     @classmethod
     def validate_reward_type(cls, v: str) -> str:
         """Reject unknown reward type names before they reach the gym factory."""
-        allowed = {"pnl", "sharpe", "sortino", "drawdown"}
+        allowed = {"pnl", "sharpe", "sortino", "drawdown", "composite"}
         if v not in allowed:
             raise ValueError(f"reward_type must be one of {sorted(allowed)}, got {v!r}")
         return v

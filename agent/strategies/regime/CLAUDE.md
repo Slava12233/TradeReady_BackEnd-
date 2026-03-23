@@ -1,16 +1,16 @@
 # agent/strategies/regime/ — Market Regime Detection Strategy
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-22 -->
 
 > Labels market candles into four regime types, trains a classifier to predict the current regime, and activates the matching pre-built trading strategy at each decision step.
 
 ## What This Module Does
 
-The `regime/` sub-package implements a market regime detection system. It uses ADX and ATR-to-close-ratio rules to label historical candles into one of four regime types (`TRENDING`, `HIGH_VOLATILITY`, `LOW_VOLATILITY`, `MEAN_REVERTING`), then trains a supervised classifier (XGBoost preferred, sklearn RandomForest fallback) on 5 technical features to predict the regime from live candles. The `RegimeSwitcher` enforces a confidence threshold and cooldown before switching strategies, preventing thrashing in boundary regimes.
+The `regime/` sub-package implements a market regime detection system. It uses ADX and ATR-to-close-ratio rules to label historical candles into one of four regime types (`TRENDING`, `HIGH_VOLATILITY`, `LOW_VOLATILITY`, `MEAN_REVERTING`), then trains a supervised classifier (XGBoost preferred, sklearn RandomForest fallback) on 6 technical features to predict the regime from live candles. The `RegimeSwitcher` enforces a confidence threshold and cooldown before switching strategies, preventing thrashing in boundary regimes.
 
 Four pre-built strategy definitions (one per regime) are included and can be deployed to the platform as-is.
 
-170 unit tests cover all components.
+189 unit tests cover all components.
 
 ## Key Files
 
@@ -50,7 +50,7 @@ from agent.strategies.regime.strategy_definitions import (
 
 ### `RegimeClassifier` (`classifier.py`)
 
-5-feature input vector per candle: ADX, ATR/close, RSI-14, MACD line, close-vs-SMA20 distance (normalised).
+6-feature input vector per candle: ADX, ATR/close, Bollinger Band width, RSI-14, MACD histogram, volume_ratio (current volume / 20-period SMA of volume).
 
 XGBoost is used when available; automatically falls back to `RandomForestClassifier` if xgboost is not installed. Both produce a `.joblib` file.
 
@@ -122,7 +122,9 @@ python -m agent.strategies.regime.switcher --demo --candles 300
 - **`joblib.load()` uses pickle internally.** Load classifier models only from trusted, locally-generated paths. Never load from network paths.
 - **Cooldown prevents rapid switching.** The switcher will not change strategies more than once per `cooldown_candles` (default 20) regardless of classifier confidence. In fast-moving markets, the active strategy may be suboptimal for up to 20 candles after a regime change.
 - **`generate_training_data()` requires at least 26 candles** to compute MACD slow EMA. Short data windows will produce NaN features that must be dropped before training.
+- **`volume_ratio` requires a `volume` key** in each candle dict. Candles missing `volume` default to 0; an all-zero volume window produces NaN `volume_ratio`, which causes those rows to be dropped by the NaN filter.
 
 ## Recent Changes
 
+- `2026-03-22` — Added `volume_ratio` (current_volume / SMA(volume,20)) as feature 6 in `labeler.py:generate_training_data()` and `classifier.py:FEATURE_NAMES`. Added `_volume_ratio_series()` helper in `labeler.py`. Added `_print_evaluation()` to `classifier.py` (was missing; used by tests). Updated test count from 170 → 189 (17 new tests in `test_regime_labeler.py`). CLAUDE.md updated accordingly.
 - `2026-03-20` — Initial CLAUDE.md created.

@@ -1,6 +1,6 @@
 # monitoring/ — Grafana Dashboards and Prometheus Alert Rules
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-22 -->
 
 > Infrastructure monitoring configuration: 6 Grafana dashboard JSON definitions and 11 Prometheus alert rules for the agent ecosystem.
 
@@ -22,6 +22,8 @@ Contains all **external monitoring configuration** for the AiTradingAgent platfo
 | `dashboards/agent-memory.json` | Grafana: memory store operations, cache hit/miss ratio, retrieval latency |
 | `dashboards/agent-strategy.json` | Grafana: per-strategy signal distribution, confidence histogram, PnL attribution |
 | `dashboards/ecosystem-health.json` | Grafana: cross-agent health overview — budget utilization, permission denials, trade success rate |
+| `provisioning/datasources/prometheus.yml` | Grafana auto-provisioned datasource — points to `http://prometheus:9090` with uid `prometheus` |
+| `provisioning/dashboards/dashboards.yml` | Grafana auto-provisioned dashboard loader — serves all JSON files from `/var/lib/grafana/dashboards` |
 
 ## Alert Rules (`alerts/agent-alerts.yml`)
 
@@ -40,17 +42,21 @@ Contains all **external monitoring configuration** for the AiTradingAgent platfo
 
 ## Patterns
 
-- Dashboard JSON files are Grafana-native format (provisioned via `docker-compose.yml` volumes or manual import)
-- Alert rules follow the standard `groups[].rules[]` YAML format for Prometheus Alertmanager
+- Dashboard JSON files are auto-provisioned into Grafana via `monitoring/provisioning/dashboards/dashboards.yml` — no manual import needed after the initial `docker compose up`
+- Alert rules are loaded by Prometheus via `rule_files:` in `prometheus.yml` — mounted into the container at `/etc/prometheus/rules/agent-alerts.yml`
 - All dashboards use `AGENT_REGISTRY`-scoped metric names (`agent_*` prefix) and platform metric names (`platform_*` prefix)
 - Dashboards are parameterized by `agent_id` variable for per-agent drill-down
+- Two Prometheus scrape jobs: `api` (`:8000/metrics`, default registry) and `agent` (`:8001/metrics`, `AGENT_REGISTRY`). The `agent` job only has data when the agent service profile is running.
 
 ## Gotchas
 
 - **Dashboard files are not auto-synced** — if you change a metric name in `agent/metrics.py` or `src/monitoring/metrics.py`, you must also update the PromQL queries in the corresponding dashboard JSON files.
 - **Alert rules require Alertmanager** — the `agent-alerts.yml` file is a rules file loaded by Prometheus, not Alertmanager config. Route it via `alertmanager.yml` for notification delivery.
 - **`AGENT_REGISTRY` vs default registry** — agent metrics use a separate `CollectorRegistry` to avoid polluting the platform's default Prometheus registry. The agent's `/metrics` endpoint serves `AGENT_REGISTRY` only; the platform `/metrics` serves the default registry.
+- **Agent scrape job will show DOWN when agent profile is not running** — the `agent:8001` scrape target in `prometheus.yml` is always configured, but will fail to connect unless `docker compose --profile agent up` was used. This produces a Prometheus scrape error but does not break other scrape jobs.
+- **Grafana datasource UID** — all 6 dashboard JSON files use `uid: "${datasource}"` (Grafana template variable), so the auto-provisioned datasource uid `prometheus` does not need to match the dashboard UID references — they use the template variable pattern which resolves at render time.
 
 ## Recent Changes
 
+- `2026-03-22` — Task 36: Fixed 3 issues: (1) Added `rule_files:` stanza to `prometheus.yml` so alert rules are actually loaded. (2) Added `agent:8001` scrape job to `prometheus.yml` for `AGENT_REGISTRY` metrics. (3) Added Grafana auto-provisioning via `monitoring/provisioning/` — datasource (Prometheus) and dashboard loader configs, with 3 new volume mounts in `docker-compose.yml`.
 - `2026-03-21` — Initial creation: 6 Grafana dashboards + 11 Prometheus alert rules added as part of Agent Logging System (34 tasks, 5 phases).

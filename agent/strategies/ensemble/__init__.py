@@ -1,4 +1,4 @@
-"""agent/strategies/ensemble — Meta-learner signal combiner and ensemble runner.
+"""agent/strategies/ensemble - Meta-learner signal combiner and ensemble runner.
 
 Combines signals from three strategy sources into a single consensus signal:
 
@@ -7,23 +7,29 @@ Combines signals from three strategy sources into a single consensus signal:
 - REGIME: market regime classifier directional bias
 
 Public API:
-    SignalSource        - Enum: RL, EVOLVED, REGIME
-    WeightedSignal      - A single signal from one source with confidence
-    ConsensusSignal     - Combined output across all contributing sources
-    MetaLearner         - Combines WeightedSignal list into ConsensusSignal
-    WeightConfig        - A named weight configuration for the optimizer
-    ConfigResult        - Backtest outcome for one weight configuration
-    OptimizationResult  - Full output of a weight optimisation run
-    WeightOptimizer     - Runs backtests for 12 weight configs, ranks by Sharpe
-    EnsembleConfig      - Pydantic-settings configuration for EnsembleRunner
-    EnsembleRunner      - Full multi-signal pipeline orchestrator
-    StepResult          - Per-step audit record (all signals, consensus, orders)
-    SymbolStepResult    - Per-symbol breakdown within one step
-    SignalContribution  - Per-source signal detail record
-    EnsembleReport      - Aggregated session report with per-source stats
-    SourceStats         - Per-source contribution statistics
+    SignalSource              - Enum: RL, EVOLVED, REGIME
+    WeightedSignal            - A single signal from one source with confidence
+    ConsensusSignal           - Combined output across all contributing sources
+    MetaLearner               - Combines WeightedSignal list into ConsensusSignal
+    WeightConfig              - A named weight configuration for the optimizer
+    ConfigResult              - Backtest outcome for one weight configuration
+    OptimizationResult        - Full output of a weight optimisation run
+    WeightOptimizer           - Runs backtests for 12 weight configs, ranks by Sharpe
+    EnsembleConfig            - Pydantic-settings configuration for EnsembleRunner
+    EnsembleRunner            - Full multi-signal pipeline orchestrator
+    StepResult                - Per-step audit record (all signals, consensus, orders)
+    SymbolStepResult          - Per-symbol breakdown within one step
+    SignalContribution        - Per-source signal detail record
+    EnsembleReport            - Aggregated session report with per-source stats and
+                                financial metrics (Sharpe, win rate, ROI, drawdown)
+    BacktestValidationReport  - Full pipeline validation report with acceptance
+                                criteria and active source list
+    build_validation_report   - Builder function for BacktestValidationReport
+    SourceStats               - Per-source contribution statistics
+    StrategyCircuitBreaker    - Per-strategy Redis-backed circuit breaker
 """
 
+from agent.strategies.ensemble.circuit_breaker import StrategyCircuitBreaker
 from agent.strategies.ensemble.config import EnsembleConfig
 from agent.strategies.ensemble.meta_learner import MetaLearner
 from agent.strategies.ensemble.optimize_weights import (
@@ -33,12 +39,14 @@ from agent.strategies.ensemble.optimize_weights import (
     WeightOptimizer,
 )
 from agent.strategies.ensemble.run import (
+    BacktestValidationReport,
     EnsembleReport,
     EnsembleRunner,
     SignalContribution,
     SourceStats,
     StepResult,
     SymbolStepResult,
+    build_validation_report,
 )
 from agent.strategies.ensemble.signals import ConsensusSignal, SignalSource, TradeAction, WeightedSignal
 
@@ -63,4 +71,8 @@ __all__ = [
     "StepResult",
     "SourceStats",
     "EnsembleReport",
+    "BacktestValidationReport",
+    "build_validation_report",
+    # Circuit breaker
+    "StrategyCircuitBreaker",
 ]

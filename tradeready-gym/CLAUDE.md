@@ -1,6 +1,6 @@
 # tradeready-gym/ — Gymnasium RL Environments
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-22 -->
 
 > Standalone Python package providing OpenAI Gymnasium-compatible trading environments backed by the TradeReady backtest REST API, for training RL agents on real crypto market data.
 
@@ -100,6 +100,7 @@ All subclasses pass `**kwargs` to `BaseTradingEnv`. These are the shared paramet
 | `SharpeReward` | Delta of rolling Sharpe ratio | `window` (default 50) |
 | `SortinoReward` | Delta of rolling Sortino ratio (downside vol only) | `window` (default 50) |
 | `DrawdownPenaltyReward` | `(curr_equity - prev_equity) - penalty_coeff * drawdown` | `penalty_coeff` (default 1.0) |
+| `CompositeReward` | `0.4*sortino_increment + 0.3*pnl_normalized + 0.2*activity_bonus + 0.1*drawdown_penalty` | `sortino_weight`, `pnl_weight`, `activity_weight`, `drawdown_weight`, `sortino_window` (default 50), `activity_bonus` (default 1.0) |
 
 To use a non-default reward, pass it as `reward_function=SharpeReward(window=100)` to `gym.make()`.
 
@@ -256,3 +257,4 @@ The package registers its environments via the `gymnasium.envs` entry point in `
 ## Recent Changes
 
 - `2026-03-20` — Initial CLAUDE.md created.
+- `2026-03-22` — Added `CompositeReward` class (rewards/composite.py). Updated rewards/__init__.py and tradeready_gym/__init__.py to export it. Added 41-test suite in tests/test_composite_reward.py.

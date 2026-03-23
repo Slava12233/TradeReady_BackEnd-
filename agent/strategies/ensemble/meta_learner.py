@@ -25,10 +25,27 @@ WeightedSignal instances so callers do not need to know the action mapping:
 - ``rl_weights_to_signals``   — PPO portfolio weight array → BUY/SELL/HOLD
 - ``genome_to_signals``       — StrategyGenome RSI/MACD state → BUY/SELL/HOLD
 - ``regime_to_signals``       — RegimeType → BUY/SELL/HOLD
+
+Dynamic weight adaptation
+--------------------------
+:meth:`update_weights` accepts a list of :class:`TradeOutcome` records from
+recent trades and recomputes per-source weights using a rolling Sharpe ratio
+over the last 50 outcomes.  Regime-conditional modifiers are then applied on
+top:
+
+- TRENDING:        RL +30 %, EVOLVED −10 %
+- MEAN_REVERTING:  EVOLVED +30 %, RL −10 %
+- HIGH_VOLATILITY: all sizes −50 % across the board, REGIME +20 %
+- LOW_VOLATILITY:  RL +20 %
+
+After adjustment the weights are normalised to sum to 1.0.
 """
 
 from __future__ import annotations
 
+import math
+from collections import deque
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -64,6 +81,30 @@ def _get_regime_action_map() -> dict[Any, TradeAction]:
 
 log = structlog.get_logger(__name__)
 
+# ── Trade outcome record ───────────────────────────────────────────────────────
+
+
+@dataclass
+class TradeOutcome:
+    """A single completed trade outcome used to update rolling Sharpe estimates.
+
+    Args:
+        source: The :class:`~agent.strategies.ensemble.signals.SignalSource`
+            that originated this trade's signal.
+        pnl_pct: Realised profit-and-loss as a fraction of position value
+            (e.g. ``0.02`` for +2 %, ``-0.01`` for -1 %).
+        symbol: Trading pair the trade was executed on.
+        regime: Optional current :class:`~agent.strategies.regime.labeler.RegimeType`
+            value at the time of the outcome.  When provided, regime-conditional
+            weight modifiers are applied after the Sharpe-based reweight.
+    """
+
+    source: SignalSource
+    pnl_pct: float
+    symbol: str = "UNKNOWN"
+    regime: Any = None  # RegimeType | None; typed as Any to avoid hard dep
+
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 # Default confidence threshold: the combined weighted confidence must exceed
@@ -85,12 +126,61 @@ _ACTION_SCORE: dict[TradeAction, float] = {
     TradeAction.HOLD: 0.0,
 }
 
+# ── Dynamic weight adaptation constants ───────────────────────────────────────
+
+# Rolling window size for per-source Sharpe estimation.
+# 50 trades gives enough history to estimate mean/stddev reliably while
+# staying sensitive to recent performance changes.
+_SHARPE_WINDOW: int = 50
+
+# Annualisation factor placeholder.  Since we compute a ratio of
+# mean/stddev over a rolling window (dimensionless), no time-scaling is
+# applied — the "Sharpe" here is an unscaled reward-to-risk ratio that
+# captures the sign and magnitude of recent per-source performance.
+_SHARPE_MIN_OBSERVATIONS: int = 2  # need at least 2 to compute stddev
+
+# Regime-conditional weight modifiers: regime → {source → multiplier}.
+# Multipliers are applied **additively** on top of base Sharpe-adjusted
+# weights before final normalisation.  A modifier of +0.3 means the
+# source's pre-normalisation weight is increased by 30 % of the base weight.
+# Signs are intentional (negative = slight penalty).
+_REGIME_WEIGHT_MODIFIERS: dict[str, dict[SignalSource, float]] = {
+    "trending": {
+        SignalSource.RL: 0.30,
+        SignalSource.EVOLVED: -0.10,
+        SignalSource.REGIME: 0.0,
+    },
+    "mean_reverting": {
+        SignalSource.RL: -0.10,
+        SignalSource.EVOLVED: 0.30,
+        SignalSource.REGIME: 0.0,
+    },
+    "high_volatility": {
+        # Global −50 % encoded as a −0.50 modifier on every source, REGIME
+        # gets an additional +20 % (net −30 %).
+        SignalSource.RL: -0.50,
+        SignalSource.EVOLVED: -0.50,
+        SignalSource.REGIME: -0.30,
+    },
+    "low_volatility": {
+        SignalSource.RL: 0.20,
+        SignalSource.EVOLVED: 0.0,
+        SignalSource.REGIME: 0.0,
+    },
+}
+
 
 # ── MetaLearner ───────────────────────────────────────────────────────────────
 
 
 class MetaLearner:
     """Weighted ensemble combiner for RL, EVOLVED, and REGIME signals.
+
+    Weights start from the caller-supplied mapping and are dynamically
+    adjusted via :meth:`update_weights` as trade outcomes arrive.  Each
+    source maintains an independent rolling window of PnL observations
+    (default 50) from which a Sharpe-like reward-to-risk ratio is derived.
+    Regime-conditional multipliers are applied on top before renormalisation.
 
     Args:
         weights: Per-source weight mapping.  Keys must be ``SignalSource``
@@ -103,6 +193,8 @@ class MetaLearner:
         min_agreement_rate: Minimum fraction of active sources that must
             agree with the winning action.  Default
             :data:`_DEFAULT_MIN_AGREEMENT_RATE` (0.5).
+        sharpe_window: Rolling window length for per-source Sharpe estimation.
+            Defaults to :data:`_SHARPE_WINDOW` (50).
     """
 
     def __init__(
@@ -110,6 +202,7 @@ class MetaLearner:
         weights: dict[SignalSource, float] | None = None,
         confidence_threshold: float = _DEFAULT_CONFIDENCE_THRESHOLD,
         min_agreement_rate: float = _DEFAULT_MIN_AGREEMENT_RATE,
+        sharpe_window: int = _SHARPE_WINDOW,
     ) -> None:
         if weights is None:
             weights = {s: 1.0 for s in SignalSource}
@@ -122,14 +215,25 @@ class MetaLearner:
             source: w / total for source, w in weights.items()
         }
 
+        # Retain the original base weights so regime modifiers are applied
+        # relative to a stable reference rather than accumulating drift.
+        self._base_weights: dict[SignalSource, float] = dict(self._weights)
+
         self._confidence_threshold = confidence_threshold
         self._min_agreement_rate = min_agreement_rate
+        self._sharpe_window = sharpe_window
+
+        # Per-source rolling PnL deque — bounded to *sharpe_window* entries.
+        self._pnl_history: dict[SignalSource, deque[float]] = {
+            source: deque(maxlen=sharpe_window) for source in SignalSource
+        }
 
         log.debug(
             "agent.strategy.ensemble.meta_learner.initialised",
             weights={s.value: round(w, 4) for s, w in self._weights.items()},
             confidence_threshold=confidence_threshold,
             min_agreement_rate=min_agreement_rate,
+            sharpe_window=sharpe_window,
         )
 
     # ── Properties ────────────────────────────────────────────────────────────
@@ -143,6 +247,249 @@ class MetaLearner:
     def min_agreement_rate(self) -> float:
         """Minimum fraction of active sources that must agree with the winner."""
         return self._min_agreement_rate
+
+    @property
+    def weights(self) -> dict[SignalSource, float]:
+        """Current normalised per-source weights (read-only snapshot).
+
+        Returns:
+            Dict mapping each :class:`~agent.strategies.ensemble.signals.SignalSource`
+            to its current weight.  Values always sum to 1.0.
+        """
+        return dict(self._weights)
+
+    @property
+    def pnl_history(self) -> dict[SignalSource, list[float]]:
+        """Snapshot of rolling PnL observations per source (read-only).
+
+        Returns:
+            Dict mapping each source to a list of recent PnL values in
+            chronological order (oldest first).
+        """
+        return {source: list(dq) for source, dq in self._pnl_history.items()}
+
+    # ── Dynamic weight adaptation ─────────────────────────────────────────────
+
+    @staticmethod
+    def _rolling_sharpe(pnl_values: list[float]) -> float:
+        """Compute a rolling Sharpe-like ratio from a list of PnL observations.
+
+        The ratio is defined as ``mean(pnl) / stddev(pnl)``.  When stddev is
+        zero (all returns identical) the sign of the mean determines the
+        outcome: positive mean → 1.0, negative mean → -1.0, zero → 0.0.
+        The result is **not** annualised — it is a dimensionless reward-to-risk
+        ratio suitable for comparing relative source quality.
+
+        Args:
+            pnl_values: List of realised PnL fractions (e.g. 0.02 = +2 %).
+                Must have at least :data:`_SHARPE_MIN_OBSERVATIONS` entries;
+                fewer entries return 0.0.
+
+        Returns:
+            Sharpe-like ratio in the range approximately (−∞, +∞).
+        """
+        if len(pnl_values) < _SHARPE_MIN_OBSERVATIONS:
+            return 0.0
+
+        n = len(pnl_values)
+        mean = sum(pnl_values) / n
+        variance = sum((x - mean) ** 2 for x in pnl_values) / n
+        stddev = math.sqrt(variance)
+
+        if stddev == 0.0:
+            # All returns are identical; use sign of mean as tiebreaker.
+            if mean > 0:
+                return 1.0
+            if mean < 0:
+                return -1.0
+            return 0.0
+
+        return mean / stddev
+
+    def update_weights(
+        self,
+        recent_outcomes: list[TradeOutcome],
+        current_regime: Any = None,
+    ) -> dict[SignalSource, float]:
+        """Recompute per-source weights from recent trade outcomes.
+
+        The algorithm:
+
+        1. Append each outcome's PnL to the corresponding source's rolling
+           deque (capped at ``sharpe_window`` entries).
+        2. Compute a Sharpe-like ratio per source over its full rolling window.
+        3. Derive new raw weights:
+               weight[source] = base_weight * (1 + source_sharpe) / norm_factor
+           where ``norm_factor`` ensures the ratio term stays positive.
+        4. Apply regime-conditional modifiers when ``current_regime`` is known.
+        5. Clamp each weight to a minimum of ``1e-6`` (never zero).
+        6. Normalise so all weights sum to 1.0.
+        7. Store the result in ``self._weights`` and log the change.
+
+        Args:
+            recent_outcomes: List of :class:`TradeOutcome` records from the
+                most recently completed trades.  May be empty (no-op).
+            current_regime: Optional
+                :class:`~agent.strategies.regime.labeler.RegimeType` value
+                describing the current market state.  When provided, regime-
+                conditional modifiers are applied after Sharpe reweighting.
+                Accepts the regime value from either ``recent_outcomes[-1].regime``
+                or a separately supplied classifier output.  ``None`` disables
+                regime modifiers.
+
+        Returns:
+            The new normalised weight dict (same as ``self.weights`` after
+            the update).
+        """
+        if not recent_outcomes:
+            return dict(self._weights)
+
+        # ── Step 1: append outcomes to per-source rolling windows ──────────
+        for outcome in recent_outcomes:
+            self._pnl_history[outcome.source].append(outcome.pnl_pct)
+
+        # Derive regime from the most recent outcome if not supplied explicitly.
+        effective_regime = current_regime
+        if effective_regime is None and recent_outcomes[-1].regime is not None:
+            effective_regime = recent_outcomes[-1].regime
+
+        # ── Step 2: compute per-source Sharpe ratio ────────────────────────
+        sharpes: dict[SignalSource, float] = {}
+        for source in SignalSource:
+            sharpes[source] = self._rolling_sharpe(list(self._pnl_history[source]))
+
+        log.debug(
+            "agent.strategy.ensemble.meta_learner.sharpe_computed",
+            sharpes={s.value: round(v, 4) for s, v in sharpes.items()},
+        )
+
+        # ── Step 3: compute Sharpe-adjusted raw weights ────────────────────
+        # weight = base_weight * (1 + sharpe)
+        # We shift by adding 1 so that a Sharpe of 0 preserves the base weight
+        # and a negative Sharpe reduces (but does not zero) the weight.
+        raw: dict[SignalSource, float] = {}
+        for source in SignalSource:
+            base = self._base_weights.get(source, 1.0 / len(SignalSource))
+            adjusted = base * (1.0 + sharpes[source])
+            raw[source] = max(adjusted, 1e-6)
+
+        # ── Step 4: apply regime-conditional modifiers ─────────────────────
+        if effective_regime is not None:
+            # Resolve regime string value regardless of whether it is a
+            # RegimeType enum or a plain string.
+            regime_key: str = (
+                effective_regime.value
+                if hasattr(effective_regime, "value")
+                else str(effective_regime)
+            )
+            modifiers = _REGIME_WEIGHT_MODIFIERS.get(regime_key)
+            if modifiers is not None:
+                for source, modifier in modifiers.items():
+                    base = self._base_weights.get(source, 1.0 / len(SignalSource))
+                    raw[source] = max(raw[source] + base * modifier, 1e-6)
+
+                log.debug(
+                    "agent.strategy.ensemble.meta_learner.regime_modifiers_applied",
+                    regime=regime_key,
+                    modifiers={s.value: round(m, 4) for s, m in modifiers.items()},
+                )
+
+        # ── Step 5–6: clamp and normalise ──────────────────────────────────
+        total = sum(raw.values())
+        if total <= 0:
+            # Defensive: fall back to equal weights.
+            n = len(SignalSource)
+            self._weights = {s: 1.0 / n for s in SignalSource}
+        else:
+            self._weights = {source: raw[source] / total for source in SignalSource}
+
+        log.info(
+            "agent.strategy.ensemble.meta_learner.weights_updated",
+            weights={s.value: round(w, 4) for s, w in self._weights.items()},
+            regime=getattr(effective_regime, "value", effective_regime),
+            outcomes_processed=len(recent_outcomes),
+        )
+        return dict(self._weights)
+
+    # ── Attribution-driven weight update ─────────────────────────────────────
+
+    def apply_attribution_weights(
+        self,
+        attribution_pnl: dict[str, float],
+        *,
+        min_weight: float = 0.05,
+    ) -> dict[SignalSource, float]:
+        """Adjust source weights proportionally to 7-day attributed PnL.
+
+        Called once at the start of each trading session after reading
+        ``AgentPerformance`` rows (``period="attribution"``) from the database.
+        Each strategy's current normalised weight is multiplied by
+        ``max(1.0 + pnl_pct, min_weight)`` where ``pnl_pct`` is its trailing
+        7-day PnL fraction.  Weights are then clamped to ``min_weight`` from
+        below and renormalised to sum to 1.0.
+
+        This provides a session-level boost/penalisation that runs on top of
+        (and before) the per-step Sharpe-based :meth:`update_weights` path.
+        The effect resets each session because ``initialize()`` re-constructs
+        the :class:`MetaLearner`; calling this method early in the session
+        seeds the starting weights with recent attribution signal.
+
+        Mapping from ``agent_strategy_signals.strategy_name`` to
+        :class:`~agent.strategies.ensemble.signals.SignalSource`:
+
+        * ``"rl"``      → :attr:`SignalSource.RL`
+        * ``"evolved"`` → :attr:`SignalSource.EVOLVED`
+        * ``"regime"``  → :attr:`SignalSource.REGIME`
+
+        Unknown keys in ``attribution_pnl`` are silently ignored.
+
+        Args:
+            attribution_pnl: Mapping from strategy name (as stored in
+                ``agent_strategy_signals.strategy_name``) to its trailing 7-day
+                attributed PnL fraction (e.g. ``{"rl": 0.03,
+                "evolved": -0.02, "regime": 0.01}``).
+            min_weight: Floor applied to each pre-normalisation weight.
+                Prevents any source from being silenced by a run of bad
+                attribution data.  Default ``0.05``.  Must be in [0.0, 1.0).
+
+        Returns:
+            The updated normalised weight dict (a copy).
+
+        Raises:
+            ValueError: If ``min_weight`` is not in [0.0, 1.0).
+        """
+        if not 0.0 <= min_weight < 1.0:
+            raise ValueError(f"min_weight must be in [0.0, 1.0); got {min_weight!r}")
+
+        new_weights: dict[SignalSource, float] = {}
+        for source, base_weight in self._weights.items():
+            pnl = attribution_pnl.get(source.value, 0.0)
+            # Multiplicative adjustment: positive PnL boosts, negative shrinks.
+            # Clamp so a single bad period cannot drive a weight to zero.
+            adjusted = base_weight * max(1.0 + pnl, min_weight)
+            new_weights[source] = max(adjusted, min_weight)
+
+        # Renormalise so weights sum to 1.0.
+        total = sum(new_weights.values())
+        if total <= 0:
+            # Defensive — cannot happen with min_weight > 0.
+            log.warning(
+                "agent.strategy.ensemble.meta_learner.apply_attribution.zero_total",
+                attribution_pnl=attribution_pnl,
+            )
+            return dict(self._weights)
+
+        self._weights = {s: w / total for s, w in new_weights.items()}
+        # Also update base weights so that subsequent Sharpe-based update_weights
+        # calls operate relative to the attribution-adjusted baseline.
+        self._base_weights = dict(self._weights)
+
+        log.info(
+            "agent.strategy.ensemble.meta_learner.attribution_weights_applied",
+            new_weights={s.value: round(w, 4) for s, w in self._weights.items()},
+            attribution_pnl={k: round(v, 6) for k, v in attribution_pnl.items()},
+        )
+        return dict(self._weights)
 
     # ── Core combination logic ────────────────────────────────────────────────
 

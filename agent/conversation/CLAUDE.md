@@ -203,3 +203,7 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 - **`ConversationHistory.search()` is O(sessions × messages)**. It fetches session IDs first, then up to 500 messages per session. Efficient for ≤ 100 sessions; avoid for very large histories.
 - **`ContextBuilder` caches nothing**. Every `build()` call makes fresh network calls for portfolio and strategy data. Use it once per LLM invocation, not in a hot loop.
 - **The `IntentRouter` is not thread-safe for `register()` after first use**. The `_action_map` in `PermissionEnforcer.require()` temporarily mutates the router; avoid calling `register()` concurrently.
+
+## Recent Changes
+
+- `2026-03-22` — Task 32: `ContextBuilder._fetch_learnings_section()` now accepts optional `symbol` and `regime` keyword arguments. When provided, it fetches top-5 PROCEDURAL memories matching that trading context via `MemoryStore.search()` and surfaces them first under a "Past Experience" heading (with `confidence%` and `reinforced Nx` annotation). Deduplication prevents the same memory appearing twice. `ContextBuilder.build()` accepts the same optional kwargs and passes them to `_fetch_learnings_section()`. New `ContextBuilder.build_trade_context(agent_id, session, symbol, regime)` convenience method makes symbol + regime required for trade-decision contexts. New constants `_PAST_EXPERIENCE_LIMIT = 5` and `_EPISODIC_CONTEXT_CAP = 5`.

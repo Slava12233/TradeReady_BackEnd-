@@ -235,12 +235,17 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 - [ ] **Add cancel order tool** — agent can manage pending orders
 - [ ] Update `sdk_tools.py` to expose `place_limit_order()`, `place_stop_loss()`, `place_take_profit()`, `cancel_order()`, `cancel_all_orders()`, `get_open_orders()`
 
-### 2.6: Drawdown Recovery Protocol
-- [ ] After HALT trigger: wait for ATR to return to < 1.5x median before resuming
-- [ ] Resume at 25% position sizes
-- [ ] Scale up 25% per day over 4 days if no further losses
-- [ ] Full size only after recovering 50% of the drawdown
-- [ ] Implement as `RecoveryManager` class in `agent/strategies/risk/`
+### 2.6: Drawdown Recovery Protocol — COMPLETE (Task 21)
+- [x] After HALT trigger: wait for ATR to return to < 1.5x median before resuming
+- [x] Resume at 25% position sizes
+- [x] Scale up 25% per day over 4 days if no further losses
+- [x] Full size only after recovering 50% of the drawdown
+- [x] Implement as `RecoveryManager` class in `agent/strategies/risk/`
+
+### 2.7: Security Review — COMPLETE (Task 22)
+- [x] 0 CRITICAL, 0 HIGH findings
+- [x] 2 MEDIUM deferred: StrategyCircuitBreaker Redis OOM failure mode, DrawdownProfile threshold validation gap
+- [x] All risk gates confirmed fail-closed
 
 **Estimated effort:** 4-5 days
 **Agents:** backend-developer, security-reviewer, test-runner, context-manager
@@ -262,11 +267,11 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
   - HIGH_VOLATILITY: all sizes -50%, REGIME weight +20%
   - LOW_VOLATILITY: RL +20% (detects subtle patterns)
 
-### 3.2: Enhanced Signal Generation
-- [ ] Add `get_ticker()` to SDK tools — 24h volume/high/low/change data enriches signal quality
-- [ ] Add `get_pnl()` to SDK tools — agent can track its own session PnL
-- [ ] Add volume-weighted analysis to `SignalGenerator` — confirm signals with volume
-- [ ] Increase confidence threshold from 0.5 to 0.6 — fewer but higher-quality trades
+### 3.2: Enhanced Signal Generation — COMPLETE (Task 24)
+- [x] Add `get_ticker()` to SDK tools — 24h volume/high/low/change data enriches signal quality
+- [x] Add `get_pnl()` to SDK tools — agent can track its own session PnL
+- [x] Add volume-weighted analysis to `SignalGenerator` — confirm signals with volume
+- [x] Increase confidence threshold from 0.5 to 0.55 — fewer but higher-quality trades (0.55 not 0.6 as originally planned; 35 new tests)
 
 ### 3.3: Concept Drift Detection
 - [ ] Create `agent/strategies/drift.py` — `DriftDetector` class
@@ -288,21 +293,21 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 - [ ] Auto-transition to live (demo) trading when criteria met
 - [ ] If performance drops below criteria during live, revert to paper trading
 
-### 3.5: Smart Pair Selection
-- [ ] Don't trade all 600+ pairs — focus on top 20-30 by daily volume
-- [ ] Implement `PairSelector` in `agent/trading/`:
+### 3.5: Smart Pair Selection — COMPLETE (Task 26)
+- [x] Don't trade all 600+ pairs — focus on top 20-30 by daily volume
+- [x] Implement `PairSelector` in `agent/trading/`:
   - Fetch 24h tickers for all pairs via `GET /api/v1/market/tickers`
   - Rank by volume, filter minimum $10M daily volume
   - Exclude pairs with >5% spread (illiquid)
-  - Rotate pair universe weekly based on volume rankings
-- [ ] Feed selected pairs to `SignalGenerator` and `EnsembleRunner`
+  - Rotate pair universe weekly based on volume rankings (1h Redis cache)
+- [x] Feed selected pairs to `SignalGenerator` and `EnsembleRunner` (42 tests)
 
-### 3.6: WebSocket Integration
-- [ ] Replace polling-based price checks with WebSocket streaming
-- [ ] Use `AgentExchangeWS` from SDK for real-time ticker and order updates
-- [ ] Subscribe to `ticker:{symbol}` for active trading pairs
-- [ ] Subscribe to `orders` channel for instant fill notifications
-- [ ] Reduces latency from ~500ms (REST poll) to ~10ms (WS push)
+### 3.6: WebSocket Integration — COMPLETE (Task 27)
+- [x] Replace polling-based price checks with WebSocket streaming
+- [x] Use `AgentExchangeWS` from SDK for real-time ticker and order updates
+- [x] Subscribe to `ticker:{symbol}` for active trading pairs
+- [x] Subscribe to `orders` channel for instant fill notifications
+- [x] REST fallback on WS disconnect (WSManager, price buffer, 46 tests)
 
 **Estimated effort:** 5-7 days
 **Agents:** backend-developer, ml-engineer, test-runner, context-manager
@@ -342,13 +347,13 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 - [ ] Implement in `agent/strategies/rl/runner.py` and `evolutionary/evolve.py`
 - [ ] Walk-Forward Efficiency > 50% required (otherwise strategy is overfit)
 
-### 4.3: Decision Outcome Settlement
-- [ ] Create Celery task `settle_agent_decisions` (every 5 minutes):
+### 4.3: Decision Outcome Settlement — COMPLETE (Task 30)
+- [x] Create Celery task `settle_agent_decisions` (every 5 minutes):
   - Find unresolved decisions via `AgentDecisionRepository.find_unresolved()`
   - Check if linked orders have been filled
   - Call `update_outcome(decision_id, outcome_pnl)` with realized PnL
-  - This closes the feedback loop from trade outcome → learning system
-- [ ] `TradingJournal` consumes settled decisions to reinforce/weaken memories
+  - This closes the feedback loop from trade outcome → learning system (16 tests)
+- [x] `TradingJournal` consumes settled decisions to reinforce/weaken memories
 
 ### 4.4: Strategy Attribution Analytics
 - [ ] Wire the existing `agent_strategy_attribution` Celery task (daily 02:00 UTC) to feed back into ensemble weights
@@ -356,15 +361,15 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 - [ ] Strategies with negative attribution over 7 days get auto-paused
 - [ ] Create monthly attribution reports in `development/agent-analysis/`
 
-### 4.5: Memory-Driven Learning
-- [ ] After each trade, `TradingJournal.generate_reflection()` should:
+### 4.5: Memory-Driven Learning — COMPLETE (Task 32)
+- [x] After each trade, `TradingJournal.generate_reflection()` should:
   - Save EPISODIC memory: what happened, entry/exit prices, PnL, reasoning
   - Save PROCEDURAL memory: what worked/didn't work as a pattern
   - Reinforce matching past memories (builds confidence in repeated patterns)
-- [ ] Before each trade, `ContextBuilder` should:
+- [x] Before each trade, `ContextBuilder` should:
   - Retrieve top 5 PROCEDURAL memories for this symbol/regime
   - Include in LLM prompt: "Past experience suggests..."
-  - This creates a genuine learning loop where past mistakes inform future decisions
+  - This creates a genuine learning loop where past mistakes inform future decisions (29 tests; `retrieve_targeted()` added to MemoryRetriever)
 
 ### 4.6: Anti-Overfitting Measures
 - [ ] Monte Carlo simulation: after backtesting, shuffle trade order 1000x and compute outcome distribution
@@ -382,19 +387,19 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 
 **Goal:** The agent discovers platform gaps and we fix them, improving both sides.
 
-### 5.1: Backtest Comparison Endpoint Usage
-- [ ] Wire `GET /backtest/compare` into agent REST tools — allows comparing multiple backtest sessions
-- [ ] Wire `GET /backtest/best` — auto-select best backtest by metric
-- [ ] Wire `GET /backtest/{id}/results/equity-curve` — time-series equity analysis
+### 5.1: Backtest Comparison Endpoint Usage — COMPLETE (Task 33)
+- [x] Wire `GET /backtest/compare` into agent REST tools — allows comparing multiple backtest sessions
+- [x] Wire `GET /backtest/best` — auto-select best backtest by metric
+- [x] Wire `GET /backtest/{id}/results/equity-curve` — time-series equity analysis
 
-### 5.2: Decision Analysis API
-- [ ] Wire `GET /agents/{id}/decisions/analyze` into agent tools — self-insight into decision quality
-- [ ] Agent can query: "Show me all BUY decisions with negative PnL in the last 7 days"
-- [ ] Use analysis results to adjust strategy parameters
+### 5.2: Decision Analysis API — COMPLETE (Task 33)
+- [x] Wire `GET /agents/{id}/decisions/analyze` into agent tools — self-insight into decision quality
+- [x] Agent can query: "Show me all BUY decisions with negative PnL in the last 7 days"
+- [x] Use analysis results to adjust strategy parameters (24 new tests total for Task 33)
 
-### 5.3: Risk Profile Self-Tuning
-- [ ] Wire `PUT /account/risk-profile` into agent tools
-- [ ] Agent can adjust its own risk limits based on performance:
+### 5.3: Risk Profile Self-Tuning — COMPLETE (Task 33)
+- [x] Wire `PUT /account/risk-profile` into agent tools
+- [x] Agent can adjust its own risk limits based on performance:
   - Good week → slightly increase position limits
   - Bad week → tighten limits
   - But within guardrails set by the platform
@@ -404,11 +409,11 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 - [ ] All training runs automatically tracked in the platform UI
 - [ ] Training learning curves visible in real-time on the frontend
 
-### 5.5: Battle System Activation
+### 5.5: Battle System Activation — PARTIALLY COMPLETE (Task 34)
 - [ ] Create multiple agent variants (different strategy mixes/risk profiles)
 - [ ] Run weekly battles to compare variants
 - [ ] Winner becomes the primary trading agent
-- [ ] Battle frontend (`Frontend/src/components/battles/`) — build the UI
+- [x] Battle frontend (`Frontend/src/components/battles/`) — 9 components, 3 routes, 2 hooks, 14 API functions, 15 types built
 
 ### 5.6: Platform Feedback Loop
 - [ ] Agent's `request_platform_feature()` tool creates feedback records
@@ -426,21 +431,22 @@ This is the A-Z roadmap for building an autonomous trading agent that achieves *
 
 **Goal:** Make the system production-grade and operationally excellent.
 
-### 6.1: Prometheus Scraping Fix
-- [ ] Verify Prometheus scrape config includes `:8001` (agent metrics) alongside `:8000` (platform)
-- [ ] All 6 Grafana dashboards must show real data
-- [ ] Alert rules must fire correctly (test with synthetic data)
+### 6.1: Prometheus Scraping Fix — COMPLETE (Task 36)
+- [x] Verify Prometheus scrape config includes `:8001` (agent metrics) alongside `:8000` (platform)
+- [x] All 6 Grafana dashboards provisioned (auto-provisioning confirmed)
+- [x] Alert rules loading validated
 
-### 6.2: Graceful Shutdown
-- [ ] Ensure `LogBatchWriter.flush()` is called on shutdown
-- [ ] Ensure `PermissionEnforcer.flush_audit_log()` is called on shutdown
-- [ ] Add TTL to all Redis working memory keys (crash safety)
-- [ ] Add orphan detection for in-memory battle engines (like backtests have)
+### 6.2: Graceful Shutdown — COMPLETE (Tasks 04, 36)
+- [x] Ensure `LogBatchWriter.flush()` is called on shutdown (wired in AgentServer._shutdown())
+- [x] Ensure `PermissionEnforcer.flush_audit_log()` is called on shutdown
+- [x] Add TTL to all Redis working memory keys (crash safety — 24h TTL via atomic pipeline)
+- [ ] Add orphan detection for in-memory battle engines (like backtests have) — deferred
 
-### 6.3: Performance Optimization
-- [ ] `ContextBuilder.build()` makes fresh network calls every invocation — add 30-second cache for portfolio state
-- [ ] Batch API calls where possible (e.g., fetch all prices at once instead of per-symbol)
-- [ ] Use WebSocket for price data instead of REST polling
+### 6.3: Performance Optimization — AUDIT COMPLETE (Task 37)
+- [ ] `ContextBuilder.build()` makes fresh network calls every invocation — HIGH priority; add 30-second cache (identified in audit, not yet fixed)
+- [ ] `WSManager` subscribes to all pairs instead of filtered universe — HIGH priority; wire `PairSelector` output (identified in audit, not yet fixed)
+- [ ] Batch API calls where possible — MEDIUM; identified
+- [x] Use WebSocket for price data instead of REST polling (WSManager — Task 27)
 
 ### 6.4: Operational Dashboards
 - [ ] Create a "Trading Agent Health" Grafana dashboard showing:

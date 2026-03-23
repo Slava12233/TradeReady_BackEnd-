@@ -24,7 +24,6 @@ keep the JSON serialisation surface simple.
 
 from __future__ import annotations
 
-import re
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -32,11 +31,11 @@ import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.strategies.risk.risk_agent import (
-    RiskAssessment,
-    RiskConfig,
     _QUOTE_SUFFIXES,  # noqa: PLC2701 — intentional same-package access
     _SECTOR_MAP,  # noqa: PLC2701 — intentional same-package access
     _SYMBOL_RE,  # noqa: PLC2701 — intentional same-package access
+    RiskAssessment,
+    RiskConfig,
 )
 
 logger = structlog.get_logger(__name__)
@@ -133,6 +132,17 @@ class VetoDecision(BaseModel):
             ``"VETOED"`` it is ``0.0``.
         reason: Human-readable explanation of the decision, identifying which
             check triggered it.  Intended for logging and debugging.
+        scale_factor: Position-size multiplier propagated from the
+            :class:`~agent.strategies.risk.RiskAssessment` (computed by the
+            agent's :class:`~agent.strategies.risk.DrawdownProfile`).
+            Callers should apply this multiplier to ``adjusted_size_pct``
+            before computing the final order quantity::
+
+                final_qty = equity * adjusted_size_pct * scale_factor
+
+            ``1.0`` when no drawdown scaling is required.  ``0.0`` when the
+            risk verdict was ``HALT`` (trade is fully suppressed regardless
+            of the pipeline action).
 
     Example::
 
@@ -140,7 +150,8 @@ class VetoDecision(BaseModel):
         if decision.action == "VETOED":
             logger.info("trade_vetoed", reason=decision.reason)
         elif decision.action == "RESIZED":
-            qty = equity * Decimal(str(decision.adjusted_size_pct))
+            effective_size = decision.adjusted_size_pct * decision.scale_factor
+            qty = equity * Decimal(str(effective_size))
     """
 
     model_config = ConfigDict(frozen=True)
@@ -165,6 +176,16 @@ class VetoDecision(BaseModel):
     reason: str = Field(
         ...,
         description="Human-readable explanation of why this decision was reached.",
+    )
+    scale_factor: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Position-size multiplier from the DrawdownProfile. "
+            "Callers multiply adjusted_size_pct by this value to get the "
+            "effective allocation. 0.0 when verdict is HALT."
+        ),
     )
 
 
@@ -232,6 +253,9 @@ class VetoPipeline:
         """
         original_size = Decimal(str(signal.size_pct))
         current_size = original_size
+        # Propagate the DrawdownProfile scale_factor from the assessment so
+        # downstream callers can apply it without re-computing it.
+        scale_factor: float = risk_assessment.scale_factor
 
         self._log.info(
             "veto_pipeline_start",
@@ -240,6 +264,7 @@ class VetoPipeline:
             size_pct=str(original_size),
             confidence=signal.confidence,
             verdict=risk_assessment.verdict,
+            scale_factor=f"{scale_factor:.4f}",
         )
 
         # ------------------------------------------------------------------
@@ -248,6 +273,7 @@ class VetoPipeline:
         if risk_assessment.verdict == "HALT":
             return self._vetoed(
                 original_size=original_size,
+                scale_factor=scale_factor,
                 reason=(
                     "Risk verdict is HALT: "
                     f"{risk_assessment.action or 'daily loss limit exceeded'}. "
@@ -261,6 +287,7 @@ class VetoPipeline:
         if signal.confidence < _MIN_CONFIDENCE:
             return self._vetoed(
                 original_size=original_size,
+                scale_factor=scale_factor,
                 reason=(
                     f"Signal confidence {signal.confidence:.2f} is below the "
                     f"minimum threshold of {_MIN_CONFIDENCE:.2f}. "
@@ -278,6 +305,7 @@ class VetoPipeline:
         if remaining_capacity <= Decimal("0"):
             return self._vetoed(
                 original_size=original_size,
+                scale_factor=scale_factor,
                 reason=(
                     f"Portfolio already at or above max exposure "
                     f"({float(current_exposure):.1%} >= {float(max_exposure):.1%}). "
@@ -291,6 +319,7 @@ class VetoPipeline:
             if capped_size <= Decimal("0"):
                 return self._vetoed(
                     original_size=original_size,
+                    scale_factor=scale_factor,
                     reason=(
                         f"Remaining portfolio capacity "
                         f"({float(remaining_capacity):.4%}) rounds to zero. "
@@ -323,6 +352,7 @@ class VetoPipeline:
         if sector_count >= _CORRELATION_VETO_COUNT:
             return self._vetoed(
                 original_size=original_size,
+                scale_factor=scale_factor,
                 reason=(
                     f"Correlation risk: {sector_count} existing position(s) "
                     f"already in the '{signal_sector}' sector. "
@@ -373,6 +403,7 @@ class VetoPipeline:
                 original_size_pct=float(original_size),
                 adjusted_size_pct=float(current_size),
                 reason=reason_so_far or "Size adjusted within pipeline.",
+                scale_factor=scale_factor,
             )
 
         return VetoDecision(
@@ -384,6 +415,7 @@ class VetoPipeline:
                 f"Trade {signal.symbol} {signal.side} at "
                 f"{float(original_size):.1%} approved."
             ),
+            scale_factor=scale_factor,
         )
 
     # ------------------------------------------------------------------
@@ -391,12 +423,15 @@ class VetoPipeline:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _vetoed(original_size: Decimal, reason: str) -> VetoDecision:
+    def _vetoed(original_size: Decimal, reason: str, scale_factor: float = 1.0) -> VetoDecision:
         """Construct a VETOED :class:`VetoDecision`.
 
         Args:
             original_size: The originally requested size fraction.
             reason: Human-readable explanation of why the trade was vetoed.
+            scale_factor: DrawdownProfile multiplier propagated from the
+                :class:`~agent.strategies.risk.RiskAssessment`.  Included for
+                audit completeness even when the trade is vetoed.
 
         Returns:
             A frozen :class:`VetoDecision` with ``action="VETOED"`` and
@@ -407,6 +442,7 @@ class VetoPipeline:
             original_size_pct=float(original_size),
             adjusted_size_pct=0.0,
             reason=reason,
+            scale_factor=scale_factor,
         )
 
     def _get_sector(self, symbol: str) -> str:

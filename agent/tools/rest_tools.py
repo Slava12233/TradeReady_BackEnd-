@@ -528,6 +528,205 @@ class PlatformRESTClient:
             response.raise_for_status()
             return response.json()  # type: ignore[no-any-return]
 
+    # ── Backtest analysis methods ─────────────────────────────────────────────
+
+    async def compare_backtests(self, session_ids: list[str]) -> dict[str, Any]:
+        """Compare multiple backtest sessions side-by-side.
+
+        Sends ``GET /api/v1/backtest/compare?sessions=id1,id2,...``.  All
+        sessions must belong to the authenticated account.
+
+        Args:
+            session_ids: List of backtest session UUID strings to compare.
+                Must contain at least two entries.
+
+        Returns:
+            ``BacktestCompareResponse`` dict with keys: ``comparisons`` (list of
+            per-session dicts with ``session_id``, ``strategy_label``,
+            ``roi_pct``, ``sharpe_ratio``, ``max_drawdown_pct``,
+            ``total_trades``, ``win_rate``, ``profit_factor``),
+            ``best_by_roi``, ``best_by_sharpe``, ``best_by_drawdown``
+            (session ID strings), ``recommendation`` (best session ID).
+        """
+        path = "/api/v1/backtest/compare"
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(
+                path,
+                headers=self._trace_headers(),
+                params={"sessions": ",".join(session_ids)},
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+
+    async def get_best_backtest(
+        self,
+        metric: str = "roi_pct",
+        strategy_label: str | None = None,
+    ) -> dict[str, Any]:
+        """Find the best completed backtest for the account by a given metric.
+
+        Sends ``GET /api/v1/backtest/best?metric=<metric>``.  Optionally
+        filters to a specific strategy label.
+
+        Args:
+            metric: Metric to rank by.  Common values: ``"roi_pct"``
+                (default), ``"sharpe_ratio"``, ``"max_drawdown_pct"``.
+            strategy_label: If provided, only considers sessions with this
+                exact strategy label.
+
+        Returns:
+            ``BacktestBestResponse`` dict with keys: ``session_id``,
+            ``strategy_label``, ``metric``, ``value`` (string representation
+            of the best metric value).
+        """
+        path = "/api/v1/backtest/best"
+        params: dict[str, Any] = {"metric": metric}
+        if strategy_label is not None:
+            params["strategy_label"] = strategy_label
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(
+                path,
+                headers=self._trace_headers(),
+                params=params,
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+
+    async def get_equity_curve(
+        self,
+        session_id: str,
+        interval: int = 1,
+    ) -> dict[str, Any]:
+        """Get time-series equity curve data for a completed backtest.
+
+        Sends ``GET /api/v1/backtest/{session_id}/results/equity-curve``.
+        Returns every N-th snapshot point to allow downsampling.
+
+        Args:
+            session_id: UUID string of the completed backtest session.
+            interval: Stride for downsampling — only every ``interval``-th
+                snapshot is returned (default 1 = all points, minimum 1).
+
+        Returns:
+            Dict with keys: ``session_id``, ``interval`` (str),
+            ``snapshots`` (list of dicts each with ``simulated_at`` (ISO-8601),
+            ``total_equity``, ``available_cash``, ``position_value``,
+            ``unrealized_pnl``, ``realized_pnl`` — all as Decimal strings).
+        """
+        path = f"/api/v1/backtest/{session_id}/results/equity-curve"
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(
+                path,
+                headers=self._trace_headers(),
+                params={"interval": interval},
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+
+    # ── Agent decision analysis ───────────────────────────────────────────────
+
+    async def analyze_decisions(
+        self,
+        agent_id: str,
+        start: str | None = None,
+        end: str | None = None,
+        min_confidence: float | None = None,
+        direction: str | None = None,
+        pnl_outcome: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Analyze decision quality for an agent.
+
+        Sends ``GET /api/v1/agents/{agent_id}/decisions/analyze``.  Returns
+        aggregate win/loss statistics and the filtered list of decisions.
+        Requires JWT authentication (the endpoint is under ``/agents/``).
+
+        Args:
+            agent_id: UUID string of the target agent.
+            start: ISO-8601 UTC lower bound for ``created_at`` (inclusive).
+                Example: ``"2026-01-01T00:00:00Z"``.
+            end: ISO-8601 UTC upper bound for ``created_at`` (exclusive).
+            min_confidence: Only include decisions with confidence >=
+                this value (0.0 – 1.0).
+            direction: Filter by trade direction: ``"buy"``, ``"sell"``, or
+                ``"hold"``.  ``None`` means no direction filter.
+            pnl_outcome: Filter by PnL outcome: ``"positive"``,
+                ``"negative"``, or ``"all"`` (default server-side).
+            limit: Maximum number of decision rows to return (1 – 500,
+                default 200).
+
+        Returns:
+            ``DecisionAnalysisResponse`` dict with keys: ``total``, ``wins``,
+            ``losses``, ``win_rate``, ``avg_pnl`` (nullable), ``avg_confidence``
+            (nullable), ``by_direction`` (dict keyed by direction), ``decisions``
+            (list of decision dicts).
+        """
+        path = f"/api/v1/agents/{agent_id}/decisions/analyze"
+        params: dict[str, Any] = {"limit": limit}
+        if start is not None:
+            params["start"] = start
+        if end is not None:
+            params["end"] = end
+        if min_confidence is not None:
+            params["min_confidence"] = min_confidence
+        if direction is not None:
+            params["direction"] = direction
+        if pnl_outcome is not None:
+            params["pnl_outcome"] = pnl_outcome
+        async with log_api_call("rest", path, method="GET") as ctx:
+            response = await self._client.get(
+                path,
+                headers=self._trace_headers(),
+                params=params,
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+
+    # ── Risk profile management ───────────────────────────────────────────────
+
+    async def update_risk_profile(
+        self,
+        max_position_size_pct: int,
+        daily_loss_limit_pct: int,
+        max_open_orders: int,
+    ) -> dict[str, Any]:
+        """Update the risk limits for the authenticated account or agent.
+
+        Sends ``PUT /api/v1/account/risk-profile``.  When an agent API key or
+        ``X-Agent-Id`` header is in use, the limits are applied to the agent's
+        risk profile; otherwise they apply to the account.
+
+        Args:
+            max_position_size_pct: Maximum single-position size as a
+                percentage of total equity (1 – 100).
+            daily_loss_limit_pct: Maximum daily loss allowed as a percentage
+                of total equity (1 – 100).
+            max_open_orders: Maximum number of concurrently open orders
+                (minimum 1).
+
+        Returns:
+            ``RiskProfileInfo`` dict with the same three keys reflecting the
+            persisted values.
+        """
+        path = "/api/v1/account/risk-profile"
+        async with log_api_call("rest", path, method="PUT") as ctx:
+            response = await self._client.put(
+                path,
+                headers=self._trace_headers(),
+                json={
+                    "max_position_size_pct": max_position_size_pct,
+                    "daily_loss_limit_pct": daily_loss_limit_pct,
+                    "max_open_orders": max_open_orders,
+                },
+            )
+            ctx["response_status"] = response.status_code
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+
 
 # ── Tool factory ──────────────────────────────────────────────────────────────
 
@@ -908,6 +1107,189 @@ def get_rest_tools(config: AgentConfig) -> list[Any]:
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             return {"error": str(exc)}
 
+    # ------------------------------------------------------------------
+    # Backtest analysis tools
+    # ------------------------------------------------------------------
+
+    async def compare_backtests(session_ids: list[str]) -> dict[str, Any]:
+        """Compare multiple completed backtest sessions side-by-side.
+
+        Use this to select the best-performing strategy among several
+        backtests.  The response highlights the top session by ROI, Sharpe
+        ratio, and minimum drawdown, plus an overall recommendation.
+
+        Args:
+            session_ids: List of backtest session UUID strings to compare
+                (minimum 2 entries).
+
+        Returns:
+            ``BacktestCompareResponse`` dict with ``comparisons`` (list of
+            per-session metrics), ``best_by_roi``, ``best_by_sharpe``,
+            ``best_by_drawdown`` (session ID strings), ``recommendation``
+            (recommended session ID).  On error, returns
+            ``{"error": "<message>"}``.
+        """
+        try:
+            return await client.compare_backtests(session_ids=session_ids)
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            return {"error": str(exc)}
+
+    async def get_best_backtest(
+        metric: str = "roi_pct",
+        strategy_label: str | None = None,
+    ) -> dict[str, Any]:
+        """Find the best completed backtest for the account by a metric.
+
+        Useful for auto-selecting the top-performing configuration without
+        manually comparing each session.
+
+        Args:
+            metric: The metric to rank by.  Common choices: ``"roi_pct"``
+                (default), ``"sharpe_ratio"``, ``"max_drawdown_pct"``.
+            strategy_label: If provided, restrict the search to sessions
+                tagged with this exact strategy label.
+
+        Returns:
+            Dict with ``session_id``, ``strategy_label``, ``metric``,
+            ``value`` (best metric value as a string).  Returns
+            ``{"error": "<message>"}`` if no completed sessions exist or on
+            network failure.
+        """
+        try:
+            return await client.get_best_backtest(
+                metric=metric,
+                strategy_label=strategy_label,
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            return {"error": str(exc)}
+
+    async def get_equity_curve(
+        session_id: str,
+        interval: int = 1,
+    ) -> dict[str, Any]:
+        """Retrieve time-series equity curve data for a completed backtest.
+
+        Returns portfolio equity snapshots taken during the backtest.
+        Optionally downsample by returning every N-th point.  Use this to
+        chart equity growth, identify drawdown periods, or compute
+        custom metrics.
+
+        Args:
+            session_id: UUID string of the completed backtest session.
+            interval: Return every ``interval``-th snapshot (default 1 = all
+                points, minimum 1).  Higher values reduce response size.
+
+        Returns:
+            Dict with ``session_id``, ``interval`` (str), ``snapshots``
+            (list of dicts with ``simulated_at``, ``total_equity``,
+            ``available_cash``, ``position_value``, ``unrealized_pnl``,
+            ``realized_pnl`` — all as Decimal strings).  On error,
+            returns ``{"error": "<message>"}``.
+        """
+        try:
+            return await client.get_equity_curve(
+                session_id=session_id,
+                interval=interval,
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            return {"error": str(exc)}
+
+    # ------------------------------------------------------------------
+    # Agent decision analysis tool
+    # ------------------------------------------------------------------
+
+    async def analyze_agent_decisions(
+        agent_id: str,
+        start: str | None = None,
+        end: str | None = None,
+        min_confidence: float | None = None,
+        direction: str | None = None,
+        pnl_outcome: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Analyze decision quality for an agent.
+
+        Returns aggregate win/loss statistics and the filtered list of
+        decision records.  Use this for self-analysis — inspect which
+        signals performed best, which directions are most profitable, and
+        whether higher-confidence decisions outperform lower-confidence ones.
+
+        Requires a JWT token in the ``Authorization`` header (the endpoint
+        is under ``/api/v1/agents/`` which is JWT-only).
+
+        Args:
+            agent_id: UUID string of the target agent.
+            start: ISO-8601 UTC lower bound for decision timestamp
+                (e.g. ``"2026-01-01T00:00:00Z"``).  ``None`` = no lower bound.
+            end: ISO-8601 UTC upper bound (exclusive).  ``None`` = no upper bound.
+            min_confidence: Only include decisions with model confidence >=
+                this value (0.0 – 1.0).
+            direction: Filter to one direction: ``"buy"``, ``"sell"``, or
+                ``"hold"``.  ``None`` = all directions.
+            pnl_outcome: Filter by PnL outcome: ``"positive"``,
+                ``"negative"``, or ``"all"`` (default).
+            limit: Maximum number of decision rows in the response (1 – 500).
+
+        Returns:
+            ``DecisionAnalysisResponse`` dict with ``total``, ``wins``,
+            ``losses``, ``win_rate``, ``avg_pnl`` (nullable str),
+            ``avg_confidence`` (nullable str), ``by_direction`` (dict keyed
+            by direction), ``decisions`` (list of decision records).  On
+            error, returns ``{"error": "<message>"}``.
+        """
+        try:
+            return await client.analyze_decisions(
+                agent_id=agent_id,
+                start=start,
+                end=end,
+                min_confidence=min_confidence,
+                direction=direction,
+                pnl_outcome=pnl_outcome,
+                limit=limit,
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            return {"error": str(exc)}
+
+    # ------------------------------------------------------------------
+    # Risk profile self-tuning tool
+    # ------------------------------------------------------------------
+
+    async def update_risk_profile(
+        max_position_size_pct: int,
+        daily_loss_limit_pct: int,
+        max_open_orders: int,
+    ) -> dict[str, Any]:
+        """Update risk limits for the authenticated account or agent.
+
+        Use this for autonomous self-tuning — the agent can tighten its own
+        risk limits after a drawdown, or loosen them when confidence is high.
+        When called with an agent API key, the limits apply only to that
+        agent's risk profile; they do not affect the parent account.
+
+        Args:
+            max_position_size_pct: Maximum size of a single position as a
+                percentage of total equity (1 – 100).
+            daily_loss_limit_pct: Maximum daily loss allowed as a percentage
+                of total equity (1 – 100).  The circuit breaker trips at this
+                level.
+            max_open_orders: Maximum number of concurrently open orders
+                (minimum 1).
+
+        Returns:
+            ``RiskProfileInfo`` dict with the three updated fields:
+            ``max_position_size_pct``, ``daily_loss_limit_pct``,
+            ``max_open_orders``.  On error, returns
+            ``{"error": "<message>"}``.
+        """
+        try:
+            return await client.update_risk_profile(
+                max_position_size_pct=max_position_size_pct,
+                daily_loss_limit_pct=daily_loss_limit_pct,
+                max_open_orders=max_open_orders,
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            return {"error": str(exc)}
+
     return [
         create_backtest,
         start_backtest,
@@ -920,4 +1302,9 @@ def get_rest_tools(config: AgentConfig) -> list[Any]:
         get_test_results,
         create_strategy_version,
         compare_strategy_versions,
+        compare_backtests,
+        get_best_backtest,
+        get_equity_curve,
+        analyze_agent_decisions,
+        update_risk_profile,
     ]

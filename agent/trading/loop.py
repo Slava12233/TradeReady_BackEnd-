@@ -57,6 +57,7 @@ from agent.logging_writer import LogBatchWriter
 from agent.models.ecosystem import ExecutionResult, PositionAction, TradingCycleResult
 from agent.permissions.enforcement import PermissionEnforcer
 from agent.trading.signal_generator import SignalGenerator, TradingSignal
+from agent.trading.ws_manager import WSManager
 
 logger = structlog.get_logger(__name__)
 
@@ -77,6 +78,10 @@ _ERROR_BACKOFF_SECONDS: float = 10.0
 
 # Maximum consecutive tick errors before the loop backs off for one full interval.
 _MAX_CONSECUTIVE_ERRORS: int = 5
+
+# How long (seconds) to poll for a WebSocket order-fill event within one tick.
+# Kept very short so a missing fill never delays the tick cycle significantly.
+_WS_FILL_CHECK_TIMEOUT_S: float = 0.05
 
 
 # ── Custom exceptions ──────────────────────────────────────────────────────────
@@ -145,6 +150,7 @@ class TradingLoop:
         signal_generator: SignalGenerator | None = None,
         sdk_client: Any = None,  # noqa: ANN401
         batch_writer: LogBatchWriter | None = None,
+        ws_manager: WSManager | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._config = config
@@ -152,6 +158,7 @@ class TradingLoop:
         self._signal_generator: SignalGenerator | None = signal_generator
         self._sdk_client: Any = sdk_client
         self._batch_writer = batch_writer
+        self._ws_manager: WSManager | None = ws_manager
 
         # Lifecycle state
         self._stop_event = asyncio.Event()
@@ -239,6 +246,16 @@ class TradingLoop:
                 self._log.debug("agent.trade.loop.rest_client.close_error", error=str(exc))
             self._rest_client = None
 
+        # Disconnect the WebSocket manager if we own it.
+        # If it was injected externally (e.g. from AgentServer) the caller is
+        # responsible for lifecycle management; we still disconnect to be safe
+        # since the loop is done.
+        if self._ws_manager is not None:
+            try:
+                await self._ws_manager.disconnect()
+            except Exception as exc:  # noqa: BLE001
+                self._log.debug("agent.trade.loop.ws_manager.close_error", error=str(exc))
+
         self._log.info(
             "agent.trade.loop.stopped",
             cycles_completed=self._cycle_counter,
@@ -253,6 +270,15 @@ class TradingLoop:
     def cycle_count(self) -> int:
         """Number of completed ticks since :meth:`start` was called."""
         return self._cycle_counter
+
+    @property
+    def ws_manager(self) -> WSManager | None:
+        """The attached :class:`~agent.trading.ws_manager.WSManager`, or ``None``.
+
+        ``None`` when no WebSocket manager was provided at construction or when
+        the agent is running without a live WebSocket connection.
+        """
+        return self._ws_manager
 
     # ------------------------------------------------------------------
     # Main tick — public for manual / test invocation
@@ -366,6 +392,25 @@ class TradingLoop:
                 executions.append(exec_result)
             if sym_error:
                 errors.append(sym_error)
+
+        # ── 5b. WS order-fill immediate position check ────────────────────
+        # When a WebSocket fill event arrived since the last tick, log it so
+        # the next tick's _observe() will pick up the updated position state.
+        # We do not block the tick for longer than _WS_FILL_CHECK_TIMEOUT_S
+        # seconds — this is a best-effort trigger, not a hard dependency.
+        if self._ws_manager is not None:
+            fill_arrived = await self._ws_manager.wait_for_order_fill(
+                timeout=_WS_FILL_CHECK_TIMEOUT_S,
+            )
+            if fill_arrived:
+                fill_payload = self._ws_manager.last_fill or {}
+                self._log.info(
+                    "agent.trade.loop.tick.ws_fill_received",
+                    cycle=cycle_num,
+                    order_id=fill_payload.get("order_id", ""),
+                    symbol=fill_payload.get("symbol", ""),
+                    status=fill_payload.get("status", ""),
+                )
 
         # ── 6. Record ─────────────────────────────────────────────────────
         try:
@@ -517,6 +562,13 @@ class TradingLoop:
     async def _observe(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Fetch portfolio state and open positions via the SDK.
 
+        When a :class:`~agent.trading.ws_manager.WSManager` is attached and
+        has buffered prices, those prices are merged into the returned
+        ``portfolio_state`` under the ``"ws_prices"`` key so that downstream
+        consumers can use them without an extra REST call.  REST polling is
+        used as a fallback when the buffer is empty or no WS manager is
+        configured.
+
         Returns:
             Tuple of ``(portfolio_state, positions)`` where both are dicts/lists
             suitable for JSON serialisation.  Returns empty structures on failure
@@ -525,13 +577,27 @@ class TradingLoop:
         portfolio_state: dict[str, Any] = {}
         positions: list[dict[str, Any]] = []
 
+        # ── WS price buffer ────────────────────────────────────────────────
+        # Merge buffered WebSocket prices into portfolio_state so the signal
+        # generator and downstream steps can use them without REST calls.
+        if self._ws_manager is not None and self._ws_manager.has_prices:
+            buffered = self._ws_manager.get_all_prices()
+            if buffered:
+                portfolio_state["ws_prices"] = {
+                    sym: str(price) for sym, price in buffered.items()
+                }
+                self._log.debug(
+                    "agent.trade.loop.observe.ws_prices",
+                    symbols=list(buffered.keys()),
+                )
+
         if self._sdk_client is None:
             return portfolio_state, positions
 
         try:
             portfolio_raw = await self._sdk_client.get_performance()
             if isinstance(portfolio_raw, dict):
-                portfolio_state = portfolio_raw
+                portfolio_state.update(portfolio_raw)
         except Exception as exc:  # noqa: BLE001
             self._log.warning("agent.trade.loop.observe.portfolio_failed", error=str(exc))
 

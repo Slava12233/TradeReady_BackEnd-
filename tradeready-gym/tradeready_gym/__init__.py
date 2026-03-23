@@ -37,6 +37,7 @@ from tradeready_gym.envs.base_trading_env import BaseTradingEnv
 from tradeready_gym.envs.live_env import LiveTradingEnv
 from tradeready_gym.envs.multi_asset_env import MultiAssetTradingEnv
 from tradeready_gym.envs.single_asset_env import SingleAssetTradingEnv
+from tradeready_gym.rewards.composite import CompositeReward
 from tradeready_gym.rewards.custom_reward import CustomReward
 from tradeready_gym.rewards.drawdown_penalty_reward import DrawdownPenaltyReward
 from tradeready_gym.rewards.pnl_reward import PnLReward
@@ -59,6 +60,7 @@ __all__ = [
     "SharpeReward",
     "SortinoReward",
     "DrawdownPenaltyReward",
+    "CompositeReward",
     "TrainingTracker",
     "FeatureEngineeringWrapper",
     "NormalizationWrapper",

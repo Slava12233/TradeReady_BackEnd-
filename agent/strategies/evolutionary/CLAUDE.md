@@ -2,13 +2,25 @@
 
 <!-- last-updated: 2026-03-20 -->
 
-> Evolves trading strategy parameters using a genetic algorithm whose fitness function is evaluated through the platform's historical battle system.
+> Evolves trading strategy parameters using a genetic algorithm whose fitness function is evaluated through the platform's historical battle system, with an out-of-sample (OOS) evaluation pass to prevent overfitting.
 
 ## What This Module Does
 
-The `evolutionary/` sub-package implements a genetic algorithm (GA) that optimises `StrategyGenome` parameter vectors — fixed-length numpy float64 arrays encoding RSI, MACD, stop-loss, take-profit, and position-size parameters. Each generation evaluates fitness by provisioning agents on the platform, assigning evolved strategies via `POST /api/v1/strategies`, running a historical battle, and extracting per-agent performance metrics. The fitness formula `sharpe - 0.5 * max_drawdown` selects for profitable strategies that do not blow up.
+The `evolutionary/` sub-package implements a genetic algorithm (GA) that optimises `StrategyGenome` parameter vectors — fixed-length numpy float64 arrays encoding RSI, MACD, stop-loss, take-profit, and position-size parameters. Each generation runs **two** historical battles: an in-sample battle covering the first 70 % of the configured window, and an out-of-sample battle on the held-out 30 %. The default 5-factor composite fitness formula is:
 
-155 unit tests cover all components.
+```
+fitness = (
+    0.35 * sharpe_ratio
+    + 0.25 * profit_factor
+    - 0.20 * max_drawdown_pct
+    + 0.10 * win_rate
+    + 0.10 * oos_sharpe_ratio
+)
+```
+
+Legacy single-battle fitness functions (`sharpe_minus_drawdown`, `sharpe_only`, `roi_only`) are still supported via `EVO_FITNESS_FN`.
+
+212 unit tests cover all components (155 existing + 57 new fitness tests).
 
 ## Key Files
 
@@ -17,8 +29,8 @@ The `evolutionary/` sub-package implements a genetic algorithm (GA) that optimis
 | `genome.py` | `StrategyGenome` — 12-parameter strategy encoded as a numpy float64 vector; `to_strategy_definition()` produces the platform API dict. |
 | `operators.py` | `tournament_select`, `crossover`, `mutate`, `clip_genome` — standard GA operators. |
 | `population.py` | `Population`, `PopulationStats` — manages one generation; `initialize()`, `evolve(scores)`, `stats(scores)`. |
-| `battle_runner.py` | `BattleRunner` — provisions agents, assigns strategies, runs historical battles, extracts per-agent fitness. |
-| `evolve.py` | CLI script — full evolution loop with convergence detection; writes `evolution_log.json`. |
+| `battle_runner.py` | `BattleRunner` — provisions agents, assigns strategies, runs historical battles, extracts per-agent fitness and detailed metrics. |
+| `evolve.py` | CLI script — full evolution loop with IS/OOS split, composite fitness, convergence detection; writes `evolution_log.json`. |
 | `analyze.py` | CLI script — post-run analysis from `evolution_log.json`: fitness curve, parameter convergence charts. |
 | `config.py` | `EvolutionConfig` — Pydantic-settings for GA parameters. Env prefix `EVO_`. |
 | `results/` | Output directory for `evolution_log.json` and analysis artifacts. |
@@ -72,9 +84,10 @@ Orchestrates fitness evaluation for one generation.
 | `reset_agents()` | Reset balances and positions for a fresh generation |
 | `assign_strategies(genomes)` | Create strategies from genome dicts and deploy to agents |
 | `run_battle()` | Start a historical battle and wait for it to complete |
-| `get_fitness()` | Extract per-agent fitness: `sharpe - 0.5 * max_drawdown` |
+| `get_fitness()` | Legacy: per-agent fitness as `sharpe - 0.5 * max_drawdown` |
+| `get_detailed_metrics()` | Full 5-metric extraction per agent (sharpe, drawdown, profit_factor, win_rate, roi_pct) |
 
-Agents with missing results receive `FAILURE_FITNESS = -999.0`.
+Agents with missing results receive `FAILURE_FITNESS = -999.0` from `get_fitness()`. `get_detailed_metrics()` returns all-`None` dicts so callers can distinguish "missing" from "zero".
 
 **Important:** `BattleRunner` authenticates via JWT (not API key) because `POST /api/v1/battles` requires `Authorization: Bearer`. The runner calls `POST /api/v1/auth/login` on construction.
 
@@ -110,6 +123,20 @@ python -m agent.strategies.evolutionary.analyze \
 - **`pair_bitmask` selects active pairs.** A genome with all-zero bitmask (`pair_bitmask=0`) will have no trading pairs — the strategy will be registered but never trade. This is a valid (but useless) individual that receives `FAILURE_FITNESS`.
 - **Battle completion polling** — `run_battle()` polls the battle status endpoint until it reaches a terminal state. If the platform is slow or a battle is stuck, this can block indefinitely. Use `--timeout` flag (CLI) or set `EVO_BATTLE_TIMEOUT_SECONDS` in the config.
 
+## Config Fields Added
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `oos_split_ratio` | `0.30` | Fraction of window held out for OOS battle |
+| `fitness_fn` | `composite` (changed from `sharpe_minus_drawdown`) | Fitness function; `composite` uses 5-factor formula |
+
+New `EvolutionConfig` properties: `is_split`, `in_sample_window`, `oos_window`.
+
+New `evolve.py` exports: `compute_composite_fitness`, `_compute_fitness` (internal), updated `ConvergenceDetector` with `best_oos_sharpe` tracking.
+
+New test file: `agent/tests/test_evolutionary_fitness.py` — 57 tests covering formula weights, dispatch modes, convergence, config validation, and `get_detailed_metrics`.
+
 ## Recent Changes
 
+- `2026-03-22` — Task 12: upgraded fitness function to 5-factor OOS composite. Added `oos_split_ratio` config, `in_sample_window`/`oos_window` properties, `get_detailed_metrics()` on `BattleRunner`, dual IS+OOS battle loop in `evolve.py`, `compute_composite_fitness()` function, OOS-aware `ConvergenceDetector`, and 57 new unit tests.
 - `2026-03-20` — Initial CLAUDE.md created.

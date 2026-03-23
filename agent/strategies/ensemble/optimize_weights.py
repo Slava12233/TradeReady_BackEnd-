@@ -23,7 +23,9 @@ For each weight configuration:
 3. Collect ``sharpe_ratio``, ``roi_pct``, ``max_drawdown_pct`` from results.
 4. Rank all results by Sharpe ratio (descending).
 5. Run out-of-sample validation on the optimal weights.
-6. Save ranked results and optimal weights to JSON.
+6. Validate that the optimal configuration beats the equal-weight baseline.
+7. Save ranked results and optimal weights to JSON.
+8. Write a compact ``optimal_weights.json`` compatible with ``EnsembleConfig.weights``.
 
 CLI
 ---
@@ -34,11 +36,29 @@ CLI
         [--oos-days 7] \\
         [--max-iterations 20] \\
         [--batch-size 5]
+
+Compact weights file
+--------------------
+After optimization, a ``optimal_weights.json`` file is written alongside the
+full report.  Its format is compatible with ``EnsembleConfig.weights``::
+
+    {
+        "rl": 0.450000,
+        "evolved": 0.300000,
+        "regime": 0.250000
+    }
+
+Load it at runtime with :func:`load_optimal_weights` and apply with
+:func:`apply_optimal_weights`::
+
+    weights = load_optimal_weights(Path("agent/strategies/ensemble/optimal_weights.json"))
+    config = apply_optimal_weights(EnsembleConfig(), weights)
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -48,6 +68,7 @@ import httpx
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent.strategies.ensemble.config import EnsembleConfig
 from agent.strategies.ensemble.meta_learner import MetaLearner
 from agent.strategies.ensemble.signals import (
     ConsensusSignal,
@@ -552,6 +573,194 @@ def _build_comparison_table(results: list[ConfigResult]) -> str:
     return header + "\n".join(rows)
 
 
+# ── Public weight utilities ───────────────────────────────────────────────────
+
+
+def save_optimal_weights_json(
+    weights: dict[str, float],
+    path: Path,
+) -> None:
+    """Write a compact ``optimal_weights.json`` compatible with ``EnsembleConfig.weights``.
+
+    The file format is a flat JSON object mapping signal-source names to
+    normalised floats.  It can be loaded directly as the ``weights`` field in
+    ``EnsembleConfig``::
+
+        {"rl": 0.45, "evolved": 0.30, "regime": 0.25}
+
+    Args:
+        weights: Dict mapping signal-source string keys to normalised floats.
+            Keys must match :class:`~agent.strategies.ensemble.signals.SignalSource`
+            values (``"rl"``, ``"evolved"``, ``"regime"``).
+        path: Destination file path.  Parent directories are created if needed.
+
+    Raises:
+        ValueError: If any weight is negative or if the keys do not include
+            all expected signal sources.
+    """
+    expected_keys = {s.value for s in SignalSource}
+    provided_keys = set(weights.keys())
+    if provided_keys != expected_keys:
+        raise ValueError(
+            f"weights keys {provided_keys!r} do not match expected "
+            f"SignalSource values {expected_keys!r}."
+        )
+    if any(w < 0 for w in weights.values()):
+        raise ValueError("All weights must be non-negative.")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(weights, indent=4), encoding="utf-8")
+    log.info(
+        "agent.strategy.ensemble.optimize_weights.optimal_weights_json_saved",
+        path=str(path),
+        weights=weights,
+    )
+
+
+def load_optimal_weights(path: Path) -> dict[str, float]:
+    """Load a compact ``optimal_weights.json`` written by :func:`save_optimal_weights_json`.
+
+    Args:
+        path: Path to the JSON file.
+
+    Returns:
+        Dict mapping signal-source names to floats.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the file contents are not a valid weight dict.
+    """
+    if not path.exists():
+        raise FileNotFoundError(
+            f"optimal_weights.json not found at {path}. "
+            "Run optimize_weights.py first to generate it."
+        )
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Expected a JSON object in {path}, got {type(raw).__name__}."
+        )
+
+    weights: dict[str, float] = {}
+    for key, value in raw.items():
+        try:
+            weights[key] = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Non-numeric weight value for key {key!r} in {path}: {value!r}"
+            ) from exc
+
+    expected_keys = {s.value for s in SignalSource}
+    missing = expected_keys - set(weights.keys())
+    if missing:
+        raise ValueError(
+            f"optimal_weights.json is missing keys {missing!r}. "
+            "Re-run optimize_weights.py to regenerate."
+        )
+
+    return weights
+
+
+def apply_optimal_weights(
+    config: EnsembleConfig,
+    weights: dict[str, float],
+) -> EnsembleConfig:
+    """Return a copy of *config* with the given optimal weights applied.
+
+    This is the bridge between the optimizer output and the live
+    ``EnsembleConfig``.  Typical usage after training completes::
+
+        from agent.strategies.ensemble.optimize_weights import load_optimal_weights, apply_optimal_weights
+        from agent.strategies.ensemble.config import EnsembleConfig
+
+        weights = load_optimal_weights(Path("agent/strategies/ensemble/optimal_weights.json"))
+        config = apply_optimal_weights(EnsembleConfig(), weights)
+
+    Args:
+        config: Existing :class:`~agent.strategies.ensemble.config.EnsembleConfig`
+            instance.  Not mutated.
+        weights: Normalised weight dict (string keys matching ``SignalSource``
+            values) as returned by :func:`load_optimal_weights`.
+
+    Returns:
+        A new ``EnsembleConfig`` instance with ``weights`` replaced.
+
+    Raises:
+        ValueError: If *weights* contains invalid keys or negative values.
+    """
+    expected_keys = {s.value for s in SignalSource}
+    provided_keys = set(weights.keys())
+    if not expected_keys.issubset(provided_keys):
+        missing = expected_keys - provided_keys
+        raise ValueError(
+            f"weights is missing required keys {missing!r}. "
+            "Ensure the file was written by save_optimal_weights_json()."
+        )
+    if any(w < 0 for w in weights.values()):
+        raise ValueError("All weights must be non-negative.")
+
+    return config.model_copy(update={"weights": {k: v for k, v in weights.items() if k in expected_keys}})
+
+
+def validate_ensemble_beats_baseline(
+    optimal_result: ConfigResult,
+    equal_weight_result: ConfigResult | None,
+) -> tuple[bool, str]:
+    """Check that the optimal configuration beats the equal-weight baseline.
+
+    This is a post-optimisation sanity check.  A failure does not block saving
+    the results — it is surfaced as a warning so operators can decide whether
+    to use the optimised weights.
+
+    Args:
+        optimal_result: Best-ranked :class:`ConfigResult` from
+            :meth:`WeightOptimizer.rank_results`.
+        equal_weight_result: The equal-weight configuration result (config
+            name ``"equal"``).  May be ``None`` if the equal-weight run failed.
+
+    Returns:
+        ``(passed: bool, message: str)`` where *passed* is ``True`` when the
+        optimal weights beat the baseline, and *message* describes the outcome.
+    """
+    if optimal_result.error:
+        return (
+            False,
+            f"Optimal configuration '{optimal_result.config_name}' has an error: {optimal_result.error}",
+        )
+
+    optimal_sharpe = optimal_result.sharpe_ratio
+    if optimal_sharpe is None:
+        return (
+            False,
+            f"Optimal configuration '{optimal_result.config_name}' has no Sharpe ratio "
+            "(insufficient trades).  Cannot validate improvement.",
+        )
+
+    if equal_weight_result is None or equal_weight_result.error or equal_weight_result.sharpe_ratio is None:
+        return (
+            True,
+            f"Equal-weight baseline unavailable; skipping comparison.  "
+            f"Optimal Sharpe: {optimal_sharpe:.4f}.",
+        )
+
+    baseline_sharpe = equal_weight_result.sharpe_ratio
+    if optimal_sharpe > baseline_sharpe:
+        return (
+            True,
+            f"Optimal config '{optimal_result.config_name}' (Sharpe={optimal_sharpe:.4f}) "
+            f"beats equal-weight baseline (Sharpe={baseline_sharpe:.4f}) "
+            f"by {optimal_sharpe - baseline_sharpe:.4f}.",
+        )
+    else:
+        return (
+            False,
+            f"Optimal config '{optimal_result.config_name}' (Sharpe={optimal_sharpe:.4f}) "
+            f"does NOT beat equal-weight baseline (Sharpe={baseline_sharpe:.4f}).  "
+            "Using optimised weights may not improve performance; review manually.",
+        )
+
+
 # ── WeightOptimizer ───────────────────────────────────────────────────────────
 
 
@@ -1046,7 +1255,7 @@ async def _cli_main(
     oos_start_dt = oos_end_dt - timedelta(days=oos_days)
     oos_period = f"{oos_start_dt.strftime('%Y-%m-%dT%H:%M:%SZ')} → {oos_end_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
-    # Save results
+    # Save full results
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"weight-optimization-{timestamp}.json"
     final_result = optimizer.save_results(
@@ -1055,6 +1264,33 @@ async def _cli_main(
         data_period=data_period,
         oos_period=oos_period,
     )
+
+    # ── Validation gate: ensemble must beat equal-weight baseline ─────────────
+    equal_weight_result: ConfigResult | None = next(
+        (r for r in ranked if r.config_name == "equal"),
+        None,
+    )
+    passed, validation_message = validate_ensemble_beats_baseline(optimal, equal_weight_result)
+    if passed:
+        log.info(
+            "agent.strategy.ensemble.optimize_weights.validation.passed",
+            message=validation_message,
+        )
+    else:
+        log.warning(
+            "agent.strategy.ensemble.optimize_weights.validation.failed",
+            message=validation_message,
+        )
+
+    # ── Write compact optimal_weights.json ────────────────────────────────────
+    optimal_weights_path = output_dir / "optimal_weights.json"
+    try:
+        save_optimal_weights_json(final_result.optimal_weights, optimal_weights_path)
+    except ValueError as exc:
+        log.error(
+            "agent.strategy.ensemble.optimize_weights.optimal_weights_save_failed",
+            error=str(exc),
+        )
 
     # Log optimization summary.
     log.info(
@@ -1066,6 +1302,9 @@ async def _cli_main(
         oos_roi_pct=str(oos_result.roi_pct) if oos_result else None,
         oos_trades=oos_result.total_trades if oos_result else None,
         output_path=str(output_path),
+        optimal_weights_path=str(optimal_weights_path),
+        validation_passed=passed,
+        validation_message=validation_message,
     )
 
 

@@ -82,3 +82,6 @@
 ## Error format from backend
 - `{"error": {"code": "...", "message": "..."}}`
 - Rate limit headers on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- [feedback_api_client_headers.md](feedback_api_client_headers.md) — Explicit X-Agent-Id in options.headers was being overwritten by auto-inject in executeRequest
+- [project_dashboard_analytics.md](project_dashboard_analytics.md) — Agent performance analytics dashboard sections added (Task 35)
+- [project_battle_system_ui.md](project_battle_system_ui.md) — Battle system UI complete (Task 34): types, API functions, 2 hooks, 9 components, 3 routes

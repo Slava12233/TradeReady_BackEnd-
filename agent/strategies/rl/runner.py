@@ -797,6 +797,83 @@ class TrainingRunner:
             target_met=comparison.target_sharpe_met,
         )
 
+    def walk_forward_train(
+        self,
+        data_start: str | None = None,
+        data_end: str | None = None,
+        train_months: int = 6,
+        oos_months: int = 1,
+    ) -> "WalkForwardResult":  # type: ignore[name-defined]
+        """Run walk-forward validation for the RL strategy.
+
+        Trains a fresh PPO model on each rolling window's training period, then
+        evaluates it on the immediately following OOS period.  Walk-Forward
+        Efficiency (WFE) must exceed 50 % for the strategy to be considered
+        deployable.
+
+        This method is a synchronous convenience wrapper around
+        :func:`~agent.strategies.walk_forward.walk_forward_rl` so it fits
+        naturally into the :class:`TrainingRunner` workflow.
+
+        Args:
+            data_start: ISO-8601 UTC start of the full data range.  Defaults to
+                ``config.train_start``.
+            data_end: ISO-8601 UTC end of the full data range.  Defaults to
+                ``config.test_end``.
+            train_months: Calendar months in each training window.  Default 6.
+            oos_months: Calendar months in each OOS window.  Default 1.
+
+        Returns:
+            :class:`~agent.strategies.walk_forward.WalkForwardResult` with
+            per-window Sharpe metrics, WFE, and a deployability flag.
+
+        Side effects:
+            Writes ``agent/strategies/walk_forward_results/rl_wf_report.json``
+            with the full per-window breakdown and summary.
+        """
+        from agent.strategies.walk_forward import (  # noqa: PLC0415
+            WalkForwardConfig,
+            WalkForwardResult,
+            walk_forward_rl,
+        )
+
+        wf_config = WalkForwardConfig(
+            data_start=data_start or self._config.train_start,
+            data_end=data_end or self._config.test_end,
+            train_months=train_months,
+            oos_months=oos_months,
+        )
+
+        log.info(
+            "agent.strategy.rl.runner.walk_forward.start",
+            data_start=wf_config.data_start,
+            data_end=wf_config.data_end,
+            train_months=train_months,
+            oos_months=oos_months,
+        )
+
+        result: WalkForwardResult = asyncio.run(
+            walk_forward_rl(config=self._config, wf_config=wf_config)
+        )
+
+        log.info(
+            "agent.strategy.rl.runner.walk_forward.complete",
+            wfe=result.walk_forward_efficiency,
+            is_deployable=result.is_deployable,
+            successful_windows=result.successful_windows,
+            total_windows=result.total_windows,
+        )
+
+        if result.overfit_warning:
+            log.warning(
+                "agent.strategy.rl.runner.walk_forward.overfit_warning",
+                wfe=result.walk_forward_efficiency,
+                threshold=result.wfe_threshold,
+                message="WFE below threshold — strategy likely overfit. Do NOT deploy.",
+            )
+
+        return result
+
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 

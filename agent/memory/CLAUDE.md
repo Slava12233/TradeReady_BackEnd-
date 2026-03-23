@@ -1,6 +1,6 @@
 # agent/memory/ — Memory Store, Postgres Persistence, Redis Cache, and Retrieval
 
-<!-- last-updated: 2026-03-21 (logging instrumentation) -->
+<!-- last-updated: 2026-03-22 -->
 
 > Four-layer memory system for agent learning: an abstract store interface, a Postgres-backed production store, a Redis hot cache, and a scored retrieval engine.
 
@@ -124,7 +124,7 @@ Hot cache layer in front of `PostgresMemoryStore`. All methods catch `RedisError
 |-----|------|-----|----------|
 | `agent:memory:{agent_id}:recent` | Sorted set | 1 hour | Member = memory JSON, score = `last_accessed_at` epoch |
 | `agent:memory:{agent_id}:{memory_id}` | String (JSON) | 1 hour | Serialised `Memory` object |
-| `agent:working:{agent_id}` | Hash | No TTL | Arbitrary key-value working state (must clear explicitly) |
+| `agent:working:{agent_id}` | Hash | 24 hours | Arbitrary key-value working state; TTL set atomically on every write via `hset + expire(86400)` pipeline |
 | `agent:last_regime:{agent_id}` | String | 1 hour | Last detected market regime string |
 | `agent:signals:{agent_id}` | String (JSON) | 1 hour | Cached signal dict from last scan |
 
@@ -234,7 +234,7 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 - **Caller owns transactions**: `PostgresMemoryStore` never commits. Wrap calls in a transaction in the service layer if you need atomic multi-memory operations.
 - **Soft delete**: `forget()` sets `expires_at` rather than deleting rows. This preserves audit history and allows undeletion. Call `prune_expired()` in a Celery cleanup task to reclaim space.
 - **Score-then-reinforce**: `get_context_memories()` calls `reinforce()` on every returned memory. This means frequently retrieved memories accumulate `times_reinforced` count, which increases their future score. High-value learnings naturally surface more often over time.
-- **Working memory has no TTL**: `set_working_memory()` stores data in a Redis hash without expiry. Always call `clear_working_memory()` at the end of a session to prevent stale state from leaking into future sessions.
+- **Working memory has a 24h TTL**: `set_working()` uses an atomic `hset + expire(86400)` pipeline, so working state auto-expires if a session crashes without calling `clear_working_memory()`. The TTL is refreshed on every write.
 
 ## Gotchas
 
@@ -243,10 +243,11 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 - **`get_recent()` issues 3 DB queries**: One per `MemoryType`. For agents with large memory stores this is fine, but avoid calling it in tight loops.
 - **Cache sorted set eviction**: When the recent sorted set exceeds `_RECENT_SET_MAX_SIZE = 100`, the lowest-scored (oldest) entries are evicted automatically. Memories evicted from cache are still in Postgres.
 - **`RedisMemoryCache` never raises**: All methods catch `RedisError` and return safe defaults (`None`, `[]`, `{}`). A Redis outage degrades to DB-only retrieval without crashing the agent.
-- **Working memory survives crashes**: Because there is no TTL, a crash mid-session leaves working memory in Redis. The next session start should call `clear_working_memory()` before populating new state.
+- **Working memory auto-expires after 24h**: The 24h TTL is refreshed on each `set_working()` call. A crash mid-session will leave working memory in Redis for at most 24 hours. The next session start should still call `clear_working_memory()` for a clean slate.
 - **Confidence is `Decimal`, not `float`**: Always pass `Decimal("0.85")` not `0.85`. The model validator rejects values outside `[0, 1]`.
 
 ## Recent Changes
 
+- `2026-03-22` — Bug fix: `get_cached()` now requires `agent_id` parameter; the previous glob pattern `agent:memory:*:{memory_id}` is not a valid Redis `GET` and always returned None. Delegates to `get_cached_for_agent(agent_id, memory_id)`. Working memory TTL added: `set_working()` now uses atomic `hset + expire(86400)` pipeline; updated key table TTL column and Gotchas section accordingly.
 - `2026-03-21` — Initial CLAUDE.md created (agent ecosystem Phase 1).
 - `2026-03-21` — Logging instrumentation added: `postgres_store.py` emits structlog events and increments Prometheus metrics on every save/get/search/reinforce/forget operation. `redis_cache.py` records cache hit/miss metrics. `retrieval.py` logs retrieval latency and result counts. All via `agent.metrics.AGENT_REGISTRY`.

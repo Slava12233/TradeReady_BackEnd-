@@ -2,7 +2,7 @@
 
 Trains and serves a multi-class classifier (XGBoost preferred, sklearn
 RandomForest as fallback) that predicts the current market regime from a
-5-feature indicator vector.
+6-feature indicator vector.
 
 Usage (as a module):
 
@@ -118,7 +118,24 @@ class RegimeClassifier:
         self._label_encoder: dict[str, int] = {}
         self._label_decoder: dict[int, str] = {}
         self._use_xgboost = self._resolve_backend(use_xgboost)
-        self._feature_names: list[str] = ["adx", "atr_ratio", "bb_width", "rsi", "macd_hist"]
+        # 6-feature input vector. Order is significant — must match the column
+        # order produced by generate_training_data() in labeler.py.
+        # Feature 1: adx         — trend strength (ADX indicator)
+        # Feature 2: atr_ratio   — normalised volatility (ATR / close)
+        # Feature 3: bb_width    — Bollinger Band width relative to middle band
+        # Feature 4: rsi         — momentum oscillator (RSI-14)
+        # Feature 5: macd_hist   — MACD histogram (momentum divergence)
+        # Feature 6: volume_ratio — current volume / 20-period SMA of volume;
+        #   captures volume-driven regime transitions (breakouts, accumulation)
+        #   that price-only indicators cannot detect
+        self._feature_names: list[str] = [
+            "adx",
+            "atr_ratio",
+            "bb_width",
+            "rsi",
+            "macd_hist",
+            "volume_ratio",
+        ]
 
     # ------------------------------------------------------------------
     # Training
@@ -129,8 +146,8 @@ class RegimeClassifier:
 
         Args:
             features: DataFrame with columns ``adx``, ``atr_ratio``,
-                      ``bb_width``, ``rsi``, ``macd_hist``.  Must not contain
-                      NaN values.
+                      ``bb_width``, ``rsi``, ``macd_hist``, ``volume_ratio``.
+                      Must not contain NaN values.
             labels: Series of RegimeType string values (e.g. ``"trending"``).
                     Must have the same index as ``features``.
 
@@ -195,7 +212,7 @@ class RegimeClassifier:
         """Predict the regime for a single observation.
 
         Args:
-            features: DataFrame with one row and the same 5 feature columns
+            features: DataFrame with one row and the same 6 feature columns
                       used during training.  Can contain extra columns which
                       are silently ignored.
 
@@ -525,6 +542,38 @@ def _log_evaluation(metrics: dict[str, Any], split_name: str = "test") -> None:
         n_samples=metrics["n_samples"],
         per_class_f1={cls: round(f1, 4) for cls, f1 in sorted(metrics["per_class_f1"].items())},
     )
+
+
+def _print_evaluation(metrics: dict[str, Any], split_name: str = "test") -> None:
+    """Print evaluation metrics to stdout (human-readable tabular format).
+
+    Used by the CLI training script and in tests to verify formatted output.
+    Complements ``_log_evaluation`` which writes structured JSON to the log.
+
+    Args:
+        metrics: Dict returned by ``RegimeClassifier.evaluate()``.  Expected
+                 keys: ``accuracy``, ``n_samples``, ``classes``,
+                 ``per_class_f1``, ``confusion_matrix``.
+        split_name: Label prefix for the printed header (e.g. ``"test"``).
+    """
+    accuracy = metrics["accuracy"]
+    n_samples = metrics["n_samples"]
+    classes = metrics["classes"]
+    per_class_f1 = metrics["per_class_f1"]
+    confusion_matrix = metrics["confusion_matrix"]
+
+    print(f"\n=== {split_name.upper()} Evaluation ({n_samples} samples) ===")
+    print(f"  Accuracy : {accuracy * 100:.2f}%")
+    print("\n  Per-class F1:")
+    for cls in sorted(per_class_f1):
+        print(f"    {cls:<20s}: {per_class_f1[cls]:.4f}")
+    print("\n  Confusion matrix (rows = true, cols = predicted):")
+    header = "  " + " ".join(f"{c[:8]:>8}" for c in classes)
+    print(header)
+    for cls, row in zip(classes, confusion_matrix):
+        row_str = " ".join(f"{v:>8d}" for v in row)
+        print(f"  {cls[:8]:<8s} {row_str}")
+    print()
 
 
 async def _train_cli(args: argparse.Namespace, *, api_key: str = "") -> None:

@@ -833,7 +833,7 @@ class BattleRunner:
     async def get_fitness(self, battle_id: str) -> dict[str, float]:
         """Fetch battle results and compute fitness scores for each agent.
 
-        Fitness formula::
+        Legacy fitness formula (used when ``fitness_fn != 'composite'``)::
 
             fitness = sharpe_ratio - 0.5 * max_drawdown_pct
 
@@ -847,25 +847,86 @@ class BattleRunner:
             Dict mapping agent_id → fitness score.  Contains an entry for
             every agent in :attr:`_agent_ids`.
         """
-        logger.info("agent.strategy.evolutionary.battle_runner.get_fitness.start", battle_id=battle_id)
-
-        raw_results = await self._fetch_battle_results(battle_id)
+        detailed = await self.get_detailed_metrics(battle_id)
         fitness_map: dict[str, float] = {}
 
         for agent_id in self._agent_ids:
-            fitness_map[agent_id] = FAILURE_FITNESS
+            m = detailed.get(agent_id)
+            if m is None:
+                fitness_map[agent_id] = FAILURE_FITNESS
+                continue
+
+            sharpe = m.get("sharpe_ratio")
+            drawdown = m.get("max_drawdown_pct")
+
+            if sharpe is None or drawdown is None:
+                roi = m.get("roi_pct")
+                fitness_map[agent_id] = float(roi) if roi is not None else FAILURE_FITNESS
+            else:
+                fitness_map[agent_id] = float(sharpe) - 0.5 * float(drawdown)
+
+        logger.info(
+            "agent.strategy.evolutionary.battle_runner.get_fitness.complete",
+            battle_id=battle_id,
+            scores={aid: round(f, 4) for aid, f in fitness_map.items()},
+        )
+        return fitness_map
+
+    async def get_detailed_metrics(
+        self, battle_id: str
+    ) -> dict[str, dict[str, float | None]]:
+        """Fetch battle results and return the full per-agent metrics dict.
+
+        Unlike :meth:`get_fitness` (which reduces to a scalar), this method
+        returns all available metrics for each agent so callers can compute
+        richer fitness functions (e.g. the 5-factor composite that includes
+        ``profit_factor``, ``win_rate``, and an OOS Sharpe overlay).
+
+        Metrics included per agent (all ``float | None``):
+
+        - ``sharpe_ratio``
+        - ``max_drawdown_pct``
+        - ``profit_factor`` — gross profit / gross loss; ``None`` if no trades
+        - ``win_rate`` — fraction of trades that closed at a profit [0, 1]
+        - ``roi_pct`` — percentage return on initial capital
+
+        Args:
+            battle_id: UUID of a completed battle.
+
+        Returns:
+            Dict mapping agent_id → ``{metric_name: value}`` for every agent
+            in :attr:`_agent_ids`.  Agents with missing results receive a dict
+            of all-``None`` values rather than :data:`FAILURE_FITNESS` so the
+            caller can distinguish "missing" from "zero".
+        """
+        logger.info(
+            "agent.strategy.evolutionary.battle_runner.get_detailed_metrics.start",
+            battle_id=battle_id,
+        )
+
+        null_metrics: dict[str, float | None] = {
+            "sharpe_ratio": None,
+            "max_drawdown_pct": None,
+            "profit_factor": None,
+            "win_rate": None,
+            "roi_pct": None,
+        }
+
+        result_map: dict[str, dict[str, float | None]] = {
+            aid: dict(null_metrics) for aid in self._agent_ids
+        }
+
+        raw_results = await self._fetch_battle_results(battle_id)
 
         if not raw_results:
             logger.warning(
-                "agent.strategy.evolutionary.battle_runner.get_fitness.no_results",
+                "agent.strategy.evolutionary.battle_runner.get_detailed_metrics.no_results",
                 battle_id=battle_id,
             )
-            return fitness_map
+            return result_map
 
-        # The results endpoint returns a list of participant result objects.
         participants: list[dict[str, Any]] = raw_results if isinstance(raw_results, list) else []
         if not participants:
-            # Some response shapes wrap results under a key.
             if isinstance(raw_results, dict):
                 participants = raw_results.get("participants", raw_results.get("results", []))
 
@@ -874,44 +935,52 @@ class BattleRunner:
             if agent_id_raw is None:
                 continue
             agent_id = str(agent_id_raw)
-
-            if agent_id not in fitness_map:
+            if agent_id not in result_map:
                 continue
 
             try:
-                metrics = result.get("metrics") or result
-                sharpe = self._parse_metric(metrics.get("sharpe_ratio"))
-                drawdown = self._parse_metric(metrics.get("max_drawdown_pct"))
-
-                if sharpe is None or drawdown is None:
-                    # Fall back to ROI-based fitness when Sharpe is unavailable.
-                    roi = self._parse_metric(metrics.get("roi_pct") or result.get("roi_pct"))
-                    fitness = float(roi) if roi is not None else FAILURE_FITNESS
-                else:
-                    fitness = float(sharpe) - 0.5 * float(drawdown)
-
-                fitness_map[agent_id] = fitness
+                metrics_raw = result.get("metrics")
+                # Guard: if "metrics" is present but is not a dict (e.g. a
+                # malformed string value from the API), fall back to the
+                # top-level result dict so metric lookups still work.
+                metrics: dict[str, Any] = (
+                    metrics_raw
+                    if isinstance(metrics_raw, dict)
+                    else result
+                )
+                extracted: dict[str, float | None] = {
+                    "sharpe_ratio": self._parse_metric(metrics.get("sharpe_ratio")),
+                    "max_drawdown_pct": self._parse_metric(metrics.get("max_drawdown_pct")),
+                    "profit_factor": self._parse_metric(
+                        metrics.get("profit_factor") or result.get("profit_factor")
+                    ),
+                    "win_rate": self._parse_metric(
+                        metrics.get("win_rate") or result.get("win_rate")
+                    ),
+                    "roi_pct": self._parse_metric(
+                        metrics.get("roi_pct") or result.get("roi_pct")
+                    ),
+                }
+                result_map[agent_id] = extracted
                 logger.debug(
-                    "agent.strategy.evolutionary.battle_runner.fitness_computed",
+                    "agent.strategy.evolutionary.battle_runner.detailed_metrics_extracted",
                     agent_id=agent_id,
-                    sharpe=sharpe,
-                    drawdown=drawdown,
-                    fitness=fitness,
+                    **{k: (round(v, 4) if v is not None else None) for k, v in extracted.items()},
                 )
             except (TypeError, ValueError) as exc:
                 logger.warning(
-                    "agent.strategy.evolutionary.battle_runner.fitness_parse_error",
+                    "agent.strategy.evolutionary.battle_runner.detailed_metrics_parse_error",
                     agent_id=agent_id,
                     error=str(exc),
                 )
-                fitness_map[agent_id] = FAILURE_FITNESS
+                # Leave the all-None entry for this agent.
 
         logger.info(
-            "agent.strategy.evolutionary.battle_runner.get_fitness.complete",
+            "agent.strategy.evolutionary.battle_runner.get_detailed_metrics.complete",
             battle_id=battle_id,
-            scores={aid: round(f, 4) for aid, f in fitness_map.items()},
+            agent_count=len(result_map),
         )
-        return fitness_map
+        return result_map
 
     async def _fetch_battle_results(
         self, battle_id: str

@@ -1,6 +1,6 @@
 # Utils Module
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-22 -->
 
 > Shared exception hierarchy and utility functions used across the entire platform.
 
@@ -134,6 +134,7 @@ TradingPlatformError (500)
 | `StrategyNotFoundError` | `STRATEGY_NOT_FOUND` | 404 | `strategy_id` |
 | `StrategyInvalidStateError` | `STRATEGY_INVALID_STATE` | 409 | `current_status`, `required_status` |
 | `TrainingRunNotFoundError` | `TRAINING_RUN_NOT_FOUND` | 404 | `run_id` |
+| `PermissionDenied` | `permission_denied` | 403 | `agent_id`, `action`, `reason` |
 
 ### helpers.py
 
@@ -181,6 +182,7 @@ TradingPlatformError (500)
 
 ## Recent Changes
 
+- `2026-03-22` -- Added `PermissionDenied(TradingPlatformError)` to `exceptions.py` with `code="permission_denied"`, `http_status=403`. Imported by `agent/permissions/enforcement.py` (replaces its local definition). Auto-serialized by the global exception handler.
 - `2026-03-20` -- Added `parse_interval()` to `helpers.py`; normalises backtest interval parameter to seconds, accepting both string shorthand (`"1h"`, `"5m"`) and integer/string-integer forms. Used by `src/api/routes/backtest.py`.
 - `2026-03-18` -- Added StrategyNotFoundError, StrategyInvalidStateError, TrainingRunNotFoundError to exception hierarchy and public API table
 - `2026-03-17` -- Initial CLAUDE.md created

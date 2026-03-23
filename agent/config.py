@@ -74,6 +74,12 @@ class AgentConfig(BaseSettings):
     trading_loop_interval: int = 3600  # seconds (1 hour)
     trading_min_confidence: float = 0.6
 
+    # Minimum confidence threshold for the SignalGenerator to emit a non-HOLD
+    # signal.  Signals below this value are downgraded to "hold" before the
+    # trading loop decision step.  Default raised from 0.5 to 0.55 to reduce
+    # false positives from the ensemble combiner.
+    signal_confidence_threshold: float = 0.55
+
     # ── Computed ──────────────────────────────────────────────────────────────
 
     @computed_field  # type: ignore[prop-decorator]

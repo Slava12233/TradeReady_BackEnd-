@@ -51,14 +51,14 @@ class TestGetSdkToolsStructure:
             tools = get_sdk_tools(config)
         assert isinstance(tools, list)
 
-    def test_returns_seven_callables(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """get_sdk_tools() returns exactly 7 callable tool functions."""
+    def test_returns_fifteen_callables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_sdk_tools() returns exactly 15 callable tool functions."""
         config = _make_config(monkeypatch)
         with patch("agentexchange.async_client.AsyncAgentExchangeClient"):
             from agent.tools.sdk_tools import get_sdk_tools
 
             tools = get_sdk_tools(config)
-        assert len(tools) == 7
+        assert len(tools) == 15
         for tool in tools:
             assert callable(tool)
 
@@ -78,6 +78,14 @@ class TestGetSdkToolsStructure:
             "get_performance",
             "get_trade_history",
             "place_market_order",
+            "place_limit_order",
+            "place_stop_loss",
+            "place_take_profit",
+            "cancel_order",
+            "cancel_all_orders",
+            "get_open_orders",
+            "get_ticker",
+            "get_pnl",
         }
 
 
@@ -527,3 +535,595 @@ class TestPlaceMarketOrder:
         await tool_map["place_market_order"](_make_ctx(), "ETHUSDT", "sell", "0.5")
 
         mock_client.place_market_order.assert_called_once_with("ETHUSDT", "sell", "0.5")
+
+
+# ---------------------------------------------------------------------------
+# Shared helper for pending-order mocks
+# ---------------------------------------------------------------------------
+
+
+def _make_pending_order(symbol: str = "BTCUSDT", side: str = "buy", order_type: str = "limit") -> MagicMock:
+    """Build a mock pending Order dataclass returned by limit/stop-loss/take-profit calls."""
+    o = MagicMock()
+    o.order_id = uuid4()
+    o.status = "pending"
+    o.symbol = symbol
+    o.side = side
+    o.type = order_type
+    o.quantity = Decimal("0.001")
+    o.price = Decimal("60000.00")
+    o.executed_price = None
+    o.executed_quantity = None
+    o.fee = None
+    o.total_cost = None
+    o.locked_amount = Decimal("60.00")
+    o.created_at = _utcnow()
+    o.filled_at = None
+    return o
+
+
+# ---------------------------------------------------------------------------
+# place_limit_order
+# ---------------------------------------------------------------------------
+
+
+class TestPlaceLimitOrder:
+    """Tests for the place_limit_order tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    async def test_returns_order_dict_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_limit_order returns a pending order dict with all expected keys."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_limit_order.return_value = _make_pending_order()
+
+        result = await tool_map["place_limit_order"](_make_ctx(), "BTCUSDT", "buy", "0.001", "60000")
+
+        assert result["status"] == "pending"
+        assert result["symbol"] == "BTCUSDT"
+        assert result["side"] == "buy"
+        assert result["type"] == "limit"
+        assert "order_id" in result
+        assert result["executed_price"] is None
+        assert result["filled_at"] is None
+
+    async def test_price_fields_are_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Decimal price fields are serialised as strings."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_limit_order.return_value = _make_pending_order()
+
+        result = await tool_map["place_limit_order"](_make_ctx(), "BTCUSDT", "buy", "0.001", "60000")
+
+        assert isinstance(result["quantity"], str)
+        assert isinstance(result["price"], str)
+        assert isinstance(result["locked_amount"], str)
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_limit_order returns {'error': '...'} on SDK failure."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_limit_order.side_effect = AgentExchangeError("invalid price")
+
+        result = await tool_map["place_limit_order"](_make_ctx(), "BTCUSDT", "buy", "0.001", "-1")
+
+        assert "error" in result
+        assert "invalid price" in result["error"]
+
+    async def test_calls_sdk_with_correct_args(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_limit_order forwards all four arguments to the SDK client."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_limit_order.return_value = _make_pending_order()
+
+        await tool_map["place_limit_order"](_make_ctx(), "ETHUSDT", "sell", "0.5", "3100")
+
+        mock_client.place_limit_order.assert_called_once_with("ETHUSDT", "sell", "0.5", "3100")
+
+
+# ---------------------------------------------------------------------------
+# place_stop_loss
+# ---------------------------------------------------------------------------
+
+
+class TestPlaceStopLoss:
+    """Tests for the place_stop_loss tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    async def test_returns_order_dict_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_stop_loss returns a pending order dict."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_stop_loss.return_value = _make_pending_order(order_type="stop_loss")
+
+        result = await tool_map["place_stop_loss"](_make_ctx(), "BTCUSDT", "sell", "0.001", "58000")
+
+        assert result["status"] == "pending"
+        assert result["type"] == "stop_loss"
+        assert result["symbol"] == "BTCUSDT"
+        assert "order_id" in result
+
+    async def test_none_fields_preserved_as_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Optional unfilled fields are returned as None, not omitted."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_stop_loss.return_value = _make_pending_order(order_type="stop_loss")
+
+        result = await tool_map["place_stop_loss"](_make_ctx(), "BTCUSDT", "sell", "0.001", "58000")
+
+        assert result["executed_price"] is None
+        assert result["filled_at"] is None
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_stop_loss returns {'error': '...'} on SDK failure."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_stop_loss.side_effect = AgentExchangeError("insufficient balance")
+
+        result = await tool_map["place_stop_loss"](_make_ctx(), "BTCUSDT", "sell", "9999", "58000")
+
+        assert "error" in result
+
+    async def test_calls_sdk_with_correct_args(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_stop_loss forwards symbol, side, quantity, trigger_price to the SDK."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_stop_loss.return_value = _make_pending_order(order_type="stop_loss")
+
+        await tool_map["place_stop_loss"](_make_ctx(), "SOLUSDT", "sell", "10", "90")
+
+        mock_client.place_stop_loss.assert_called_once_with("SOLUSDT", "sell", "10", "90")
+
+
+# ---------------------------------------------------------------------------
+# place_take_profit
+# ---------------------------------------------------------------------------
+
+
+class TestPlaceTakeProfit:
+    """Tests for the place_take_profit tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    async def test_returns_order_dict_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_take_profit returns a pending order dict."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_take_profit.return_value = _make_pending_order(order_type="take_profit")
+
+        result = await tool_map["place_take_profit"](_make_ctx(), "BTCUSDT", "sell", "0.001", "70000")
+
+        assert result["status"] == "pending"
+        assert result["type"] == "take_profit"
+        assert "order_id" in result
+
+    async def test_none_fields_preserved_as_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Optional unfilled fields are returned as None."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_take_profit.return_value = _make_pending_order(order_type="take_profit")
+
+        result = await tool_map["place_take_profit"](_make_ctx(), "BTCUSDT", "sell", "0.001", "70000")
+
+        assert result["fee"] is None
+        assert result["total_cost"] is None
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_take_profit returns {'error': '...'} on SDK failure."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_take_profit.side_effect = AgentExchangeError("order rejected")
+
+        result = await tool_map["place_take_profit"](_make_ctx(), "BTCUSDT", "sell", "0.001", "70000")
+
+        assert "error" in result
+        assert "order rejected" in result["error"]
+
+    async def test_calls_sdk_with_correct_args(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """place_take_profit forwards all four args to the SDK client."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.place_take_profit.return_value = _make_pending_order(order_type="take_profit")
+
+        await tool_map["place_take_profit"](_make_ctx(), "ETHUSDT", "sell", "1.0", "3500")
+
+        mock_client.place_take_profit.assert_called_once_with("ETHUSDT", "sell", "1.0", "3500")
+
+
+# ---------------------------------------------------------------------------
+# cancel_order
+# ---------------------------------------------------------------------------
+
+
+class TestCancelOrder:
+    """Tests for the cancel_order tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    async def test_returns_cancelled_true_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_order returns {'cancelled': True} when the SDK returns True."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_order.return_value = True
+
+        result = await tool_map["cancel_order"](_make_ctx(), "550e8400-e29b-41d4-a716-446655440000")
+
+        assert result == {"cancelled": True}
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_order returns {'error': '...'} when SDK raises AgentExchangeError."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_order.side_effect = AgentExchangeError("order not found")
+
+        result = await tool_map["cancel_order"](_make_ctx(), "nonexistent-order-id")
+
+        assert "error" in result
+        assert "order not found" in result["error"]
+
+    async def test_calls_sdk_with_correct_order_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_order passes the order_id string through to the SDK client."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_order.return_value = True
+        order_id = str(uuid4())
+
+        await tool_map["cancel_order"](_make_ctx(), order_id)
+
+        mock_client.cancel_order.assert_called_once_with(order_id)
+
+
+# ---------------------------------------------------------------------------
+# cancel_all_orders
+# ---------------------------------------------------------------------------
+
+
+class TestCancelAllOrders:
+    """Tests for the cancel_all_orders tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    async def test_returns_cancelled_count_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_all_orders returns {'cancelled_count': N} reflecting the SDK return value."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_all_orders.return_value = 3
+
+        result = await tool_map["cancel_all_orders"](_make_ctx())
+
+        assert result == {"cancelled_count": 3}
+
+    async def test_returns_zero_when_no_orders(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_all_orders returns {'cancelled_count': 0} when there are no open orders."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_all_orders.return_value = 0
+
+        result = await tool_map["cancel_all_orders"](_make_ctx())
+
+        assert result["cancelled_count"] == 0
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_all_orders returns {'error': '...'} on SDK failure."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_all_orders.side_effect = AgentExchangeError("unauthorized")
+
+        result = await tool_map["cancel_all_orders"](_make_ctx())
+
+        assert "error" in result
+
+    async def test_calls_sdk_with_no_args(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cancel_all_orders calls client.cancel_all_orders() with no arguments."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.cancel_all_orders.return_value = 0
+
+        await tool_map["cancel_all_orders"](_make_ctx())
+
+        mock_client.cancel_all_orders.assert_called_once_with()
+
+
+# ---------------------------------------------------------------------------
+# get_open_orders
+# ---------------------------------------------------------------------------
+
+
+class TestGetOpenOrders:
+    """Tests for the get_open_orders tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    async def test_returns_list_of_order_dicts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_open_orders returns a list of order dicts on success."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_open_orders.return_value = [
+            _make_pending_order("BTCUSDT", "buy", "limit"),
+            _make_pending_order("ETHUSDT", "sell", "stop_loss"),
+        ]
+
+        result = await tool_map["get_open_orders"](_make_ctx())
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0]["symbol"] == "BTCUSDT"
+        assert result[1]["symbol"] == "ETHUSDT"
+
+    async def test_returns_empty_list_when_no_orders(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_open_orders returns an empty list when there are no pending orders."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_open_orders.return_value = []
+
+        result = await tool_map["get_open_orders"](_make_ctx())
+
+        assert result == []
+
+    async def test_order_fields_are_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Each order dict contains the expected keys including optional None fields."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_open_orders.return_value = [_make_pending_order()]
+
+        result = await tool_map["get_open_orders"](_make_ctx())
+
+        order = result[0]
+        assert "order_id" in order
+        assert "status" in order
+        assert "symbol" in order
+        assert "side" in order
+        assert "type" in order
+        assert "quantity" in order
+        assert "price" in order
+        assert "locked_amount" in order
+        assert "created_at" in order
+        assert "filled_at" in order
+
+    async def test_decimal_fields_are_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Decimal price and quantity fields in each order dict are serialised as strings."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_open_orders.return_value = [_make_pending_order()]
+
+        result = await tool_map["get_open_orders"](_make_ctx())
+
+        assert isinstance(result[0]["quantity"], str)
+        assert isinstance(result[0]["price"], str)
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_open_orders returns {'error': '...'} on SDK failure."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_open_orders.side_effect = AgentExchangeError("connection refused")
+
+        result = await tool_map["get_open_orders"](_make_ctx())
+
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "connection refused" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# get_ticker
+# ---------------------------------------------------------------------------
+
+
+class TestGetTicker:
+    """Tests for the get_ticker tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    def _make_ticker(self, symbol: str = "BTCUSDT") -> MagicMock:
+        """Build a mock Ticker object with all required fields."""
+        t = MagicMock()
+        t.symbol = symbol
+        t.open = Decimal("62000.00")
+        t.high = Decimal("65000.00")
+        t.low = Decimal("61500.00")
+        t.close = Decimal("64000.00")
+        t.volume = Decimal("1234.567")
+        t.quote_volume = Decimal("79012345.00")
+        t.change = Decimal("2000.00")
+        t.change_pct = Decimal("3.23")
+        t.trade_count = 48200
+        t.timestamp = _utcnow()
+        return t
+
+    async def test_returns_correct_dict_structure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_ticker returns a dict with all 11 expected keys on success."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_ticker.return_value = self._make_ticker()
+
+        result = await tool_map["get_ticker"](_make_ctx(), "BTCUSDT")
+
+        assert isinstance(result, dict)
+        for key in ("symbol", "open", "high", "low", "close", "volume",
+                    "quote_volume", "change", "change_pct", "trade_count", "timestamp"):
+            assert key in result, f"missing key: {key}"
+
+    async def test_decimal_fields_serialised_as_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """All Decimal fields are returned as strings, not Decimal objects."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_ticker.return_value = self._make_ticker()
+
+        result = await tool_map["get_ticker"](_make_ctx(), "BTCUSDT")
+
+        for key in ("open", "high", "low", "close", "volume", "quote_volume", "change", "change_pct"):
+            assert isinstance(result[key], str), f"expected str for {key}, got {type(result[key])}"
+
+    async def test_trade_count_is_int(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """trade_count is returned as an integer, not a string."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_ticker.return_value = self._make_ticker()
+
+        result = await tool_map["get_ticker"](_make_ctx(), "BTCUSDT")
+
+        assert isinstance(result["trade_count"], int)
+        assert result["trade_count"] == 48200
+
+    async def test_symbol_matches_input(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The returned symbol matches the one supplied to the tool."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_ticker.return_value = self._make_ticker("ETHUSDT")
+
+        result = await tool_map["get_ticker"](_make_ctx(), "ETHUSDT")
+
+        assert result["symbol"] == "ETHUSDT"
+
+    async def test_calls_sdk_with_correct_symbol(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_ticker calls client.get_ticker() with exactly the supplied symbol."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_ticker.return_value = self._make_ticker("SOLUSDT")
+
+        await tool_map["get_ticker"](_make_ctx(), "SOLUSDT")
+
+        mock_client.get_ticker.assert_called_once_with("SOLUSDT")
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_ticker returns {'error': '...'} when the SDK raises AgentExchangeError."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_ticker.side_effect = AgentExchangeError("symbol not found")
+
+        result = await tool_map["get_ticker"](_make_ctx(), "INVALID")
+
+        assert "error" in result
+        assert "symbol not found" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# get_pnl
+# ---------------------------------------------------------------------------
+
+
+class TestGetPnl:
+    """Tests for the get_pnl tool function."""
+
+    def _setup(self, monkeypatch: pytest.MonkeyPatch):
+        config = _make_config(monkeypatch)
+        mock_client = AsyncMock()
+        with patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=mock_client):
+            from agent.tools.sdk_tools import get_sdk_tools
+
+            tools = get_sdk_tools(config)
+        return {t.__name__: t for t in tools}, mock_client
+
+    def _make_pnl(self, period: str = "all") -> MagicMock:
+        """Build a mock PnL object with all required fields."""
+        p = MagicMock()
+        p.period = period
+        p.realized_pnl = Decimal("450.75")
+        p.unrealized_pnl = Decimal("-30.20")
+        p.total_pnl = Decimal("420.55")
+        p.fees_paid = Decimal("15.30")
+        p.net_pnl = Decimal("405.25")
+        p.winning_trades = 18
+        p.losing_trades = 7
+        p.win_rate = Decimal("72.00")
+        return p
+
+    async def test_returns_correct_dict_structure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_pnl returns a dict with all 9 expected keys on success."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_pnl.return_value = self._make_pnl()
+
+        result = await tool_map["get_pnl"](_make_ctx())
+
+        assert isinstance(result, dict)
+        for key in ("period", "realized_pnl", "unrealized_pnl", "total_pnl",
+                    "fees_paid", "net_pnl", "winning_trades", "losing_trades", "win_rate"):
+            assert key in result, f"missing key: {key}"
+
+    async def test_decimal_fields_serialised_as_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """All Decimal monetary and rate fields are returned as strings."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_pnl.return_value = self._make_pnl()
+
+        result = await tool_map["get_pnl"](_make_ctx())
+
+        for key in ("realized_pnl", "unrealized_pnl", "total_pnl", "fees_paid", "net_pnl", "win_rate"):
+            assert isinstance(result[key], str), f"expected str for {key}, got {type(result[key])}"
+
+    async def test_trade_counts_are_ints(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """winning_trades and losing_trades are returned as integers."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_pnl.return_value = self._make_pnl()
+
+        result = await tool_map["get_pnl"](_make_ctx())
+
+        assert isinstance(result["winning_trades"], int)
+        assert isinstance(result["losing_trades"], int)
+        assert result["winning_trades"] == 18
+        assert result["losing_trades"] == 7
+
+    async def test_period_defaults_to_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_pnl calls client.get_pnl(period='all') when period is omitted."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_pnl.return_value = self._make_pnl("all")
+
+        await tool_map["get_pnl"](_make_ctx())
+
+        mock_client.get_pnl.assert_called_once_with(period="all")
+
+    async def test_period_passed_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_pnl forwards the period argument to client.get_pnl()."""
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_pnl.return_value = self._make_pnl("7d")
+
+        result = await tool_map["get_pnl"](_make_ctx(), "7d")
+
+        mock_client.get_pnl.assert_called_once_with(period="7d")
+        assert result["period"] == "7d"
+
+    async def test_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_pnl returns {'error': '...'} when the SDK raises AgentExchangeError."""
+        from agentexchange.exceptions import AgentExchangeError
+
+        tool_map, mock_client = self._setup(monkeypatch)
+        mock_client.get_pnl.side_effect = AgentExchangeError("account not found")
+
+        result = await tool_map["get_pnl"](_make_ctx(), "30d")
+
+        assert "error" in result
+        assert "account not found" in result["error"]

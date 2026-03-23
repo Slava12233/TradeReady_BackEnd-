@@ -42,7 +42,7 @@ Pydantic v2 `BaseSettings`, env prefix `RL_`. Key fields:
 | `n_steps` | `2048` | Steps per environment per update cycle |
 | `total_timesteps` | `500_000` | Total training budget |
 | `n_envs` | `4` | Parallel training environments |
-| `reward_type` | `"sharpe"` | One of: `pnl`, `sharpe`, `sortino`, `drawdown` |
+| `reward_type` | `"sharpe"` | One of: `pnl`, `sharpe`, `sortino`, `drawdown`, `composite` |
 | `env_symbols` | `["BTCUSDT","ETHUSDT","SOLUSDT"]` | Assets for `TradeReady-Portfolio-v0` |
 | `train_start` / `train_end` | `2024-01-01` / `2024-10-01` | ISO-8601 training window |
 | `val_start` / `val_end` | `2024-10-01` / `2024-12-01` | ISO-8601 validation window |
@@ -127,3 +127,4 @@ python -m agent.strategies.rl.deploy \
 ## Recent Changes
 
 - `2026-03-20` — Initial CLAUDE.md created.
+- `2026-03-22` — Added `"composite"` to valid `reward_type` values. Added 5 composite-specific config fields to `RLConfig`: `composite_sortino_weight`, `composite_pnl_weight`, `composite_activity_weight`, `composite_drawdown_weight`, `composite_activity_bonus`. Updated `_build_reward()` in `train.py` and `--reward` CLI choices.

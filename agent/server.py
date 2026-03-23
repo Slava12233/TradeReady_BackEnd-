@@ -41,10 +41,24 @@ from typing import Any
 import structlog
 
 from agent.config import AgentConfig
+from agent.conversation.router import IntentRouter, IntentType
 from agent.conversation.session import AgentSession, SessionError
 from agent.logging import set_agent_id
+from agent.logging_writer import LogBatchWriter
 from agent.memory.redis_cache import RedisMemoryCache
 from agent.memory.store import Memory, MemoryStore
+from agent.server_handlers import (
+    REASONING_LOOP_SENTINEL,
+    handle_analyze,
+    handle_general,
+    handle_journal,
+    handle_learn,
+    handle_permissions,
+    handle_portfolio,
+    handle_status,
+    handle_trade,
+)
+from agent.trading.ws_manager import WSManager
 
 logger = structlog.get_logger(__name__)
 
@@ -114,6 +128,8 @@ class AgentServer:
         self._memory_store: MemoryStore | None = None
         self._redis_cache: RedisMemoryCache | None = None
         self._pydantic_agent: Any = None  # pydantic_ai.Agent
+        self._batch_writer: LogBatchWriter | None = None
+        self._ws_manager: WSManager | None = None
 
         # Lifecycle state
         self._shutdown_event: asyncio.Event = asyncio.Event()
@@ -128,6 +144,45 @@ class AgentServer:
         # context automatically carries the agent_id correlation field via the
         # add_correlation_context processor in agent.logging.
         set_agent_id(agent_id)
+
+        # Build and wire the intent router with concrete handlers.
+        # Each handler is a standalone async function from server_handlers.py
+        # that calls real SDK / tool methods.  The GENERAL handler returns a
+        # sentinel which process_message() replaces with the LLM response.
+        self._router: IntentRouter = IntentRouter()
+        self._router.register(IntentType.TRADE, handle_trade)
+        self._router.register(IntentType.ANALYZE, handle_analyze)
+        self._router.register(IntentType.PORTFOLIO, handle_portfolio)
+        self._router.register(IntentType.STATUS, handle_status)
+        self._router.register(IntentType.JOURNAL, handle_journal)
+        self._router.register(IntentType.LEARN, handle_learn)
+        self._router.register(IntentType.PERMISSIONS, handle_permissions)
+        self._router.register(IntentType.GENERAL, handle_general)
+        self._log.info("agent_server.router_ready", intents=len(IntentType))
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def batch_writer(self) -> LogBatchWriter | None:
+        """The active :class:`~agent.logging_writer.LogBatchWriter`, or ``None``.
+
+        ``None`` before :meth:`_init_dependencies` is called (i.e. before
+        :meth:`start`) or when the DB is unavailable.
+        """
+        return self._batch_writer
+
+    @property
+    def ws_manager(self) -> WSManager | None:
+        """The active :class:`~agent.trading.ws_manager.WSManager`, or ``None``.
+
+        ``None`` before :meth:`start` completes or when WebSocket is disabled
+        (missing ``PLATFORM_API_KEY`` or init failure).  Available after
+        :meth:`_init_ws_manager` succeeds; pass it to a :class:`~agent.trading.loop.TradingLoop`
+        so the loop reads prices from the buffer instead of polling REST.
+        """
+        return self._ws_manager
 
     # ------------------------------------------------------------------
     # Public lifecycle
@@ -160,6 +215,7 @@ class AgentServer:
             await self._init_dependencies()
             await self._init_session()
             await self._init_pydantic_agent()
+            await self._init_ws_manager()
         except Exception as exc:
             self._log.exception("agent_server.init_failed", error=str(exc))
             raise AgentServerError(f"Server initialisation failed: {exc}") from exc
@@ -226,7 +282,30 @@ class AgentServer:
 
         try:
             context = await session.get_context()
-            reply = await self._reasoning_loop(context, message)
+
+            # Route the message through the IntentRouter first.  Handlers for
+            # TRADE, ANALYZE, PORTFOLIO, STATUS, JOURNAL, LEARN, and PERMISSIONS
+            # produce direct replies without invoking the LLM.  The GENERAL
+            # handler returns REASONING_LOOP_SENTINEL to signal that the full
+            # Pydantic AI reasoning loop should handle this message instead.
+            intent, handler = self._router.route(message)
+            self._log.info(
+                "agent.server.routing",
+                intent=intent.value,
+                message_preview=message[:80],
+            )
+            handler_reply = await handler(
+                session,
+                message,
+                server=self,
+                memory_store=self._memory_store,
+            )
+
+            if handler_reply == REASONING_LOOP_SENTINEL:
+                reply = await self._reasoning_loop(context, message)
+            else:
+                reply = handler_reply
+
         except Exception as exc:  # noqa: BLE001 — broad catch is intentional here
             self._log.exception("process_message.reasoning_failed", error=str(exc))
             self._consecutive_errors += 1
@@ -362,12 +441,17 @@ class AgentServer:
                 # (it only uses the repo passed at construction for the first op;
                 # subsequent callers pass fresh repos as needed).
 
+            # Create and start the batch writer for async DB logging
+            self._batch_writer = LogBatchWriter(session_factory=self._session_factory)
+            await self._batch_writer.start()
+
             self._log.info("agent_server.db_connected")
         except Exception as exc:
             # DB is optional for memory — degrade gracefully
             self._log.warning("agent_server.db_unavailable", error=str(exc))
             self._memory_store = None
             self._session_factory = None  # type: ignore[assignment]
+            self._batch_writer = None
 
     async def _init_session(self) -> None:
         """Create or resume the conversation session for this agent.
@@ -435,6 +519,48 @@ class AgentServer:
         except Exception as exc:
             self._log.exception("agent_server.pydantic_agent_init_failed", error=str(exc))
             self._pydantic_agent = None
+
+    async def _init_ws_manager(self) -> None:
+        """Connect the WebSocket manager for real-time price and order streaming.
+
+        Creates a :class:`~agent.trading.ws_manager.WSManager`, subscribes to
+        ticker channels for every configured symbol and to the ``orders``
+        channel, then starts the WS connection as a background asyncio task.
+
+        If ``platform_api_key`` is empty the WebSocket connection is skipped
+        and ``_ws_manager`` remains ``None``; the trading loop will fall back
+        to REST polling.
+
+        Errors during WS setup are logged as warnings, not raised, so the
+        server can start without a live WebSocket.
+        """
+        self._log.info(
+            "agent_server.init_ws_manager",
+            symbols=self._config.symbols,
+        )
+
+        if not self._config.platform_api_key:
+            self._log.warning(
+                "agent_server.ws_manager.skipped",
+                reason="PLATFORM_API_KEY is empty — WebSocket disabled.",
+            )
+            return
+
+        try:
+            ws_manager = WSManager(config=self._config)
+            await ws_manager.connect()
+            self._ws_manager = ws_manager
+            self._log.info(
+                "agent_server.ws_manager.started",
+                symbols=self._config.symbols,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._log.warning(
+                "agent_server.ws_manager.init_failed",
+                error=str(exc),
+                hint="Continuing without WebSocket — trading loop will use REST polling.",
+            )
+            self._ws_manager = None
 
     # ------------------------------------------------------------------
     # Core reasoning loop
@@ -817,6 +943,13 @@ class AgentServer:
         self._log.info("agent_server.shutdown_start")
         self._is_running = False
 
+        # Drain and stop the batch writer before closing the DB session factory
+        if self._batch_writer is not None:
+            try:
+                await self._batch_writer.stop()
+            except Exception as exc:  # noqa: BLE001
+                self._log.warning("agent_server.shutdown_writer_stop_failed", error=str(exc))
+
         # Persist current working state
         try:
             await self._persist_state()
@@ -829,6 +962,15 @@ class AgentServer:
                 await self._redis_cache.clear_working(self._agent_id)
             except Exception as exc:  # noqa: BLE001
                 self._log.warning("agent_server.shutdown_clear_working_failed", error=str(exc))
+
+        # Disconnect the WebSocket manager before closing the session so that
+        # any in-flight fill notifications are drained cleanly.
+        if self._ws_manager is not None:
+            try:
+                await self._ws_manager.disconnect()
+            except Exception as exc:  # noqa: BLE001
+                self._log.warning("agent_server.shutdown_ws_disconnect_failed", error=str(exc))
+            self._ws_manager = None
 
         # End the conversation session
         if self._session is not None and self._session.is_active:

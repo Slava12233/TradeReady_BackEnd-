@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-<!-- last-updated: 2026-03-20 (Docker agent profile, [ml]/[all] extras, checksum security, 901 tests) -->
+<!-- last-updated: 2026-03-22 (all 37 trading agent master plan tasks complete, battle frontend, 2200+ agent tests) -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -60,7 +60,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `Frontend/src/components/alerts/CLAUDE.md` | Price alert management — create dialog, alert sections |
 | `Frontend/src/components/analytics/CLAUDE.md` | Analytics charts — equity, drawdown, PnL, heatmaps |
 | `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
-| `Frontend/src/components/battles/CLAUDE.md` | Battle UI components (planned, not yet built) |
+| `Frontend/src/components/battles/CLAUDE.md` | Battle UI — 9 components, 3 routes, 2 hooks, 14 API functions, 15 types (complete as of 2026-03-22) |
 | `Frontend/src/components/coin/CLAUDE.md` | Coin detail — TradingView chart, order book, stats |
 | `Frontend/src/components/docs/CLAUDE.md` | Documentation components — docs viewer, search |
 | `Frontend/src/components/dashboard/CLAUDE.md` | Dashboard — portfolio, equity chart, positions, orders |
@@ -88,25 +88,25 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 |------|-------------|
 | `alembic/CLAUDE.md` | Migration workflow, async env, naming convention, inventory |
 | `sdk/CLAUDE.md` | Python SDK — sync/async clients, WebSocket client |
-| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows, 4 tool integrations; sub-files in `agent/models/`, `agent/tools/`, `agent/prompts/`, `agent/workflows/`, `agent/tests/`, `agent/strategies/`, `agent/conversation/`, `agent/memory/`, `agent/permissions/`, `agent/trading/` |
+| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows, 4 tool integrations, 2200+ tests; sub-files in `agent/models/`, `agent/tools/`, `agent/prompts/`, `agent/workflows/`, `agent/tests/`, `agent/strategies/`, `agent/conversation/`, `agent/memory/`, `agent/permissions/`, `agent/trading/` |
 | `agent/conversation/CLAUDE.md` | Session management, message history, LLM context assembly, intent routing — `AgentSession`, `ConversationHistory`, `ContextBuilder`, `IntentRouter` |
 | `agent/memory/CLAUDE.md` | Memory store (abstract + Postgres + Redis), scored retrieval — `MemoryStore`, `PostgresMemoryStore`, `RedisMemoryCache`, `MemoryRetriever` |
 | `agent/permissions/CLAUDE.md` | Roles, capabilities, budget limits, enforcement — `AgentRole`, `CapabilityManager`, `BudgetManager`, `PermissionEnforcer` |
-| `agent/trading/CLAUDE.md` | Trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing — `TradingLoop`, `TradeExecutor`, `TradingJournal`, `ABTestRunner` |
+| `agent/trading/CLAUDE.md` | Trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing, pair selector, WS manager — `TradingLoop`, `TradeExecutor`, `TradingJournal`, `ABTestRunner`, `PairSelector`, `WSManager` |
 | `agent/strategies/CLAUDE.md` | 5-strategy agent trading system — PPO RL, genetic algorithm, market regime detection, risk overlay, ensemble combiner; file inventory, CLI commands, dependencies |
 | `agent/strategies/rl/CLAUDE.md` | PPO RL strategy — `RLConfig`, `train()`, `ModelEvaluator`, `PPODeployBridge`; CLI commands, SB3 gotchas |
 | `agent/strategies/evolutionary/CLAUDE.md` | Genetic algorithm strategy — `StrategyGenome` (12 params), `Population`, `BattleRunner`; GA operators, fitness formula, CLI |
 | `agent/strategies/regime/CLAUDE.md` | Market regime detection — `RegimeClassifier` (XGBoost/RF), `RegimeSwitcher` (cooldown+confidence), 4 pre-built strategy dicts |
-| `agent/strategies/risk/CLAUDE.md` | Risk management overlay — `RiskAgent`, `VetoPipeline` (6 gates), `DynamicSizer`, `RiskMiddleware` async entry point |
-| `agent/strategies/ensemble/CLAUDE.md` | Ensemble combiner — `MetaLearner` (weighted voting), `EnsembleRunner` (6-stage pipeline), weight optimiser CLI |
+| `agent/strategies/risk/CLAUDE.md` | Risk management overlay — `RiskAgent` (drawdown profiles/tiers), `VetoPipeline` (6 gates + correlation), `DynamicSizer` (Kelly/Hybrid/standard), `RiskMiddleware`, `RecoveryManager` (3-state FSM) |
+| `agent/strategies/ensemble/CLAUDE.md` | Ensemble combiner — `MetaLearner` (weighted voting + dynamic weights), `EnsembleRunner` (7-stage pipeline), `StrategyCircuitBreaker` (Redis-backed, 3 triggers), `AttributionLoader`, weight optimiser CLI |
 | `scripts/CLAUDE.md` | Available scripts, when to run each, dependencies |
 | `docs/CLAUDE.md` | Documentation inventory, audience for each doc |
 | `development/CLAUDE.md` | Development planning docs, Obsidian vault structure, progress tracking, archived phase plans |
 | `development/code-reviews/CLAUDE.md` | Code review reports from code-reviewer agent |
-| `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 4 rewards, 3 wrappers) for agent training |
+| `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 6 rewards including CompositeReward, 3 wrappers) for agent training |
 | `monitoring/CLAUDE.md` | 6 Grafana dashboards + 11 Prometheus alert rules for agent ecosystem observability |
 | `.claude/agents/CLAUDE.md` | 16 sub-agent definitions — inventory, config fields, memory, pipelines |
-| `.claude/skills/CLAUDE.md` | 6 slash-command skill workflows — inventory, patterns, gotchas |
+| `.claude/skills/CLAUDE.md` | 7 slash-command skill workflows — inventory, patterns, gotchas |
 | `.claude/agent-memory/CLAUDE.md` | Agent memory storage — 16 per-agent MEMORY.md directories, file format |
 
 ---
@@ -278,6 +278,7 @@ Reusable slash-command workflows invoked with `/skill-name`:
 | `sync-context` | `/sync-context` | Scan all CLAUDE.md files, fix stale inventories, create missing ones, update development/context.md |
 | `plan-to-tasks` | `/plan-to-tasks <file>` | Read a plan file, discover agents, match tasks to agents, create task files in `development/tasks/` |
 | `analyze-agents` | `/analyze-agents` | Analyze agent activity logs and memory files to generate improvement report in `development/agent-analysis/` |
+| `c-level-report` | `/c-level-report` | C-level executive report: gathers project metrics A-Z, generates rich report with KPIs, risk, roadmap. Saves to `development/C-level_reports/` |
 
 ## Configuration (`.claude/settings.json`)
 

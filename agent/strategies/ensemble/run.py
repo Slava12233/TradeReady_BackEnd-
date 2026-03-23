@@ -55,8 +55,9 @@ import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.logging_writer import LogBatchWriter
+from agent.strategies.ensemble.circuit_breaker import StrategyCircuitBreaker
 from agent.strategies.ensemble.config import EnsembleConfig
-from agent.strategies.ensemble.meta_learner import MetaLearner
+from agent.strategies.ensemble.meta_learner import MetaLearner, TradeOutcome
 from agent.strategies.ensemble.signals import (
     ConsensusSignal,
     SignalSource,
@@ -206,6 +207,19 @@ class EnsembleReport(BaseModel):
         overall_agreement_rate: Mean agreement rate across all steps and symbols.
         source_stats: Per-source contribution statistics.
         config_summary: Snapshot of active config flags for this session.
+        sharpe_ratio: Annualised Sharpe ratio from the platform backtest results.
+            ``None`` for live mode or when the platform did not return metrics.
+        win_rate: Fraction of profitable trades (0.0–1.0) from backtest results.
+            ``None`` when unavailable.
+        roi_pct: Return-on-investment as a percentage from backtest results.
+            ``None`` when unavailable.
+        max_drawdown_pct: Maximum portfolio drawdown as a percentage (positive =
+            loss) from backtest results.  ``None`` when unavailable.
+        total_trades: Total trades recorded in the platform backtest session.
+        final_equity: Final portfolio equity in USDT.  ``None`` when unavailable.
+        platform_metrics_available: True when the platform returned valid backtest
+            metrics; False when the results endpoint was unreachable or returned
+            an error.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -220,6 +234,58 @@ class EnsembleReport(BaseModel):
     overall_agreement_rate: float = Field(ge=0.0, le=1.0)
     source_stats: list[SourceStats]
     config_summary: dict[str, Any]
+
+    # ── Financial metrics from backtest results endpoint ──────────────────────
+    sharpe_ratio: float | None = None
+    win_rate: float | None = None
+    roi_pct: float | None = None
+    max_drawdown_pct: float | None = None
+    total_trades: int = 0
+    final_equity: float | None = None
+    platform_metrics_available: bool = False
+
+
+class BacktestValidationReport(BaseModel):
+    """Full pipeline backtest validation report.
+
+    Produced by running the complete ensemble system (RL + EVOLVED + REGIME
+    signals → MetaLearner → RiskMiddleware) over a historical backtest session
+    and collecting both pipeline-level and financial performance metrics.
+
+    This is the canonical output artifact for acceptance-testing the ensemble
+    pipeline end-to-end.  It is written to ``agent/reports/`` with a
+    ``validation-report-backtest-{timestamp}.json`` filename.
+
+    Args:
+        report_id: Unique identifier for this validation run (timestamp-based).
+        generated_at: ISO-8601 UTC timestamp when the report was produced.
+        base_url: Platform REST API base URL used.
+        symbols: Trading pairs included in the backtest.
+        backtest_days: Length of the backtest window in calendar days.
+        backtest_start: ISO-8601 UTC start of the backtest period.
+        backtest_end: ISO-8601 UTC end of the backtest period.
+        ensemble_report: Full pipeline report with per-step and per-source stats.
+        validation_passed: True if all acceptance criteria are met (Sharpe > -1,
+            at least 1 trade executed, all 3 sources contributed signals).
+        acceptance_criteria: Mapping of criterion name → (passed: bool).
+        active_sources: List of signal sources that contributed non-HOLD signals.
+        errors: Non-fatal errors accumulated during the run.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    report_id: str
+    generated_at: str
+    base_url: str
+    symbols: list[str]
+    backtest_days: int
+    backtest_start: str
+    backtest_end: str
+    ensemble_report: EnsembleReport
+    validation_passed: bool
+    acceptance_criteria: dict[str, bool]
+    active_sources: list[str]
+    errors: list[str]
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -356,6 +422,11 @@ class EnsembleRunner:
         agent_id: UUID string of the owning agent.  Required when
             *batch_writer* is set so that signal rows carry a valid
             ``agent_id`` FK.  Ignored when *batch_writer* is ``None``.
+        circuit_breaker: Optional :class:`~agent.strategies.ensemble.circuit_breaker.StrategyCircuitBreaker`
+            instance.  When provided, paused strategies are excluded from signal
+            generation each step and all position sizes are scaled by the current
+            ensemble accuracy multiplier.  Pass ``None`` (the default) to disable
+            circuit-breaker logic without affecting any other behaviour.
 
     Example::
 
@@ -375,12 +446,14 @@ class EnsembleRunner:
         rest_client: Any,
         batch_writer: LogBatchWriter | None = None,
         agent_id: str | None = None,
+        circuit_breaker: StrategyCircuitBreaker | None = None,
     ) -> None:
         self._config = config
         self._sdk = sdk_client
         self._rest = rest_client
         self._batch_writer = batch_writer
         self._agent_id_str = agent_id or ""
+        self._circuit_breaker = circuit_breaker
 
         # Parsed weights keyed by SignalSource enum for MetaLearner.
         self._signal_source_weights: dict[SignalSource, float] = {}
@@ -399,6 +472,14 @@ class EnsembleRunner:
 
         # Per-symbol current portfolio weights for RL signal conversion.
         self._current_weights: dict[str, dict[str, float]] = {}
+
+        # Pending trade outcomes collected during a step for weight update.
+        # Outcomes arrive via record_trade_outcome() from external callers
+        # (e.g. after position close) or are synthesised from step PnL.
+        self._pending_outcomes: list[TradeOutcome] = []
+
+        # Most-recently detected regime (updated when regime signal is obtained).
+        self._last_regime: Any = None
 
     # ── Initialisation ────────────────────────────────────────────────────────
 
@@ -457,6 +538,72 @@ class EnsembleRunner:
             self._risk_middleware = self._build_risk_middleware()
 
         log.info("agent.strategy.ensemble.runner.initialized")
+
+    async def load_attribution(
+        self,
+        agent_id: str,
+        session_factory: Any,  # noqa: ANN401
+        *,
+        window_days: int = 7,
+        min_weight: float = 0.05,
+    ) -> Any:  # noqa: ANN401 — returns AttributionResult | None; avoids circular import
+        """Load 7-day strategy attribution from the DB and adjust MetaLearner weights.
+
+        Must be called **after** :meth:`initialize` so that the MetaLearner has
+        been constructed.  Reads ``agent_performance`` rows with
+        ``period="attribution"`` written by the ``agent_strategy_attribution``
+        Celery task, feeds the per-strategy 7-day PnL into
+        :meth:`~MetaLearner.apply_attribution_weights`, and auto-pauses
+        strategies with negative 7-day PnL via the circuit breaker.
+
+        This method is a no-op (returns ``None``) if :meth:`initialize` has
+        not been called yet.
+
+        Args:
+            agent_id: UUID string of the owning agent.
+            session_factory: An ``async_sessionmaker`` (or any callable
+                returning an async context manager that yields an
+                ``AsyncSession``).  Typed as ``Any`` to avoid a hard
+                dependency on SQLAlchemy at module level.
+            window_days: Trailing days to aggregate attribution rows.
+                Default 7.
+            min_weight: Floor weight forwarded to
+                :meth:`~MetaLearner.apply_attribution_weights`.  Default 0.05.
+
+        Returns:
+            :class:`~agent.strategies.ensemble.attribution.AttributionResult`
+            on success, or ``None`` if the MetaLearner is not yet initialised.
+            Errors are captured in ``result.errors``; this method never raises.
+        """
+        if self._meta_learner is None:
+            log.warning(
+                "agent.strategy.ensemble.runner.load_attribution.skipped",
+                reason="meta_learner_not_initialised",
+                agent_id=agent_id,
+            )
+            return None
+
+        from agent.strategies.ensemble.attribution import AttributionLoader  # noqa: PLC0415
+
+        loader = AttributionLoader(
+            session_factory=session_factory,
+            meta_learner=self._meta_learner,
+            circuit_breaker=self._circuit_breaker,
+        )
+        result = await loader.load_and_apply(
+            agent_id=agent_id,
+            window_days=window_days,
+            min_weight=min_weight,
+        )
+
+        if result.errors:
+            log.warning(
+                "agent.strategy.ensemble.runner.load_attribution.errors",
+                agent_id=agent_id,
+                errors=result.errors,
+            )
+
+        return result
 
     async def _load_rl_model(self) -> Any:
         """Load the SB3 PPO model from disk.
@@ -645,6 +792,7 @@ class EnsembleRunner:
             DynamicSizer,
             RiskAgent,
             RiskConfig,
+            RiskMiddleware,
             SizerConfig,
             VetoPipeline,
         )
@@ -867,6 +1015,10 @@ class EnsembleRunner:
                 for sym in self._config.symbols
             ]
 
+        # Persist the most recently detected regime so weight updates can use it
+        # even when called outside of a step (e.g. on position close).
+        self._last_regime = regime
+
         signals: list[WeightedSignal] = []
         for sym in self._config.symbols:
             signals.append(
@@ -877,6 +1029,60 @@ class EnsembleRunner:
                 )
             )
         return signals
+
+    # ── Dynamic weight update helpers ─────────────────────────────────────────
+
+    def record_trade_outcome(
+        self,
+        source: SignalSource,
+        pnl_pct: float,
+        symbol: str = "UNKNOWN",
+        regime: Any = None,
+    ) -> None:
+        """Record the realised PnL from a completed trade for weight adaptation.
+
+        Outcomes are buffered internally and applied to the MetaLearner at the
+        end of the next :meth:`step` call via
+        :meth:`~agent.strategies.ensemble.meta_learner.MetaLearner.update_weights`.
+
+        Callers should invoke this method whenever a position that originated
+        from a specific source's signal is closed.  When ``regime`` is ``None``
+        the most recently detected regime (``self._last_regime``) is used.
+
+        Args:
+            source: The :class:`~agent.strategies.ensemble.signals.SignalSource`
+                whose signal opened the now-closed position.
+            pnl_pct: Realised PnL as a fraction of position value
+                (e.g. ``0.02`` for +2 %, ``-0.01`` for −1 %).
+            symbol: Trading pair the closed position was on.
+            regime: Optional regime at close time.  Defaults to the last known
+                regime when ``None``.
+        """
+        self._pending_outcomes.append(
+            TradeOutcome(
+                source=source,
+                pnl_pct=pnl_pct,
+                symbol=symbol,
+                regime=regime if regime is not None else self._last_regime,
+            )
+        )
+        log.debug(
+            "agent.strategy.ensemble.runner.outcome_recorded",
+            source=source.value,
+            pnl_pct=round(pnl_pct, 6),
+            symbol=symbol,
+        )
+
+    def _drain_pending_outcomes(self) -> list[TradeOutcome]:
+        """Drain and return all pending outcomes, clearing the buffer.
+
+        Returns:
+            List of :class:`~agent.strategies.ensemble.meta_learner.TradeOutcome`
+            records accumulated since the last drain.
+        """
+        outcomes = list(self._pending_outcomes)
+        self._pending_outcomes.clear()
+        return outcomes
 
     # ── Core step logic ───────────────────────────────────────────────────────
 
@@ -917,50 +1123,78 @@ class EnsembleRunner:
             symbols=self._config.symbols,
         )
 
+        # ── 0. Resolve paused sources via circuit breaker ──────────────────
+        # Determine which sources are currently paused.  Paused sources are
+        # replaced with offline HOLD signals so the MetaLearner can still
+        # produce a consensus from the remaining active sources.
+        _cb = self._circuit_breaker
+        _cb_agent_id = self._agent_id_str
+
+        async def _source_paused(source_name: str) -> bool:
+            if _cb is None or not _cb_agent_id:
+                return False
+            return await _cb.is_paused(source_name, _cb_agent_id)
+
+        rl_paused = await _source_paused("rl")
+        evolved_paused = await _source_paused("evolved")
+        regime_paused = await _source_paused("regime")
+
+        if rl_paused or evolved_paused or regime_paused:
+            log.info(
+                "agent.strategy.ensemble.runner.step.circuit_breaker",
+                step=step_num,
+                rl_paused=rl_paused,
+                evolved_paused=evolved_paused,
+                regime_paused=regime_paused,
+            )
+
         # ── 1–3. Collect signals from all enabled sources ──────────────────
         all_signals: list[WeightedSignal] = []
 
-        if self._config.enable_rl_signal:
+        if self._config.enable_rl_signal and not rl_paused:
             rl_signals = await self._get_rl_signals(candles_by_symbol)
             all_signals.extend(rl_signals)
         else:
+            reason = "circuit_breaker_paused" if rl_paused else "source_disabled"
             all_signals.extend(
                 WeightedSignal(
                     source=SignalSource.RL,
                     symbol=sym,
                     action=TradeAction.HOLD,
                     confidence=0.0,
-                    metadata={"reason": "source_disabled"},
+                    metadata={"reason": reason},
                 )
                 for sym in self._config.symbols
             )
 
-        if self._config.enable_evolved_signal:
+        if self._config.enable_evolved_signal and not evolved_paused:
             evolved_signals = self._get_evolved_signals(candles_by_symbol)
             all_signals.extend(evolved_signals)
         else:
+            reason = "circuit_breaker_paused" if evolved_paused else "source_disabled"
             all_signals.extend(
                 WeightedSignal(
                     source=SignalSource.EVOLVED,
                     symbol=sym,
                     action=TradeAction.HOLD,
                     confidence=0.0,
-                    metadata={"reason": "source_disabled"},
+                    metadata={"reason": reason},
                 )
                 for sym in self._config.symbols
             )
 
-        if self._config.enable_regime_signal:
+        if self._config.enable_regime_signal and not regime_paused:
             regime_signals = self._get_regime_signals(candles_by_symbol)
             all_signals.extend(regime_signals)
         else:
+            reason = "circuit_breaker_paused" if regime_paused else "source_disabled"
             all_signals.extend(
                 WeightedSignal(
                     source=SignalSource.REGIME,
                     symbol=sym,
                     action=TradeAction.HOLD,
                     confidence=0.0,
-                    metadata={"reason": "source_disabled"},
+                    metadata={"reason": reason},
                 )
                 for sym in self._config.symbols
             )
@@ -993,6 +1227,26 @@ class EnsembleRunner:
 
         # ── 4. Combine signals via MetaLearner ─────────────────────────────
         consensus_signals: list[ConsensusSignal] = self._meta_learner.combine_all(all_signals)
+
+        # ── 4b. Resolve ensemble accuracy size multiplier ──────────────────
+        # When the ensemble's recent accuracy is poor, all position sizes are
+        # reduced to LOW_ACCURACY_SIZE_MULTIPLIER (0.25) for this step.
+        _cb_size_multiplier: float = 1.0
+        if _cb is not None and _cb_agent_id:
+            try:
+                _cb_size_multiplier = await _cb.size_multiplier(_cb_agent_id)
+            except Exception as _cb_exc:  # noqa: BLE001
+                log.warning(
+                    "agent.strategy.ensemble.runner.step.cb_size_multiplier_error",
+                    error=str(_cb_exc),
+                )
+
+        if _cb_size_multiplier < 1.0:
+            log.info(
+                "agent.strategy.ensemble.runner.step.size_reduced",
+                step=step_num,
+                multiplier=_cb_size_multiplier,
+            )
 
         # ── 5–6. Risk overlay and execution ───────────────────────────────
         symbol_results: list[SymbolStepResult] = []
@@ -1045,6 +1299,10 @@ class EnsembleRunner:
                     risk_action = "APPROVED"
                     final_size_pct = self._config.risk_base_size_pct
 
+                # Apply circuit-breaker size multiplier (0.25 when accuracy poor).
+                if _cb_size_multiplier < 1.0 and final_size_pct > 0.0:
+                    final_size_pct = min(final_size_pct * _cb_size_multiplier, 1.0)
+
             symbol_results.append(
                 SymbolStepResult(
                     symbol=sym,
@@ -1074,6 +1332,24 @@ class EnsembleRunner:
             orders_vetoed=total_vetoed,
         )
         self._step_history.append(result)
+
+        # ── 7. Update ensemble weights from pending trade outcomes ─────────
+        # Drain any outcomes recorded externally (e.g. via record_trade_outcome)
+        # and pass them to the MetaLearner for per-source Sharpe reweighting.
+        # This is a lightweight CPU-only operation and never raises.
+        pending = self._drain_pending_outcomes()
+        if pending and self._meta_learner is not None:
+            try:
+                self._meta_learner.update_weights(
+                    recent_outcomes=pending,
+                    current_regime=self._last_regime,
+                )
+            except Exception as _wt_exc:  # noqa: BLE001
+                log.warning(
+                    "agent.strategy.ensemble.runner.step.weight_update_failed",
+                    error=str(_wt_exc),
+                    outcomes=len(pending),
+                )
 
         log.info(
             "agent.strategy.ensemble.runner.step.complete",
@@ -1328,11 +1604,94 @@ class EnsembleRunner:
             steps=self._step_counter,
         )
 
+        # ── Fetch platform backtest results (financial metrics) ─────────────
+        platform_metrics = await self._fetch_backtest_metrics(session_id)
+
         return self._build_report(
             session_id=session_id,
             start_time=session_start_ts,
             end_time=datetime.now(UTC).isoformat(),
+            platform_metrics=platform_metrics,
         )
+
+    async def _fetch_backtest_metrics(
+        self,
+        session_id: str,
+    ) -> dict[str, Any]:
+        """Fetch financial metrics from the platform backtest results endpoint.
+
+        Calls ``GET /api/v1/backtest/{session_id}/results`` and extracts the
+        performance fields (Sharpe, win rate, ROI, max drawdown, total trades,
+        final equity).  Returns an empty dict on any error so the caller can
+        still produce a valid :class:`EnsembleReport`.
+
+        Args:
+            session_id: Active or completed backtest session UUID.
+
+        Returns:
+            Dict with keys ``sharpe_ratio``, ``win_rate``, ``roi_pct``,
+            ``max_drawdown_pct``, ``total_trades``, ``final_equity``, and
+            ``platform_metrics_available``.  All financial values are ``None``
+            when the endpoint is unreachable or the session has no trades.
+        """
+        if self._rest is None or not session_id or session_id in ("error", "live", "unknown"):
+            return {"platform_metrics_available": False}
+
+        try:
+            resp = await self._rest.get(f"/api/v1/backtest/{session_id}/results")
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            log.warning(
+                "agent.strategy.ensemble.runner.backtest.results_fetch_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+            return {"platform_metrics_available": False}
+
+        # The platform returns results under a top-level "metrics" key.
+        # Gracefully handle both flat and nested response shapes.
+        metrics: dict[str, Any] = data.get("metrics") or data
+
+        def _safe_float(key: str) -> float | None:
+            """Extract a float from metrics; return None on missing or invalid."""
+            val = metrics.get(key)
+            if val is None:
+                return None
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+
+        def _safe_int(key: str) -> int:
+            val = metrics.get(key)
+            if val is None:
+                return 0
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return 0
+
+        result = {
+            "sharpe_ratio": _safe_float("sharpe_ratio"),
+            "win_rate": _safe_float("win_rate"),
+            "roi_pct": _safe_float("roi_pct"),
+            "max_drawdown_pct": _safe_float("max_drawdown_pct"),
+            "total_trades": _safe_int("total_trades"),
+            "final_equity": _safe_float("final_equity"),
+            "platform_metrics_available": True,
+        }
+
+        log.info(
+            "agent.strategy.ensemble.runner.backtest.metrics_fetched",
+            session_id=session_id,
+            sharpe=result["sharpe_ratio"],
+            win_rate=result["win_rate"],
+            roi_pct=result["roi_pct"],
+            max_drawdown_pct=result["max_drawdown_pct"],
+            total_trades=result["total_trades"],
+        )
+        return result
 
     async def _place_backtest_orders(
         self,
@@ -1403,6 +1762,7 @@ class EnsembleRunner:
         session_id: str,
         start_time: str,
         end_time: str,
+        platform_metrics: dict[str, Any] | None = None,
     ) -> EnsembleReport:
         """Internal: assemble an EnsembleReport from step history.
 
@@ -1410,6 +1770,9 @@ class EnsembleRunner:
             session_id: Backtest session UUID or 'live' / 'error'.
             start_time: ISO-8601 session start timestamp.
             end_time: ISO-8601 session end timestamp.
+            platform_metrics: Optional dict from :meth:`_fetch_backtest_metrics`
+                containing financial metrics (Sharpe, win rate, etc.).  When
+                ``None`` or empty, all financial fields are left as ``None``.
 
         Returns:
             :class:`EnsembleReport`.
@@ -1488,6 +1851,7 @@ class EnsembleRunner:
             "weights": self._config.weights,
         }
 
+        pm = platform_metrics or {}
         return EnsembleReport(
             session_id=session_id,
             mode=self._config.mode,
@@ -1499,7 +1863,90 @@ class EnsembleRunner:
             overall_agreement_rate=round(overall_agreement, 4),
             source_stats=list(source_stats_map.values()),
             config_summary=config_summary,
+            sharpe_ratio=pm.get("sharpe_ratio"),
+            win_rate=pm.get("win_rate"),
+            roi_pct=pm.get("roi_pct"),
+            max_drawdown_pct=pm.get("max_drawdown_pct"),
+            total_trades=pm.get("total_trades", 0),
+            final_equity=pm.get("final_equity"),
+            platform_metrics_available=pm.get("platform_metrics_available", False),
         )
+
+
+# ── BacktestValidationReport builder ──────────────────────────────────────────
+
+
+def build_validation_report(
+    report: EnsembleReport,
+    base_url: str,
+    symbols: list[str],
+    backtest_days: int,
+    backtest_start: str,
+    backtest_end: str,
+    errors: list[str] | None = None,
+) -> BacktestValidationReport:
+    """Build a BacktestValidationReport from a completed EnsembleReport.
+
+    Evaluates a set of acceptance criteria against the report metrics and
+    active source contributions:
+
+    - metrics_available: Platform returned financial metrics.
+    - min_one_trade: At least one order was placed during the backtest.
+    - sharpe_above_floor: Sharpe ratio >= -1 (or not available, counted as
+      pass since the floor only fails when we have a concrete bad number).
+    - all_sources_contributed: All three signal sources (RL, EVOLVED, REGIME)
+      emitted at least one non-HOLD signal.
+    - no_fatal_errors: No error string was accumulated.
+
+    validation_passed is True only when all criteria pass.
+
+    Args:
+        report: Completed EnsembleReport from EnsembleRunner.run_backtest.
+        base_url: Platform REST API base URL (recorded for traceability).
+        symbols: Trading pairs included in the backtest.
+        backtest_days: Length of the backtest window in calendar days.
+        backtest_start: ISO-8601 UTC start of the backtest period.
+        backtest_end: ISO-8601 UTC end of the backtest period.
+        errors: Non-fatal error messages to include in the report.
+
+    Returns:
+        BacktestValidationReport with all criteria evaluated.
+    """
+    _errors = errors or []
+
+    # Determine which sources actually contributed non-HOLD signals.
+    active_sources: list[str] = [
+        s.source for s in report.source_stats if s.buy_signals > 0 or s.sell_signals > 0
+    ]
+
+    # Evaluate acceptance criteria.
+    criteria: dict[str, bool] = {
+        "metrics_available": report.platform_metrics_available,
+        "min_one_trade": report.total_orders_placed >= 1,
+        # Sharpe floor passes when either no metric or metric >= -1 (avoid
+        # penalising backtest mode that returned no trades yet).
+        "sharpe_above_floor": (report.sharpe_ratio is None or report.sharpe_ratio >= -1.0),
+        "all_sources_contributed": len(active_sources) == len(list(SignalSource)),
+        "no_fatal_errors": len(_errors) == 0,
+    }
+
+    validation_passed = all(criteria.values())
+
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    return BacktestValidationReport(
+        report_id=f"bt-validation-{ts}",
+        generated_at=datetime.now(UTC).isoformat(),
+        base_url=base_url,
+        symbols=symbols,
+        backtest_days=backtest_days,
+        backtest_start=backtest_start,
+        backtest_end=backtest_end,
+        ensemble_report=report,
+        validation_passed=validation_passed,
+        acceptance_criteria=criteria,
+        active_sources=active_sources,
+        errors=_errors,
+    )
 
 
 # ── Backtest date-range resolution ────────────────────────────────────────────
@@ -1596,6 +2043,8 @@ async def _cli_main(
         enable_risk_overlay=not no_risk,
     )
 
+    validation_report: BacktestValidationReport | None = None
+
     if mode == "backtest":
         start, end = await _resolve_backtest_dates(base_url, api_key, days)
         log.info("agent.strategy.ensemble.run.cli.backtest_period", start=start, end=end)
@@ -1612,6 +2061,17 @@ async def _cli_main(
             )
             await runner.initialize()
             report = await runner.run_backtest(start=start, end=end)
+
+        # Build a BacktestValidationReport from the completed EnsembleReport.
+        # This is the canonical acceptance-test artifact for the full pipeline.
+        validation_report = build_validation_report(
+            report=report,
+            base_url=base_url,
+            symbols=symbols,
+            backtest_days=days,
+            backtest_start=start,
+            backtest_end=end,
+        )
     else:
         # Live mode: would require an SDK client.  For CLI we skip risk overlay.
         config = config.model_copy(update={"enable_risk_overlay": False})
@@ -1628,6 +2088,22 @@ async def _cli_main(
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"ensemble-report-{mode}-{ts}.json"
     output_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+    # In backtest mode also save the richer validation report.
+    if validation_report is not None:
+        val_path = output_dir / f"validation-report-backtest-{ts}.json"
+        val_path.write_text(validation_report.model_dump_json(indent=2), encoding="utf-8")
+        log.info(
+            "agent.strategy.ensemble.run.validation_report",
+            validation_passed=validation_report.validation_passed,
+            acceptance_criteria=validation_report.acceptance_criteria,
+            active_sources=validation_report.active_sources,
+            sharpe_ratio=report.sharpe_ratio,
+            win_rate=report.win_rate,
+            roi_pct=report.roi_pct,
+            max_drawdown_pct=report.max_drawdown_pct,
+            validation_path=str(val_path),
+        )
 
     log.info(
         "agent.strategy.ensemble.run.report",

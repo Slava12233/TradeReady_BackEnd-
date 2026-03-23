@@ -28,6 +28,40 @@ from agent.logging_middleware import log_api_call
 logger = structlog.get_logger(__name__)
 
 
+def _serialize_order(order: Any) -> dict[str, Any]:  # noqa: ANN401
+    """Serialize an SDK ``Order`` dataclass to a plain JSON-compatible dict.
+
+    All ``Decimal`` fields are converted to strings.  ``None`` fields are
+    preserved as ``None`` so the LLM can distinguish missing from zero.
+    Datetime fields are converted to ISO-8601 strings.
+
+    Args:
+        order: An :class:`~agentexchange.models.Order` instance.
+
+    Returns:
+        Dict with keys: ``order_id``, ``status``, ``symbol``, ``side``,
+        ``type``, ``quantity``, ``price``, ``executed_price``,
+        ``executed_quantity``, ``fee``, ``total_cost``, ``locked_amount``,
+        ``created_at``, ``filled_at``.
+    """
+    return {
+        "order_id": str(order.order_id),
+        "status": order.status,
+        "symbol": order.symbol,
+        "side": order.side,
+        "type": order.type,
+        "quantity": str(order.quantity) if order.quantity is not None else None,
+        "price": str(order.price) if order.price is not None else None,
+        "executed_price": str(order.executed_price) if order.executed_price is not None else None,
+        "executed_quantity": str(order.executed_quantity) if order.executed_quantity is not None else None,
+        "fee": str(order.fee) if order.fee is not None else None,
+        "total_cost": str(order.total_cost) if order.total_cost is not None else None,
+        "locked_amount": str(order.locked_amount) if order.locked_amount is not None else None,
+        "created_at": order.created_at.isoformat() if order.created_at is not None else None,
+        "filled_at": order.filled_at.isoformat() if order.filled_at is not None else None,
+    }
+
+
 def get_sdk_tools(config: AgentConfig) -> list[Any]:
     """Build and return SDK-based tool functions for a Pydantic AI agent.
 
@@ -348,18 +382,7 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             ) as log_ctx:
                 order = await client.place_market_order(symbol, side, quantity)
                 log_ctx["response_status"] = 200
-                return {
-                    "order_id": str(order.order_id),
-                    "status": order.status,
-                    "symbol": order.symbol,
-                    "side": order.side,
-                    "type": order.type,
-                    "executed_price": str(order.executed_price) if order.executed_price is not None else None,
-                    "executed_quantity": str(order.executed_quantity) if order.executed_quantity is not None else None,
-                    "fee": str(order.fee) if order.fee is not None else None,
-                    "total_cost": str(order.total_cost) if order.total_cost is not None else None,
-                    "filled_at": order.filled_at.isoformat() if order.filled_at is not None else None,
-                }
+                return _serialize_order(order)
         except AgentExchangeError as exc:
             logger.warning(
                 "agent.api.place_market_order.failed",
@@ -370,12 +393,345 @@ def get_sdk_tools(config: AgentConfig) -> list[Any]:
             )
             return {"error": str(exc)}
 
+    async def place_limit_order(
+        ctx: Any,  # noqa: ANN401
+        symbol: str,
+        side: str,
+        quantity: str,
+        price: str,
+    ) -> dict[str, Any]:
+        """Place a limit order that rests in the book until the target price is reached.
+
+        Submits a buy or sell order that will fill only when the market reaches
+        the specified price.  Use this for better entry points instead of paying
+        immediate-market slippage.  The order stays pending until filled or
+        cancelled.
+
+        Args:
+            ctx:      Pydantic AI run context (injected automatically).
+            symbol:   Uppercase trading pair, e.g. ``"BTCUSDT"``.
+            side:     Order direction: ``"buy"`` or ``"sell"``.
+            quantity: Base-asset quantity as a decimal string, e.g.
+                      ``"0.001"`` for 0.001 BTC.  Must be positive.
+            price:    Limit price in USDT as a decimal string, e.g.
+                      ``"60000"`` for $60,000.  Must be positive.
+
+        Returns:
+            Dict with keys: ``order_id`` (str), ``status`` (str),
+            ``symbol`` (str), ``side`` (str), ``type`` (str),
+            ``quantity`` (str or null), ``price`` (str or null),
+            ``locked_amount`` (str or null), ``created_at`` (ISO-8601 str or null).
+            On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call(
+                "sdk", "place_limit_order", symbol=symbol, side=side, quantity=quantity, price=price
+            ) as log_ctx:
+                order = await client.place_limit_order(symbol, side, quantity, price)
+                log_ctx["response_status"] = 200
+                return _serialize_order(order)
+        except AgentExchangeError as exc:
+            logger.warning(
+                "agent.api.place_limit_order.failed",
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                price=price,
+                error=str(exc),
+            )
+            return {"error": str(exc)}
+
+    async def place_stop_loss(
+        ctx: Any,  # noqa: ANN401
+        symbol: str,
+        side: str,
+        quantity: str,
+        trigger_price: str,
+    ) -> dict[str, Any]:
+        """Place a stop-loss order that executes when the market hits a trigger price.
+
+        Submits a protective order that converts to a market order when the
+        market moves against the position and reaches ``trigger_price``.
+        Use this to cap downside risk on open positions.
+
+        Args:
+            ctx:           Pydantic AI run context (injected automatically).
+            symbol:        Uppercase trading pair, e.g. ``"BTCUSDT"``.
+            side:          Order direction: ``"buy"`` or ``"sell"``.
+                           Typically ``"sell"`` to close a long position.
+            quantity:      Base-asset quantity as a decimal string, e.g.
+                           ``"0.001"`` for 0.001 BTC.  Must be positive.
+            trigger_price: Price in USDT at which the stop-loss activates,
+                           e.g. ``"58000"``.  Must be positive.
+
+        Returns:
+            Dict with keys: ``order_id`` (str), ``status`` (str),
+            ``symbol`` (str), ``side`` (str), ``type`` (str),
+            ``quantity`` (str or null), ``price`` (str or null),
+            ``locked_amount`` (str or null), ``created_at`` (ISO-8601 str or null).
+            On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call(
+                "sdk",
+                "place_stop_loss",
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                trigger_price=trigger_price,
+            ) as log_ctx:
+                order = await client.place_stop_loss(symbol, side, quantity, trigger_price)
+                log_ctx["response_status"] = 200
+                return _serialize_order(order)
+        except AgentExchangeError as exc:
+            logger.warning(
+                "agent.api.place_stop_loss.failed",
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                trigger_price=trigger_price,
+                error=str(exc),
+            )
+            return {"error": str(exc)}
+
+    async def place_take_profit(
+        ctx: Any,  # noqa: ANN401
+        symbol: str,
+        side: str,
+        quantity: str,
+        trigger_price: str,
+    ) -> dict[str, Any]:
+        """Place a take-profit order that executes when the market hits a target price.
+
+        Submits an order that converts to a market order when the market
+        moves in favour of the position and reaches ``trigger_price``.
+        Use this to lock in gains without monitoring the price continuously.
+
+        Args:
+            ctx:           Pydantic AI run context (injected automatically).
+            symbol:        Uppercase trading pair, e.g. ``"BTCUSDT"``.
+            side:          Order direction: ``"buy"`` or ``"sell"``.
+                           Typically ``"sell"`` to close a profitable long.
+            quantity:      Base-asset quantity as a decimal string, e.g.
+                           ``"0.001"`` for 0.001 BTC.  Must be positive.
+            trigger_price: Price in USDT at which the take-profit activates,
+                           e.g. ``"70000"``.  Must be positive.
+
+        Returns:
+            Dict with keys: ``order_id`` (str), ``status`` (str),
+            ``symbol`` (str), ``side`` (str), ``type`` (str),
+            ``quantity`` (str or null), ``price`` (str or null),
+            ``locked_amount`` (str or null), ``created_at`` (ISO-8601 str or null).
+            On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call(
+                "sdk",
+                "place_take_profit",
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                trigger_price=trigger_price,
+            ) as log_ctx:
+                order = await client.place_take_profit(symbol, side, quantity, trigger_price)
+                log_ctx["response_status"] = 200
+                return _serialize_order(order)
+        except AgentExchangeError as exc:
+            logger.warning(
+                "agent.api.place_take_profit.failed",
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                trigger_price=trigger_price,
+                error=str(exc),
+            )
+            return {"error": str(exc)}
+
+    async def cancel_order(
+        ctx: Any,  # noqa: ANN401
+        order_id: str,
+    ) -> dict[str, Any]:
+        """Cancel a single pending order by its ID.
+
+        Removes a pending limit, stop-loss, or take-profit order from the
+        order book.  Has no effect on already-filled or already-cancelled
+        orders (those raise an error).
+
+        Args:
+            ctx:      Pydantic AI run context (injected automatically).
+            order_id: UUID string of the order to cancel, e.g.
+                      ``"550e8400-e29b-41d4-a716-446655440000"``.
+
+        Returns:
+            Dict with key ``cancelled`` (bool, always ``True`` on success).
+            On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call("sdk", "cancel_order", order_id=order_id) as log_ctx:
+                result = await client.cancel_order(order_id)
+                log_ctx["response_status"] = 200
+                return {"cancelled": result}
+        except AgentExchangeError as exc:
+            logger.warning(
+                "agent.api.cancel_order.failed",
+                order_id=order_id,
+                error=str(exc),
+            )
+            return {"error": str(exc)}
+
+    async def cancel_all_orders(ctx: Any) -> dict[str, Any]:  # noqa: ANN401
+        """Cancel all open (pending) orders for the account.
+
+        Removes every pending limit, stop-loss, and take-profit order in
+        a single call.  Use before placing a new strategy or when exiting
+        all positions.
+
+        Args:
+            ctx: Pydantic AI run context (injected automatically).
+
+        Returns:
+            Dict with key ``cancelled_count`` (int) indicating how many
+            orders were cancelled.  On failure returns
+            ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call("sdk", "cancel_all_orders") as log_ctx:
+                count = await client.cancel_all_orders()
+                log_ctx["response_status"] = 200
+                return {"cancelled_count": count}
+        except AgentExchangeError as exc:
+            logger.warning("agent.api.cancel_all_orders.failed", error=str(exc))
+            return {"error": str(exc)}
+
+    async def get_open_orders(ctx: Any) -> list[dict[str, Any]] | dict[str, Any]:  # noqa: ANN401
+        """Get all currently pending (open) orders for the account.
+
+        Returns every order that is sitting in the book waiting to be
+        filled or cancelled.  Use this to review active limit, stop-loss,
+        and take-profit orders before making new trading decisions.
+
+        Args:
+            ctx: Pydantic AI run context (injected automatically).
+
+        Returns:
+            List of order dicts, each with keys: ``order_id`` (str),
+            ``status`` (str), ``symbol`` (str), ``side`` (str),
+            ``type`` (str), ``quantity`` (str or null), ``price``
+            (str or null), ``locked_amount`` (str or null),
+            ``created_at`` (ISO-8601 str or null).
+            On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call("sdk", "get_open_orders") as log_ctx:
+                orders = await client.get_open_orders()
+                log_ctx["response_status"] = 200
+                return [_serialize_order(o) for o in orders]
+        except AgentExchangeError as exc:
+            logger.warning("agent.api.get_open_orders.failed", error=str(exc))
+            return {"error": str(exc)}
+
+    # ------------------------------------------------------------------
+    # Market statistics tools
+    # ------------------------------------------------------------------
+
+    async def get_ticker(
+        ctx: Any,  # noqa: ANN401
+        symbol: str,
+    ) -> dict[str, Any]:
+        """Get 24-hour market statistics for a trading symbol.
+
+        Returns the 24-hour rolling window statistics including volume,
+        high/low prices, and price change percentage.  Use this to assess
+        recent market activity and momentum before making trading decisions.
+
+        Args:
+            ctx:    Pydantic AI run context (injected automatically).
+            symbol: Uppercase trading pair, e.g. ``"BTCUSDT"`` or
+                    ``"ETHUSDT"``.
+
+        Returns:
+            Dict with keys: ``symbol`` (str), ``open`` (str), ``high`` (str),
+            ``low`` (str), ``close`` (str), ``volume`` (str),
+            ``quote_volume`` (str), ``change`` (str), ``change_pct`` (str),
+            ``trade_count`` (int), ``timestamp`` (ISO-8601 str).
+            On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call("sdk", "get_ticker", symbol=symbol) as log_ctx:
+                ticker = await client.get_ticker(symbol)
+                log_ctx["response_status"] = 200
+                return {
+                    "symbol": ticker.symbol,
+                    "open": str(ticker.open),
+                    "high": str(ticker.high),
+                    "low": str(ticker.low),
+                    "close": str(ticker.close),
+                    "volume": str(ticker.volume),
+                    "quote_volume": str(ticker.quote_volume),
+                    "change": str(ticker.change),
+                    "change_pct": str(ticker.change_pct),
+                    "trade_count": ticker.trade_count,
+                    "timestamp": ticker.timestamp.isoformat(),
+                }
+        except AgentExchangeError as exc:
+            logger.warning("agent.api.get_ticker.failed", symbol=symbol, error=str(exc))
+            return {"error": str(exc)}
+
+    async def get_pnl(
+        ctx: Any,  # noqa: ANN401
+        period: str = "all",
+    ) -> dict[str, Any]:
+        """Get realised P&L breakdown for a given time period.
+
+        Returns a detailed breakdown of profit and loss including realised PnL
+        from closed trades, unrealised PnL from open positions, fees paid, and
+        win/loss statistics.  Use this to assess overall trading performance and
+        decide whether to adjust strategy parameters.
+
+        Args:
+            ctx:    Pydantic AI run context (injected automatically).
+            period: Time window for the calculation.  Valid values: ``"1d"``,
+                    ``"7d"``, ``"30d"``, ``"all"``.  Defaults to ``"all"``.
+
+        Returns:
+            Dict with keys: ``period`` (str), ``realized_pnl`` (str),
+            ``unrealized_pnl`` (str), ``total_pnl`` (str), ``fees_paid`` (str),
+            ``net_pnl`` (str), ``winning_trades`` (int), ``losing_trades`` (int),
+            ``win_rate`` (str).  On failure returns ``{"error": "<message>"}``.
+        """
+        try:
+            async with log_api_call("sdk", "get_pnl", period=period) as log_ctx:
+                pnl = await client.get_pnl(period=period)
+                log_ctx["response_status"] = 200
+                return {
+                    "period": pnl.period,
+                    "realized_pnl": str(pnl.realized_pnl),
+                    "unrealized_pnl": str(pnl.unrealized_pnl),
+                    "total_pnl": str(pnl.total_pnl),
+                    "fees_paid": str(pnl.fees_paid),
+                    "net_pnl": str(pnl.net_pnl),
+                    "winning_trades": pnl.winning_trades,
+                    "losing_trades": pnl.losing_trades,
+                    "win_rate": str(pnl.win_rate),
+                }
+        except AgentExchangeError as exc:
+            logger.warning("agent.api.get_pnl.failed", period=period, error=str(exc))
+            return {"error": str(exc)}
+
     return [
         get_price,
         get_balance,
         place_market_order,
+        place_limit_order,
+        place_stop_loss,
+        place_take_profit,
+        cancel_order,
+        cancel_all_orders,
+        get_open_orders,
         get_candles,
         get_performance,
         get_positions,
         get_trade_history,
+        get_ticker,
+        get_pnl,
     ]

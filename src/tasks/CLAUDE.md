@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-22 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -20,7 +20,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `backtest_cleanup.py` | Auto-cancel idle backtests (>1h), delete old backtest detail data (>90d) |
 | `battle_snapshots.py` | Capture battle equity snapshots every 5s; auto-complete expired battles every 10s |
 | `strategy_tasks.py` | Strategy test episodes: `run_strategy_episode` (5min limit), `aggregate_test_results` (1min limit) |
-| `agent_analytics.py` | 3 agent analytics tasks: `agent_strategy_attribution` (daily), `agent_memory_effectiveness` (weekly), `agent_platform_health_report` (daily) |
+| `agent_analytics.py` | 4 agent analytics tasks: `agent_strategy_attribution` (daily), `agent_memory_effectiveness` (weekly), `agent_platform_health_report` (daily), `settle_agent_decisions` (every 5 min) |
 | `__init__.py` | Package docstring (no exports) |
 
 ## Architecture & Patterns
@@ -54,6 +54,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `agent-strategy-attribution` | `agent_analytics.agent_strategy_attribution` | Crontab 02:00 UTC | default |
 | `agent-memory-effectiveness` | `agent_analytics.agent_memory_effectiveness` | Crontab Sunday 03:00 UTC | default |
 | `agent-platform-health-report` | `agent_analytics.agent_platform_health_report` | Crontab 06:00 UTC | default |
+| `settle-agent-decisions` | `agent_analytics.settle_agent_decisions` | Every 300s (5 min) | default |
 
 ### Async Bridge Pattern
 
@@ -173,5 +174,6 @@ celery -A src.tasks.celery_app beat --loglevel=info
 
 ## Recent Changes
 
+- `2026-03-22` — Added `settle_agent_decisions` task to `agent_analytics.py` (every 5 min). Closes the feedback loop from trade outcome to agent learning: finds unresolved `AgentDecision` rows, checks if the linked order is filled, computes `realized_pnl` from `Trade` rows, writes back `outcome_pnl` + `outcome_recorded_at`. Beat schedule count: 14 → 15.
 - `2026-03-21` — Added `agent_analytics.py` with 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC — queries `agent_strategy_signals` to compute per-strategy PnL attribution), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC — measures memory retrieval hit rate), `agent_platform_health_report` (daily 06:00 UTC — aggregates agent API call latency and error rates). Beat schedule count: 11 → 14.
 - `2026-03-17` -- Initial CLAUDE.md created

@@ -87,3 +87,12 @@
 - Create separate agent for each test scenario to avoid state pollution
 - `agent_id` is primary scoping key; `account_id` is secondary
 - `POST /account/reset` resets the scoped agent or account to starting balance
+
+## Provisioned Test Account (Task 03, 2026-03-22)
+- Email: trader@tradeready.ai | Password: Tr@d3r_S3cur3_2026!
+- Account ID: ed633e30-4743-4a72-8965-a877e8383358
+- 5 agents: Momentum, Balanced, Evolved, Regime-Adaptive, Conservative — each 10,000 USDT
+- Momentum agent API key written to agent/.env as PLATFORM_API_KEY
+- Risk profile fields: `max_position_size_pct`, `daily_loss_limit_pct`, `max_open_orders` (integers, not decimals)
+- PUT /agents/{id}/risk-profile accepts RiskProfileInfo (same schema as GET response)
+- POST /auth/user-login returns `{"token": "..."}` (not access_token) for JWT

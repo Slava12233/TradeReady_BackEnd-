@@ -59,6 +59,8 @@ def _make_mock_redis() -> AsyncMock:
     mock_pipe.zremrangebyrank = MagicMock()
     mock_pipe.delete = MagicMock()
     mock_pipe.zrem = MagicMock()
+    mock_pipe.hset = MagicMock()
+    mock_pipe.expire = MagicMock()
     mock_pipe.execute = AsyncMock(return_value=[True, 1, 0])
     mock_pipe.__aenter__ = AsyncMock(return_value=mock_pipe)
     mock_pipe.__aexit__ = AsyncMock(return_value=False)
@@ -264,7 +266,7 @@ class TestWorkingMemory:
     """Tests for set_working / get_working / get_all_working / clear_working."""
 
     async def test_set_and_get_working_memory(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """set_working() stores a value; get_working() retrieves it via hset/hget."""
+        """set_working() stores a value via pipeline with TTL; get_working() retrieves it."""
         cache, mock_redis, _ = _make_cache(monkeypatch)
         agent_id = str(uuid4())
         mock_redis.hget.return_value = "BUY"
@@ -272,7 +274,11 @@ class TestWorkingMemory:
         await cache.set_working(agent_id, "last_action", "BUY")
         result = await cache.get_working(agent_id, "last_action")
 
-        mock_redis.hset.assert_called_once_with(_working_key(agent_id), "last_action", "BUY")
+        # set_working uses pipeline: hset + expire (24h TTL)
+        mock_pipe = mock_redis.pipeline.return_value
+        mock_pipe.hset.assert_called_once_with(_working_key(agent_id), "last_action", "BUY")
+        mock_pipe.expire.assert_called_once_with(_working_key(agent_id), 86_400)
+        mock_pipe.execute.assert_awaited_once()
         mock_redis.hget.assert_called_once_with(_working_key(agent_id), "last_action")
         assert result == "BUY"
 

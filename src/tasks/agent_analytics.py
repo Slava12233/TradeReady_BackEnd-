@@ -1,6 +1,6 @@
 """Celery tasks for agent analytics: strategy attribution, memory effectiveness, and platform health.
 
-Three tasks are registered here and wired into the Celery beat schedule in
+Four tasks are registered here and wired into the Celery beat schedule in
 ``src/tasks/celery_app.py``:
 
 * :func:`agent_strategy_attribution`  — daily at 02:00 UTC; aggregates the last
@@ -19,6 +19,13 @@ Three tasks are registered here and wired into the Celery beat schedule in
   ``"performance_issue"`` when any endpoint has doubled its p95 latency or
   has an error rate above 10 %.
 
+* :func:`settle_agent_decisions` — every 5 minutes; closes the feedback loop
+  from trade outcome to agent learning system.  For each active agent, finds
+  unresolved ``AgentDecision`` rows (``outcome_recorded_at IS NULL``), checks
+  whether the linked order has been filled, computes the realised PnL from the
+  associated ``Trade`` rows, and writes ``outcome_pnl`` / ``outcome_recorded_at``
+  back to the decision.  Optionally extends to memory reinforcement in future.
+
 Design notes
 ------------
 * All tasks bridge the Celery sync boundary via ``asyncio.run()``.
@@ -35,6 +42,10 @@ Example (manual trigger)::
     from src.tasks.agent_analytics import agent_strategy_attribution
     result = agent_strategy_attribution.delay()
     print(result.get(timeout=120))
+
+    from src.tasks.agent_analytics import settle_agent_decisions
+    result = settle_agent_decisions.delay()
+    print(result.get(timeout=60))
 """
 
 from __future__ import annotations
@@ -646,5 +657,225 @@ async def _run_platform_health_report() -> dict[str, Any]:
         "agents_processed": agents_processed,
         "agents_failed": agents_failed,
         "feedback_created": feedback_created,
+        "duration_ms": duration_ms,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Task 4: settle_agent_decisions  (every 5 minutes)
+# ---------------------------------------------------------------------------
+
+
+@app.task(  # type: ignore[misc]
+    name="src.tasks.agent_analytics.settle_agent_decisions",
+    bind=False,
+    max_retries=0,
+    ignore_result=False,
+    soft_time_limit=55,
+    time_limit=60,
+)
+def settle_agent_decisions() -> dict[str, Any]:
+    """Close the feedback loop from trade outcome to agent learning system.
+
+    Runs every 5 minutes.  For each active agent:
+
+    1. Calls :meth:`~AgentDecisionRepository.find_unresolved` to retrieve
+       ``AgentDecision`` rows that have ``outcome_recorded_at IS NULL`` and a
+       non-NULL ``order_id``.
+    2. For each unresolved decision, loads the linked ``Order`` row via
+       ``OrderRepository.get_by_id``.
+    3. Skips decisions whose order is still ``pending`` or
+       ``partially_filled`` — those trades have not yet settled.
+    4. For filled (or cancelled / rejected / expired) orders, fetches all
+       associated ``Trade`` rows and sums their ``realized_pnl`` to obtain
+       the realised outcome.  If no ``realized_pnl`` is available (e.g., a
+       buy that opens a position), the outcome is recorded as
+       ``Decimal("0")`` to mark the decision as processed without blocking.
+    5. Calls :meth:`~AgentDecisionRepository.update_outcome` to write
+       ``outcome_pnl`` and ``outcome_recorded_at`` back to the decision row.
+
+    Returns:
+        A dict with keys:
+
+        * ``agents_processed``  — agents completed without an unexpected error.
+        * ``agents_failed``     — agents that raised an unexpected exception.
+        * ``decisions_settled`` — total decision rows updated with an outcome.
+        * ``decisions_skipped`` — decisions whose order was not yet filled.
+        * ``duration_ms``       — total wall-clock time in milliseconds.
+
+    Example::
+
+        result = settle_agent_decisions.delay()
+        stats = result.get(timeout=60)
+        print(f"Settled {stats['decisions_settled']} decisions")
+    """
+    return asyncio.run(_run_settle_agent_decisions())
+
+
+async def _run_settle_agent_decisions() -> dict[str, Any]:
+    """Async body of :func:`settle_agent_decisions`.
+
+    Loads all active agents, then for each agent finds unresolved decisions
+    and attempts to match them against their linked filled order.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+    from decimal import Decimal  # noqa: PLC0415
+    from uuid import UUID  # noqa: PLC0415
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from src.database.models import Agent, Order, Trade  # noqa: PLC0415
+    from src.database.repositories.agent_decision_repo import (  # noqa: PLC0415
+        AgentDecisionRepository,
+    )
+    from src.database.session import get_session_factory  # noqa: PLC0415
+
+    # Order statuses that indicate the order is done — no further changes
+    # expected regardless of whether trades were generated.
+    settled_statuses: frozenset[str] = frozenset(
+        {"filled", "cancelled", "rejected", "expired"}
+    )
+
+    task_start = time.monotonic()
+    session_factory = get_session_factory()
+
+    agents_processed = 0
+    agents_failed = 0
+    decisions_settled = 0
+    decisions_skipped = 0
+
+    # ── Step 1: load all active agent IDs ────────────────────────────────────
+    try:
+        async with session_factory() as db:
+            stmt = (
+                select(Agent.id)
+                .where(Agent.status != "archived")
+                .order_by(Agent.created_at.asc())
+            )
+            result = await db.execute(stmt)
+            agent_ids: list[UUID] = list(result.scalars().all())
+    except Exception:
+        logger.exception("agent.task.settle_decisions.load_agents.failed")
+        duration_ms = round((time.monotonic() - task_start) * 1000, 2)
+        return {
+            "agents_processed": 0,
+            "agents_failed": 0,
+            "decisions_settled": 0,
+            "decisions_skipped": 0,
+            "duration_ms": duration_ms,
+        }
+
+    # ── Step 2: per-agent settlement ──────────────────────────────────────────
+    for agent_id in agent_ids:
+        agent_settled = 0
+        agent_skipped = 0
+        try:
+            async with session_factory() as db:
+                decision_repo = AgentDecisionRepository(db)
+
+                # Find decisions that have an order_id but no outcome yet.
+                unresolved = await decision_repo.find_unresolved(agent_id)
+
+                if not unresolved:
+                    agents_processed += 1
+                    continue
+
+                now = datetime.now(tz=UTC)
+
+                for decision in unresolved:
+                    order_id: UUID = decision.order_id  # type: ignore[assignment]
+
+                    # Load the linked order to check its current status.
+                    order_stmt = select(Order).where(Order.id == order_id).limit(1)
+                    order_result = await db.execute(order_stmt)
+                    order: Order | None = order_result.scalars().first()
+
+                    if order is None:
+                        # Order was hard-deleted; record zero outcome to unblock.
+                        await decision_repo.update_outcome(
+                            decision.id,
+                            outcome_pnl=Decimal("0"),
+                            outcome_recorded_at=now,
+                        )
+                        agent_settled += 1
+                        logger.warning(
+                            "agent.task.settle_decisions.order_missing",
+                            decision_id=str(decision.id),
+                            order_id=str(order_id),
+                            agent_id=str(agent_id),
+                        )
+                        continue
+
+                    if order.status not in settled_statuses:
+                        # Order is still open — skip, will be picked up next run.
+                        agent_skipped += 1
+                        continue
+
+                    # Order has settled.  Compute realised PnL from Trade rows.
+                    trades_stmt = select(Trade).where(Trade.order_id == order_id)
+                    trades_result = await db.execute(trades_stmt)
+                    trades = trades_result.scalars().all()
+
+                    # Sum realized_pnl across all fills for this order.
+                    # realized_pnl is NULL for opening buys (no closed position)
+                    # and non-NULL for sells that close a position.
+                    realized_pnl_values: list[Decimal] = [
+                        Decimal(str(t.realized_pnl))
+                        for t in trades
+                        if t.realized_pnl is not None
+                    ]
+                    outcome_pnl = (
+                        sum(realized_pnl_values, Decimal("0"))
+                        if realized_pnl_values
+                        else Decimal("0")
+                    )
+
+                    await decision_repo.update_outcome(
+                        decision.id,
+                        outcome_pnl=outcome_pnl,
+                        outcome_recorded_at=now,
+                    )
+                    agent_settled += 1
+                    logger.debug(
+                        "agent.task.settle_decisions.decision_settled",
+                        decision_id=str(decision.id),
+                        order_id=str(order_id),
+                        order_status=order.status,
+                        outcome_pnl=str(outcome_pnl),
+                        agent_id=str(agent_id),
+                    )
+
+                await db.commit()
+
+            decisions_settled += agent_settled
+            decisions_skipped += agent_skipped
+            agents_processed += 1
+            logger.info(
+                "agent.task.settle_decisions.agent_done",
+                agent_id=str(agent_id),
+                decisions_settled=agent_settled,
+                decisions_skipped=agent_skipped,
+            )
+        except Exception:
+            agents_failed += 1
+            logger.exception(
+                "agent.task.settle_decisions.agent_error",
+                agent_id=str(agent_id),
+            )
+
+    duration_ms = round((time.monotonic() - task_start) * 1000, 2)
+    logger.info(
+        "agent.task.settle_decisions.finished",
+        agents_processed=agents_processed,
+        agents_failed=agents_failed,
+        decisions_settled=decisions_settled,
+        decisions_skipped=decisions_skipped,
+        duration_ms=duration_ms,
+    )
+    return {
+        "agents_processed": agents_processed,
+        "agents_failed": agents_failed,
+        "decisions_settled": decisions_settled,
+        "decisions_skipped": decisions_skipped,
         "duration_ms": duration_ms,
     }

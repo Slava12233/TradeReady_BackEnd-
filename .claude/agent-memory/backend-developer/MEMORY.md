@@ -84,6 +84,31 @@
 - When verifying pre-existing ruff violations: `git stash` the changes, run ruff on originals, then `git stash pop` — prevents attributing existing errors to new code
 - `EnsembleRunner` needs `agent_id: str | None` constructor param when `batch_writer` is provided — `agent_id` becomes `agent_id_str` stored as `self._agent_id_str` for signal rows
 
+## IntentRouter Handler Pattern (`agent/server_handlers.py`)
+- Handler functions live in a dedicated `server_handlers.py` — NOT inlined in `server.py` — so they can be imported and tested independently
+- Registration in `AgentServer.__init__()` via `self._router.register(IntentType.X, handler_fn)` for all 8 intent types
+- GENERAL handler returns the sentinel `REASONING_LOOP_SENTINEL = "__REASONING_LOOP__"` — `process_message()` checks for this string and falls through to `_reasoning_loop()`
+- Server passes `server=self, memory_store=self._memory_store` as kwargs to every handler so STATUS/LEARN handlers can read server health / memory
+- Module-level imports for mockable dependencies (`AgentConfig`, `AsyncAgentExchangeClient`, `AgentExchangeError`, `httpx`, `TradingJournal`, `CapabilityManager`, `BudgetManager`, `Capability`) — NOT lazy — so tests can `patch("agent.server_handlers.X")`
+- Lazy imports in `agent/` modules cannot be patched at `agent.server_handlers.X` — move to module-level when test coverage is needed
+- `git stash` during verification loses uncommitted edits — always verify with `git diff` before stashing; prefer `git stash pop` immediately after checks
+
+## Dynamic Weights Pattern (`agent/strategies/ensemble/`)
+- `TradeOutcome` is a `@dataclass` (not Pydantic) — plain field access, no validators needed
+- `MetaLearner._rolling_sharpe()` is a `@staticmethod` — easy to test in isolation without constructing a full instance
+- `_base_weights` stores the normalised weights at construction time; `update_weights()` modifies `_weights` relative to `_base_weights` so regime modifiers do not compound across calls
+- Regime modifier table `_REGIME_WEIGHT_MODIFIERS` uses `source.value` string keys (e.g. `"trending"`) so it works with both `RegimeType.value` strings and plain string inputs
+- `regime_to_signals()` calls `regime_type.value` — passing a plain string as regime_type causes `AttributeError`; always pass a `RegimeType` enum or an object with `.value` attribute
+- `EnsembleRunner._last_regime` is updated inside `_get_regime_signals()` on success — it is set to the `RegimeType` enum, not a string
+- `EnsembleRunner._pending_outcomes` is a plain list (not deque) — drained on each step, so unbounded growth is not a concern
+
+## PH Test Recovery Pattern (`agent/strategies/drift.py`)
+- PH test detects drift via `ph_sum - ph_min > threshold`; once drift fires, ph_sum can stay above threshold for hundreds of steps even during good performance (large accumulated value)
+- Recovery criterion uses `composite > running_mean + 1e-9` (NOT ph_test_value drop below threshold) — avoids having to wait for PH sum decay which can take too long
+- Floating-point FP issue: EMA running_mean after warmup becomes `-0.19500000000000003` when composite is `-0.195`, making `composite > running_mean` True even for identical bad metrics — always use epsilon `1e-9` for mean comparison in recovery criterion
+- After `_reset_ph()`: ph_sum=0, ph_min=0, recovery_counter=0 — reset happens AFTER the PH increment for that step has already been applied
+- Test helpers that create detectors in drift using `_feed(30, bad_metrics)` must use `recovery_steps >= 5` to avoid immediate re-fire after the first good step; the bad metrics floating-point drift causes single-step recovery at lower recovery_steps
+
 ## Structlog Event Name Convention (`agent/`)
 - Convention: `"{component}.{operation}[.{outcome}]"` — all event strings must start with `agent.`
 - Component prefix table (Task 05): `agent.server`, `agent.session`, `agent.decision`, `agent.trade`, `agent.memory`, `agent.permission`, `agent.budget`, `agent.strategy`, `agent.api`, `agent.llm`, `agent.workflow`, `agent.task`
@@ -91,3 +116,15 @@
 - `grep` cannot distinguish docstring `Example::` blocks from executable code — `logger.*()` calls inside docstrings are NOT real log calls and must be left unchanged.
 - After a context summary break, the Edit tool requires a prior Read on the file — always read at least a few lines before editing a file in a new conversation segment.
 - Files to skip (by task spec): `agent/tasks.py` (Task 06) and `agent/main.py` (Task 02)
+- [project_kelly_hybrid_sizing.md](project_kelly_hybrid_sizing.md) — Patterns from implementing KellyFractionalSizer + HybridSizer in agent/strategies/risk/sizing.py (Task 16)
+- [feedback_drawdown_profile_patterns.md](feedback_drawdown_profile_patterns.md) — Patterns from implementing DrawdownProfile in agent/strategies/risk/ (Task 17)
+- [feedback_sdk_tools_pattern.md](feedback_sdk_tools_pattern.md) — Pattern for adding SDK tool functions to agent/tools/sdk_tools.py (Task 20)
+- [feedback_redis_pipeline_mock.md](feedback_redis_pipeline_mock.md) — How to correctly mock Redis pipelines in async pytest (Task 19)
+- [feedback_correlation_log_returns.md](feedback_correlation_log_returns.md) — Log-return Pearson r on linear price series is ~0, not ~1; use shared-shock series for reliable high-correlation tests (Task 18)
+- [project_recovery_manager_patterns.md](project_recovery_manager_patterns.md) — Patterns from implementing RecoveryManager 3-state machine with Redis persistence (Task 21)
+- [feedback_signal_volume_filter.md](feedback_signal_volume_filter.md) — Volume confirmation filter pattern in SignalGenerator: _compute_volume_ratio + _apply_volume_filter (Task 24)
+- [feedback_ws_manager_patterns.md](feedback_ws_manager_patterns.md) — WSManager WebSocket integration: task wrapping, URL conversion, closure capture, test patching (Task 27)
+- [feedback_pair_selector_patterns.md](feedback_pair_selector_patterns.md) — PairSelector: double-checked locking, raise-vs-return in _refresh(), ticker spread defaults, min_symbols_threshold test param (Task 26)
+- [feedback_celery_task_patterns.md](feedback_celery_task_patterns.md) — Celery analytics task gotchas: N806 on in-function frozensets, dual-session mock split, beat entry naming conventions (Task 30)
+- [feedback_rest_tools_pattern.md](feedback_rest_tools_pattern.md) — REST tools: use self._client.<verb> directly (not helpers) for structured methods; domain-prefix tool names to avoid collisions; update both count and name-set tests (Task 33)
+- [feedback_memory_learning_loop.md](feedback_memory_learning_loop.md) — MemoryStore.save() takes full Memory object; dedup-reinforce pattern for procedurals; ContextBuilder dedup via added_ids set; test ordering failures in full suite are pre-existing (Task 32)

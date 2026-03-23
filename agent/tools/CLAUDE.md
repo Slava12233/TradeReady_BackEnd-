@@ -1,6 +1,6 @@
 # agent/tools — Platform Integration Layers
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-22 (Task 33) -->
 
 > Four integration layers that wrap platform access for Pydantic AI agents: SDK tools, MCP server factory, REST tools, and agent self-reflection tools.
 
@@ -12,9 +12,9 @@ Provides all four channels through which the agent calls the AiTradingAgent plat
 
 | File | Purpose |
 |------|---------|
-| `sdk_tools.py` | `get_sdk_tools()` — 7 async tool functions backed by `AsyncAgentExchangeClient` |
+| `sdk_tools.py` | `get_sdk_tools()` — 15 async tool functions backed by `AsyncAgentExchangeClient`; `_serialize_order()` module-level helper |
 | `mcp_tools.py` | `get_mcp_server()`, `get_mcp_server_with_jwt()` — spawns the platform MCP server subprocess |
-| `rest_tools.py` | `PlatformRESTClient` class and `get_rest_tools()` — 11 REST tool functions for backtest + strategy |
+| `rest_tools.py` | `PlatformRESTClient` class and `get_rest_tools()` — 16 REST tool functions for backtest + strategy + agent analysis + risk self-tuning |
 | `agent_tools.py` | `get_agent_tools()` — 5 async tool functions for self-reflection, portfolio review, opportunity scan, journaling, and feature requests |
 | `__init__.py` | Re-exports all 6 public names: `PlatformRESTClient`, `get_agent_tools`, `get_mcp_server`, `get_mcp_server_with_jwt`, `get_rest_tools`, `get_sdk_tools` |
 
@@ -22,7 +22,9 @@ Provides all four channels through which the agent calls the AiTradingAgent plat
 
 ### `get_sdk_tools(config)` — `sdk_tools.py`
 
-Factory that instantiates a single `AsyncAgentExchangeClient` shared across all returned tools, then builds 7 async closure functions over it. Returns a `list` suitable for `Agent(tools=...)`.
+Factory that instantiates a single `AsyncAgentExchangeClient` shared across all returned tools, then builds 15 async closure functions over it. Returns a `list` suitable for `Agent(tools=...)`.
+
+All order-returning tools (`place_market_order`, `place_limit_order`, `place_stop_loss`, `place_take_profit`, `get_open_orders`) use the module-level `_serialize_order(order)` helper, which converts all `Decimal` fields to strings, preserves `None` values, and ISO-8601-formats datetimes.
 
 | Tool function | SDK method called | Return type on success |
 |---------------|------------------|------------------------|
@@ -32,7 +34,17 @@ Factory that instantiates a single `AsyncAgentExchangeClient` shared across all 
 | `get_positions(ctx)` | `client.get_positions()` | `list[{symbol, asset, quantity, avg_entry_price, current_price, market_value, unrealized_pnl, unrealized_pnl_pct (all str), opened_at (ISO-8601)}]` |
 | `get_performance(ctx, period="all")` | `client.get_performance(period=period)` | `{period, sharpe_ratio, sortino_ratio, max_drawdown_pct, max_drawdown_duration_days (int), win_rate, profit_factor, avg_win, avg_loss, total_trades (int), avg_trades_per_day, best_trade, worst_trade (all str), current_streak (int)}` |
 | `get_trade_history(ctx, limit=20)` | `client.get_trade_history(limit=limit)` | `list[{trade_id, order_id, symbol, side, quantity, price, fee, total (all str), executed_at (ISO-8601)}]` |
-| `place_market_order(ctx, symbol, side, quantity)` | `client.place_market_order(...)` | `{order_id, status, symbol, side, type, executed_price, executed_quantity, fee, total_cost (str or null), filled_at (ISO-8601 or null)}` |
+| `place_market_order(ctx, symbol, side, quantity)` | `client.place_market_order(...)` | Order dict via `_serialize_order()` — see below |
+| `place_limit_order(ctx, symbol, side, quantity, price)` | `client.place_limit_order(...)` | Order dict via `_serialize_order()` — `status="pending"` |
+| `place_stop_loss(ctx, symbol, side, quantity, trigger_price)` | `client.place_stop_loss(...)` | Order dict via `_serialize_order()` — `type="stop_loss"` |
+| `place_take_profit(ctx, symbol, side, quantity, trigger_price)` | `client.place_take_profit(...)` | Order dict via `_serialize_order()` — `type="take_profit"` |
+| `cancel_order(ctx, order_id)` | `client.cancel_order(order_id)` | `{cancelled: True}` |
+| `cancel_all_orders(ctx)` | `client.cancel_all_orders()` | `{cancelled_count: int}` |
+| `get_open_orders(ctx)` | `client.get_open_orders()` | `list[order dict]` via `_serialize_order()` |
+| `get_ticker(ctx, symbol)` | `client.get_ticker(symbol)` | `{symbol, open, high, low, close, volume, quote_volume, change, change_pct (all str), trade_count (int), timestamp (ISO-8601)}` |
+| `get_pnl(ctx, period="all")` | `client.get_pnl(period=period)` | `{period, realized_pnl, unrealized_pnl, total_pnl, fees_paid, net_pnl, win_rate (all str), winning_trades, losing_trades (int)}` |
+
+**`_serialize_order()` output keys:** `order_id` (str), `status` (str), `symbol` (str), `side` (str), `type` (str), `quantity` (str or null), `price` (str or null), `executed_price` (str or null), `executed_quantity` (str or null), `fee` (str or null), `total_cost` (str or null), `locked_amount` (str or null), `created_at` (ISO-8601 or null), `filled_at` (ISO-8601 or null).
 
 All tools catch `AgentExchangeError` and return `{"error": "<message>"}` instead of raising. The `ctx` parameter is the Pydantic AI `RunContext` injected automatically — declare it as `Any` to avoid import overhead.
 
@@ -75,12 +87,17 @@ Async HTTP client wrapping `httpx.AsyncClient` with a 30-second timeout. Every r
 | `get_test_results(strategy_id, test_id)` | `GET /api/v1/strategies/{id}/tests/{test_id}` | `test_run_id, status, episodes_total, episodes_completed, progress_pct, version, results, recommendations, config` |
 | `create_version(strategy_id, definition, change_notes=None)` | `POST /api/v1/strategies/{id}/versions` | `version_id, strategy_id, version, definition, change_notes, parent_version, status, created_at` |
 | `compare_versions(strategy_id, v1, v2)` | `GET /api/v1/strategies/{id}/compare-versions?v1=N&v2=M` | `v1 (metrics dict), v2 (metrics dict), improvements (delta dict), verdict` |
+| `compare_backtests(session_ids)` | `GET /api/v1/backtest/compare?sessions=...` | `comparisons (list), best_by_roi, best_by_sharpe, best_by_drawdown, recommendation` |
+| `get_best_backtest(metric, strategy_label)` | `GET /api/v1/backtest/best?metric=...` | `session_id, strategy_label, metric, value` |
+| `get_equity_curve(session_id, interval)` | `GET /api/v1/backtest/{id}/results/equity-curve` | `session_id, interval, snapshots (list of time-series equity points)` |
+| `analyze_decisions(agent_id, start, end, min_confidence, direction, pnl_outcome, limit)` | `GET /api/v1/agents/{id}/decisions/analyze` | `total, wins, losses, win_rate, avg_pnl, avg_confidence, by_direction, decisions` |
+| `update_risk_profile(max_position_size_pct, daily_loss_limit_pct, max_open_orders)` | `PUT /api/v1/account/risk-profile` | `max_position_size_pct, daily_loss_limit_pct, max_open_orders` |
 
 Internal `_get()` and `_post()` helpers raise `httpx.HTTPStatusError` on non-2xx responses. `_post()` returns `{}` for empty response bodies (e.g. 204).
 
 ### `get_rest_tools(config)` — `rest_tools.py`
 
-Factory that instantiates a shared `PlatformRESTClient` and wraps all 11 client methods as Pydantic AI-compatible async tool functions. The 11 tool names match the client methods with one difference: `create_version` becomes `create_strategy_version` and `compare_versions` becomes `compare_strategy_versions` for clarity at the tool layer.
+Factory that instantiates a shared `PlatformRESTClient` and wraps all 16 client methods as Pydantic AI-compatible async tool functions. Notable name differences at the tool layer: `create_version` → `create_strategy_version`, `compare_versions` → `compare_strategy_versions`, `analyze_decisions` → `analyze_agent_decisions`.
 
 All tool functions catch `httpx.HTTPStatusError` and `httpx.RequestError` and return `{"error": "<message>"}` instead of raising.
 
@@ -276,5 +293,8 @@ Deduplicates against existing feedback rows by checking for an existing entry wi
 
 ## Recent Changes
 
+- `2026-03-22` — Task 33: Added 5 new `PlatformRESTClient` methods (`compare_backtests`, `get_best_backtest`, `get_equity_curve`, `analyze_decisions`, `update_risk_profile`) and 5 matching tool functions (`compare_backtests`, `get_best_backtest`, `get_equity_curve`, `analyze_agent_decisions`, `update_risk_profile`). Tool count: 11 → 16. Added 24 new tests (test_rest_tools.py: 26 → 50).
 - `2026-03-20` — Initial CLAUDE.md created.
 - `2026-03-21` — Added `agent_tools.py` section documenting `get_agent_tools()` and all 5 tool functions (reflect_on_trade, review_portfolio, scan_opportunities, journal_entry, request_platform_feature). Updated header description, Key Files table, and `__init__.py` export count. Added 4 new gotchas for agent tools.
+- `2026-03-22` — Added 6 new SDK tools to `get_sdk_tools()`: `place_limit_order`, `place_stop_loss`, `place_take_profit`, `cancel_order`, `cancel_all_orders`, `get_open_orders`. Added module-level `_serialize_order()` helper shared by all order-returning tools. Tool count: 7 → 13. Updated Key Files and Public API tables.
+- `2026-03-22` — Task 24: Added `get_ticker()` and `get_pnl()` tools. Tool count: 13 → 15.

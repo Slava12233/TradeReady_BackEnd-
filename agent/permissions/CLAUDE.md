@@ -1,6 +1,6 @@
 # agent/permissions/ — Roles, Capabilities, Budget Limits, and Enforcement
 
-<!-- last-updated: 2026-03-21 (metrics instrumentation) -->
+<!-- last-updated: 2026-03-22 -->
 
 > Four-layer permission system for trading agents: role definitions, capability management, per-agent budget tracking, and enforcement with audit logging.
 
@@ -200,7 +200,7 @@ async def execute_trade(agent_id: str, symbol: str, quantity: Decimal) -> dict:
 
 **`PermissionDenied`:**
 
-Not a subclass of `TradingPlatformError`. Has attributes:
+Subclass of `TradingPlatformError` (imported from `src.utils.exceptions`). Auto-serialized by the global exception handler with `code="permission_denied"`, `http_status=403`. Has attributes:
 - `agent_id: str`
 - `action: str`
 - `reason: str`
@@ -282,7 +282,7 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 
 ## Gotchas
 
-- **`PermissionDenied` is not a `TradingPlatformError`**: It will not be auto-serialized by the global exception handler in `src/main.py`. Catch it explicitly in route handlers or workflow code.
+- **`PermissionDenied` is now a `TradingPlatformError`**: Promoted from a local exception in `enforcement.py` to `src.utils.exceptions.PermissionDenied`. It is now auto-serialized by the global exception handler with `code="permission_denied"`, HTTP 403. Import from `src.utils.exceptions`, not from `agent.permissions`.
 - **Admin wildcard is `{"*"}`, not the full set**: `ROLE_CAPABILITIES[AgentRole.ADMIN]` returns `frozenset({"*"})`. Do not iterate it expecting 8 `Capability` values. Use `has_role_capability(role, cap)` which handles the wildcard check.
 - **`check()` kwargs are forwarded to `BudgetManager`**: When calling `enforcer.check(agent_id, "place_order", trade_value=Decimal("500"), portfolio_value=Decimal("10000"))`, the keyword arguments are passed through to `budget_manager.check_and_record()`. Only pass them for budget-checked actions.
 - **`set_limits()` affects future sessions only**: Changing limits via `BudgetManager.set_limits()` invalidates the Redis cache and updates Postgres, but does not retroactively change counters already incremented in the current day.
@@ -292,5 +292,6 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 
 ## Recent Changes
 
+- `2026-03-22` — `PermissionDenied` promoted to `src.utils.exceptions.PermissionDenied` (a `TradingPlatformError` subclass). `enforcement.py` now imports it from `src.utils.exceptions` instead of defining it locally. Auto-serialized with `code="permission_denied"`, HTTP 403. Updated Gotchas section.
 - `2026-03-21` — Initial CLAUDE.md created (agent ecosystem Phase 2).
 - `2026-03-21` — Metrics instrumentation added: `enforcement.py` increments a `permission_denials_total` Prometheus counter (labeled by `agent_id` and `action`) on every `PermissionDenied` event. `budget.py` emits `budget_usage_ratio` gauge metrics on each `check_and_record()` call. All metrics via `agent.metrics.AGENT_REGISTRY`.

@@ -49,6 +49,9 @@
 - React hook called inside `runIds.map(...)` loop — Rules of Hooks violation, runtime crash (review_2026-03-18)
 - `globals.css` landing CSS extraction declared done but not actually removed — 1089 lines remained (review_2026-03-20)
 - Zustand `selectPrice(symbol)` selector created on every render (new function reference), defeating memoization (review_2026-03-20)
+- `redis.get(f"agent:memory:*:{memory_id}")` — Redis GET does not support glob patterns; always returns None (review_2026-03-22, Phase 0 Group A)
+- `log_api_call()` `writer` parameter wired in tests but not in the actual function signature — 61 tests exercise code that does not exist (review_2026-03-22, Phase 0 Group A)
+- `float(c.close)` in `handle_analyze()` and `float(p.unrealized_pnl)` in `handle_portfolio()` — monetary values cast to float, violating Decimal rule (review_2026-03-22, Phase 0 Group A)
 
 **Warning-level patterns found repeatedly:**
 - `except Exception` on pure HTTP calls without narrowing (multiple workflows)
@@ -56,8 +59,9 @@
 - `steps_total` magic numbers without named constants (inconsistent across workflow files)
 - Using deprecated pydantic-ai `result_type=` / `.data` instead of `output_type=` / `.output`
 - Unparameterised `dict` in Pydantic fields → mypy strict failure
-- Calling private method `client._get(...)` from outside the class (encapsulation violation)
+- Calling private method `client._get(...)` or `cache._get_redis()` from outside the class (encapsulation violation)
 - stdlib `logging` instead of `structlog` (one file out of sync)
+- Task descriptions may not match implementation — always verify the code, not just the task spec (Phase 0 Group A: 3 tasks had spec/implementation mismatches)
 
 **Security findings (from security review reports):**
 - `float(Decimal(...))` passed to Redis INCRBYFLOAT — precision drift allows budget cap bypass
@@ -78,3 +82,6 @@
 Verdicts: `PASS`, `PASS WITH WARNINGS`, `NEEDS FIXES`
 Report path: `development/code-reviews/review_YYYY-MM-DD_HH-MM_{scope}.md`
 Sections: Critical Issues (must fix) → Warnings (should fix) → Suggestions (optional) → Passed Checks
+- [feedback_redis_pipeline.md](feedback_redis_pipeline.md) — Redis pipeline must use `async with redis.pipeline() as pipe:` pattern
+- [feedback_composite_weights.md](feedback_composite_weights.md) — Composite weight fields need cross-field sum validator in pydantic-settings configs
+- [project_agent_strategies_patterns.md](project_agent_strategies_patterns.md) — Key patterns for agent/strategies/ code: Decimal, fail-open Redis, checksum on joblib, no CLI API keys

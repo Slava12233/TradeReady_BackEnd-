@@ -24,9 +24,12 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from agent.logging_writer import LogBatchWriter
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +55,8 @@ async def log_api_call(
     channel: str,
     endpoint: str,
     method: str = "",
+    *,
+    writer: LogBatchWriter | None = None,
     **extra_context: Any,  # noqa: ANN401
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Context manager that logs API call start, duration, and outcome.
@@ -73,6 +78,13 @@ async def log_api_call(
         method: HTTP verb (``"GET"``, ``"POST"``, …).  Pass an empty string
             (the default) for non-HTTP channels such as ``"sdk"`` or
             ``"mcp"``.
+        writer: Optional :class:`~agent.logging_writer.LogBatchWriter` to
+            receive a structured record of this API call after it completes.
+            When provided, :meth:`~agent.logging_writer.LogBatchWriter.add_api_call`
+            is called with a dict containing ``channel``, ``endpoint``,
+            ``method``, ``latency_ms``, and any error information.  Errors
+            from the writer are silently swallowed so that a writer failure
+            never masks the original exception or the return value.
         **extra_context: Arbitrary keyword arguments that are merged into the
             yielded context dict and included in the success log line when
             their values are not ``None``.
@@ -86,7 +98,7 @@ async def log_api_call(
     Example::
 
         async with log_api_call("rest", "/api/v1/trade/order", "POST",
-                                symbol="BTCUSDT") as ctx:
+                                symbol="BTCUSDT", writer=batch_writer) as ctx:
             resp = await http_client.post("/api/v1/trade/order", json=body)
             ctx["response_status"] = resp.status_code
     """
@@ -124,6 +136,20 @@ async def log_api_call(
             ).inc()
         except Exception:  # noqa: BLE001
             pass
+        # Persist to writer (swallow writer failures)
+        if writer is not None:
+            record: dict[str, Any] = {
+                "channel": channel,
+                "endpoint": endpoint,
+                "method": method,
+                "latency_ms": latency_err,
+                "error": ctx["error"],
+                **{k: v for k, v in ctx.items() if k not in ("error",) and v is not None},
+            }
+            try:
+                await writer.add_api_call(record)
+            except Exception:  # noqa: BLE001
+                pass
         raise
     else:
         latency = round((time.monotonic() - start) * 1000, 2)
@@ -148,6 +174,19 @@ async def log_api_call(
             ).observe(latency / 1000)
         except Exception:  # noqa: BLE001
             pass
+        # Persist to writer (swallow writer failures)
+        if writer is not None:
+            record = {
+                "channel": channel,
+                "endpoint": endpoint,
+                "method": method,
+                "latency_ms": latency,
+                **{k: v for k, v in ctx.items() if v is not None},
+            }
+            try:
+                await writer.add_api_call(record)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ---------------------------------------------------------------------------

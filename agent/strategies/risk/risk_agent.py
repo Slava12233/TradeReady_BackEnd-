@@ -33,6 +33,7 @@ external sector database; it infers sector proximity from symbol-name patterns
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -95,6 +96,161 @@ _D8 = Decimal("0.00000001")
 
 
 # ---------------------------------------------------------------------------
+# Drawdown profile — configurable position-size multipliers per drawdown range
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DrawdownTier:
+    """A single drawdown tier mapping a drawdown threshold to a size multiplier.
+
+    Attributes:
+        threshold: Drawdown fraction at which this tier activates (inclusive
+            lower bound).  E.g. ``0.15`` means "when drawdown >= 15 %".
+        multiplier: Position size multiplier applied while in this tier.
+            E.g. ``0.75`` means reduce position size to 75 % of base.
+
+    Example::
+
+        tier = DrawdownTier(threshold=0.15, multiplier=0.75)
+    """
+
+    threshold: float
+    """Drawdown fraction lower bound (0–1) for this tier."""
+
+    multiplier: float
+    """Size multiplier (0–1] applied when drawdown is at or above threshold."""
+
+
+@dataclass(frozen=True)
+class DrawdownProfile:
+    """Per-agent configurable drawdown response profile.
+
+    Maps portfolio drawdown depth to a position-size scale factor via an
+    ordered list of :class:`DrawdownTier` entries.  The active tier is the
+    **highest threshold** that is still less than or equal to the current
+    drawdown — i.e. tiers are evaluated from most restrictive to least, and
+    the first matching tier (highest threshold ≤ drawdown) wins.
+
+    Tiers should be provided in *ascending* threshold order; ``__post_init__``
+    sorts them so callers need not worry about ordering.
+
+    Attributes:
+        name: Human-readable profile name (e.g. ``"AGGRESSIVE"``).
+        tiers: Ordered list of :class:`DrawdownTier` entries.  The first tier
+            must have ``threshold=0.0`` so there is always a matching tier.
+            Sorted ascending by threshold on construction.
+
+    Example::
+
+        profile = DrawdownProfile(
+            name="custom",
+            tiers=[
+                DrawdownTier(threshold=0.0,  multiplier=1.0),
+                DrawdownTier(threshold=0.10, multiplier=0.75),
+                DrawdownTier(threshold=0.20, multiplier=0.5),
+                DrawdownTier(threshold=0.30, multiplier=0.25),
+            ],
+        )
+        factor = profile.scale_factor(drawdown_pct=0.15)  # → 0.75
+    """
+
+    name: str
+    """Profile identifier, e.g. ``"AGGRESSIVE"``, ``"MODERATE"``, ``"CONSERVATIVE"``."""
+
+    tiers: tuple[DrawdownTier, ...]
+    """Ordered drawdown tiers (ascending threshold)."""
+
+    def __post_init__(self) -> None:
+        """Validate and sort tiers after construction.
+
+        Raises:
+            ValueError: If no tiers are provided or no tier has threshold 0.0.
+        """
+        if not self.tiers:
+            raise ValueError("DrawdownProfile requires at least one tier.")
+        # Re-sort via object.__setattr__ because the dataclass is frozen.
+        sorted_tiers = tuple(sorted(self.tiers, key=lambda t: t.threshold))
+        object.__setattr__(self, "tiers", sorted_tiers)
+        if sorted_tiers[0].threshold != 0.0:
+            raise ValueError(
+                "The first DrawdownTier (after sorting) must have threshold=0.0 "
+                "to ensure a matching tier always exists."
+            )
+
+    def scale_factor(self, drawdown_pct: float) -> float:
+        """Return the position-size multiplier for the given drawdown fraction.
+
+        Iterates tiers in *descending* threshold order and returns the
+        multiplier of the first tier whose threshold does not exceed
+        ``drawdown_pct``.  Because the base tier always has threshold 0.0,
+        this always returns a valid multiplier.
+
+        Args:
+            drawdown_pct: Current portfolio drawdown as a fraction in [0, ∞).
+                Values > 1.0 are clamped to the most restrictive tier.
+
+        Returns:
+            A multiplier in (0, 1] — 1.0 when drawdown is within the first
+            tier, lower values as drawdown deepens.
+
+        Example::
+
+            profile = AGGRESSIVE_PROFILE
+            # Drawdown 20 % falls in the 15–25 % tier → 0.75×
+            assert profile.scale_factor(0.20) == 0.75
+        """
+        # Evaluate from highest threshold downward so the first match is the
+        # most-restrictive applicable tier.
+        for tier in reversed(self.tiers):
+            if drawdown_pct >= tier.threshold:
+                return tier.multiplier
+        # Should never be reached because tier[0].threshold == 0.0 and
+        # drawdown_pct >= 0.0 always. Return 1.0 as a safe fallback.
+        return 1.0  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
+# Preset profiles
+# ---------------------------------------------------------------------------
+
+#: Aggressive profile — for Momentum and Evolved strategies.
+#: Full size at <15 %, tapering to 0.25× at >40 % drawdown.
+AGGRESSIVE_PROFILE = DrawdownProfile(
+    name="AGGRESSIVE",
+    tiers=(
+        DrawdownTier(threshold=0.00, multiplier=1.00),
+        DrawdownTier(threshold=0.15, multiplier=0.75),
+        DrawdownTier(threshold=0.25, multiplier=0.50),
+        DrawdownTier(threshold=0.40, multiplier=0.25),
+    ),
+)
+
+#: Moderate profile — for Balanced and Regime strategies.
+#: Full size at <10 %, tapering to 0.25× at >30 % drawdown.
+MODERATE_PROFILE = DrawdownProfile(
+    name="MODERATE",
+    tiers=(
+        DrawdownTier(threshold=0.00, multiplier=1.00),
+        DrawdownTier(threshold=0.10, multiplier=0.75),
+        DrawdownTier(threshold=0.20, multiplier=0.50),
+        DrawdownTier(threshold=0.30, multiplier=0.25),
+    ),
+)
+
+#: Conservative profile — tightest drawdown response.
+#: Full size only at <5 %, dropping to 0.25× at >10 % drawdown.
+CONSERVATIVE_PROFILE = DrawdownProfile(
+    name="CONSERVATIVE",
+    tiers=(
+        DrawdownTier(threshold=0.00, multiplier=1.00),
+        DrawdownTier(threshold=0.05, multiplier=0.50),
+        DrawdownTier(threshold=0.10, multiplier=0.25),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
@@ -118,16 +274,25 @@ class RiskConfig(BaseSettings):
             (default 2).
         daily_loss_halt: Daily PnL loss fraction at which the agent emits a
             ``"HALT"`` verdict (default 0.03 = 3 %).
+        drawdown_profile: Per-agent :class:`DrawdownProfile` that determines
+            how position sizes are scaled as drawdown deepens.  Defaults to
+            :data:`MODERATE_PROFILE` (balanced, suits most strategies).
+            Pass :data:`AGGRESSIVE_PROFILE` for momentum/evolved strategies or
+            :data:`CONSERVATIVE_PROFILE` for risk-averse strategies.
 
     Example::
 
-        cfg = RiskConfig(max_drawdown_trigger=Decimal("0.08"))
+        cfg = RiskConfig(
+            max_drawdown_trigger=Decimal("0.08"),
+            drawdown_profile=AGGRESSIVE_PROFILE,
+        )
     """
 
     model_config = SettingsConfigDict(
         env_prefix="RISK_",
         case_sensitive=False,
         extra="ignore",
+        arbitrary_types_allowed=True,
     )
 
     max_portfolio_exposure: Decimal = Field(
@@ -150,6 +315,19 @@ class RiskConfig(BaseSettings):
     daily_loss_halt: Decimal = Field(
         default=Decimal("0.03"),
         description="Daily loss fraction (of equity) that triggers a HALT verdict.",
+    )
+    drawdown_profile: DrawdownProfile = Field(
+        default=MODERATE_PROFILE,
+        description=(
+            "Per-agent drawdown profile controlling position-size scaling as "
+            "drawdown deepens.  Choose AGGRESSIVE_PROFILE, MODERATE_PROFILE "
+            "(default), or CONSERVATIVE_PROFILE — or supply a custom "
+            "DrawdownProfile instance."
+        ),
+        # exclude=True prevents pydantic-settings from attempting to read
+        # DrawdownProfile from environment variables (it is always set
+        # programmatically via the constructor or default).
+        exclude=True,
     )
 
 
@@ -234,6 +412,18 @@ class RiskAssessment(BaseModel):
         ...,
         description="Highest equity recorded since agent init (drawdown baseline).",
     )
+    scale_factor: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Position-size multiplier derived from the agent's DrawdownProfile. "
+            "1.0 when drawdown is within the base tier; lower values as drawdown "
+            "deepens according to the profile thresholds. "
+            "Callers (e.g. VetoPipeline, DynamicSizer) should multiply the "
+            "intended position size by this factor before placing orders."
+        ),
+    )
 
 
 class TradeApproval(BaseModel):
@@ -299,11 +489,20 @@ class RiskAgent:
         approval = await agent.check_trade(signal, portfolio)
     """
 
-    def __init__(self, config: RiskConfig, sdk_client: object | None = None) -> None:
+    def __init__(
+        self,
+        config: RiskConfig,
+        sdk_client: object | None = None,
+        drawdown_profile: DrawdownProfile | None = None,
+    ) -> None:
         self._config = config
         self._sdk_client = sdk_client
         self._peak_equity: Decimal = Decimal("0")
         self._log = logger.bind(component="RiskAgent")
+        # DrawdownProfile precedence: explicit arg → config field → MODERATE default.
+        self._drawdown_profile: DrawdownProfile = (
+            drawdown_profile or config.drawdown_profile
+        )
 
     # ------------------------------------------------------------------
     # Public interface
@@ -402,6 +601,15 @@ class RiskAgent:
         else:
             verdict = "OK"
 
+        # Compute the drawdown-profile scale factor from the current drawdown.
+        # When verdict is HALT, force scale_factor to 0.0 so downstream
+        # consumers do not accidentally size any position.
+        scale_factor: float
+        if verdict == "HALT":
+            scale_factor = 0.0
+        else:
+            scale_factor = self._drawdown_profile.scale_factor(drawdown_pct)
+
         assessment = RiskAssessment(
             total_exposure_pct=float(total_exposure_pct),
             max_single_position_pct=float(max_single_position_pct),
@@ -411,6 +619,7 @@ class RiskAgent:
             action=action,
             equity=equity.quantize(_D8, ROUND_HALF_UP),
             peak_equity=self._peak_equity.quantize(_D8, ROUND_HALF_UP),
+            scale_factor=scale_factor,
         )
 
         self._log.info(
@@ -419,6 +628,8 @@ class RiskAgent:
             exposure_pct=f"{total_exposure_pct:.4f}",
             drawdown_pct=f"{drawdown_pct:.4f}",
             correlation_risk=correlation_risk,
+            scale_factor=f"{scale_factor:.4f}",
+            profile=self._drawdown_profile.name,
         )
         return assessment
 

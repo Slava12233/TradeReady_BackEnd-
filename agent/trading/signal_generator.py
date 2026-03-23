@@ -58,6 +58,15 @@ _CANDLE_LIMIT: int = 50
 # Candle interval in seconds (1-minute candles match EnsembleRunner default).
 _CANDLE_INTERVAL: int = 60
 
+# Number of candles used to compute the rolling average volume for the volume
+# confirmation filter.  Must be <= _CANDLE_LIMIT.
+_VOLUME_LOOKBACK: int = 20
+
+# A non-HOLD signal is rejected (downgraded to HOLD) when the most recent
+# candle's volume is below this fraction of the 20-period average volume.
+# Value of 0.5 means "reject if latest volume < 50% of the rolling average".
+_VOLUME_MIN_RATIO: float = 0.5
+
 
 # ── TradingSignal ──────────────────────────────────────────────────────────────
 
@@ -236,11 +245,24 @@ class SignalGenerator:
         # ── Step 3: Convert to TradingSignal objects ─────────────────────
         signals = self._convert_step_result(step_result, symbols, candles_by_symbol)
 
+        # ── Step 4: Apply confidence threshold filter ─────────────────────
+        confidence_threshold = self._config.signal_confidence_threshold
+        signals = [
+            s if s.confidence >= confidence_threshold else self._hold_signal(
+                s.symbol, reason="below_confidence_threshold"
+            )
+            for s in signals
+        ]
+
+        # ── Step 5: Apply volume confirmation filter ──────────────────────
+        signals = self._apply_volume_filter(signals, candles_by_symbol)
+
         self._log.info(
             "agent.trade.signal_generator.generate.complete",
             symbols=symbols,
             total=len(signals),
             non_hold=sum(1 for s in signals if s.action != "hold"),
+            confidence_threshold=confidence_threshold,
         )
         return signals
 
@@ -446,6 +468,91 @@ class SignalGenerator:
             "sma_fast": _sma(closes, 5),
             "sma_slow": _sma(closes, 20),
         }
+
+    def _apply_volume_filter(
+        self,
+        signals: list[TradingSignal],
+        candles_by_symbol: dict[str, list[dict[str, Any]]],
+    ) -> list[TradingSignal]:
+        """Reject non-HOLD signals when the latest candle volume is too thin.
+
+        A signal is downgraded to HOLD when the most recent candle's volume is
+        below :data:`_VOLUME_MIN_RATIO` × the :data:`_VOLUME_LOOKBACK`-period
+        rolling average volume.  HOLD signals are passed through unchanged.
+
+        This filter guards against false signals generated on low-volume candles
+        where spread and slippage risk are elevated.
+
+        Args:
+            signals: Output of :meth:`_convert_step_result` (may already
+                contain some HOLD signals from the confidence filter).
+            candles_by_symbol: Symbol → ordered candle list mapping.
+
+        Returns:
+            A new list with thin-volume non-HOLD signals replaced by HOLD.
+        """
+        filtered: list[TradingSignal] = []
+        for sig in signals:
+            if sig.action == "hold":
+                filtered.append(sig)
+                continue
+
+            candles = candles_by_symbol.get(sig.symbol, [])
+            volume_ratio = self._compute_volume_ratio(candles)
+
+            if volume_ratio is not None and volume_ratio < _VOLUME_MIN_RATIO:
+                self._log.info(
+                    "agent.trade.signal_generator.volume_filter.rejected",
+                    symbol=sig.symbol,
+                    action=sig.action,
+                    volume_ratio=round(volume_ratio, 4),
+                    threshold=_VOLUME_MIN_RATIO,
+                )
+                filtered.append(self._hold_signal(sig.symbol, reason="low_volume"))
+            else:
+                filtered.append(sig)
+
+        return filtered
+
+    @staticmethod
+    def _compute_volume_ratio(
+        candles: list[dict[str, Any]],
+    ) -> float | None:
+        """Compute the ratio of the latest candle volume to the rolling average.
+
+        Uses the last :data:`_VOLUME_LOOKBACK` candles (oldest to newest).  The
+        latest candle is the last entry in the list.  Returns ``None`` when
+        there are fewer than two candles (insufficient data to form a baseline).
+
+        Args:
+            candles: Chronologically ordered OHLCV candle dicts, each with a
+                ``"volume"`` key (str or numeric).
+
+        Returns:
+            ``latest_volume / mean(lookback_volumes)`` as a float, or ``None``
+            when the candle list is too short or all volumes are zero.
+        """
+        if len(candles) < 2:
+            return None
+
+        window = candles[-_VOLUME_LOOKBACK:]
+        volumes: list[float] = []
+        for c in window:
+            raw = c.get("volume")
+            if raw is not None:
+                try:
+                    volumes.append(float(raw))
+                except (ValueError, TypeError):
+                    pass
+
+        if len(volumes) < 2:
+            return None
+
+        avg_volume = sum(volumes[:-1]) / len(volumes[:-1])
+        if avg_volume == 0.0:
+            return None
+
+        return volumes[-1] / avg_volume
 
     @staticmethod
     def _hold_signal(symbol: str, *, reason: str = "") -> TradingSignal:

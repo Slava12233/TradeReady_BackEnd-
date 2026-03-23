@@ -83,3 +83,5 @@ When adding a new CLAUDE.md, insert into the correct table section.
 - Alembic head is now 019 (was 017 after ecosystem); DB now has 35+ tables including agent_api_calls and agent_strategy_signals
 - `src/monitoring/metrics.py` created (new file in existing directory — update `src/monitoring/CLAUDE.md` when working there)
 - 3 new API endpoints added to agents router (trace, analyze, feedback PATCH); agents.py now has 17 endpoints
+- [project_master_plan_progress.md](project_master_plan_progress.md) — Trading Agent Master Plan task completion status and test counts by phase
+- [feedback_claude_md_already_updated.md](feedback_claude_md_already_updated.md) — Sub-module CLAUDE.md files are updated inline by task agents; verify before re-updating

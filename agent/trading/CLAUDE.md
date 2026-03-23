@@ -1,6 +1,6 @@
 # agent/trading/ — Trading Loop, Signal Generator, Executor, Monitor, Journal, Strategy Manager, A/B Testing
 
-<!-- last-updated: 2026-03-21 (logging instrumentation) -->
+<!-- last-updated: 2026-03-22 -->
 
 > Autonomous trading system: an observe-analyse-decide-execute-record cycle, multi-strategy signal generation, position monitoring, trade journaling with LLM reflections, performance tracking, and A/B test framework.
 
@@ -27,6 +27,8 @@ The `agent/trading/` package implements the full lifecycle of autonomous agent t
 | `journal.py` | `TradingJournal` — decision records, LLM reflections, daily/weekly reviews |
 | `strategy_manager.py` | `StrategyManager` — rolling windows, degradation, adjustments, comparison |
 | `ab_testing.py` | `ABTestRunner`, `ABTest` — A/B test creation, recording, evaluation, promotion |
+| `pair_selector.py` | `PairSelector`, `SelectedPairs`, `PairInfo` — dynamic pair selection by volume + momentum |
+| `ws_manager.py` | `WSManager` — WebSocket integration: ticker + order channels, price buffer, fill notifications, REST fallback |
 | `__init__.py` | Re-exports all public symbols |
 
 ## Public API
@@ -334,6 +336,52 @@ Manages A/B tests between two strategy parameter variants for the same strategy.
 
 ---
 
+---
+
+### `PairSelector`, `SelectedPairs`, `PairInfo` — `pair_selector.py`
+
+```python
+from agent.trading import PairSelector, SelectedPairs, PairInfo
+
+selector = PairSelector(config=agent_config, rest_client=httpx_client)
+pairs: SelectedPairs = await selector.get_active_pairs()
+# Feed into signal generator:
+signals = await generator.generate(pairs.all_symbols[:20])
+```
+
+**Constructor:** `PairSelector(config, rest_client=None, ttl_seconds=3600.0, min_volume_usd=10_000_000, max_spread_pct=0.05, top_n_pairs=30, momentum_n_pairs=10, min_symbols_threshold=5)`
+
+**`SelectedPairs` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `volume_ranked` | `list[str]` | Top-N pairs by 24h USDT quote-volume (descending) |
+| `momentum_tier` | `list[str]` | Top-M pairs by `|change_pct|` (big movers, both directions) |
+| `all_symbols` | `list[str]` | Union: `volume_ranked` first, then unique `momentum_tier` additions |
+| `refreshed_at` | `float` | `time.monotonic()` timestamp of last refresh |
+| `total_scanned` | `int` | Symbols considered before filtering |
+| `total_passed_filter` | `int` | Symbols that passed volume + spread filters |
+
+**`PairInfo` fields:** `symbol`, `quote_volume` (Decimal), `change_pct` (Decimal), `spread_pct` (Decimal), `close` (Decimal).
+
+**Key methods:**
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `get_active_pairs()` | `SelectedPairs` | Return cached result or refresh if stale |
+| `invalidate()` | `None` | Force next call to refresh |
+| `cached_result` | `SelectedPairs \| None` | Current cache entry without triggering refresh |
+
+**Filter thresholds (configurable at construction):**
+- Volume: `≥ $10M` USDT quote-volume per 24h (constant `MIN_QUOTE_VOLUME_USD`)
+- Spread: `≤ 5%` synthetic spread (high−low)/close (constant `MAX_SPREAD_PCT`)
+
+**Concurrency:** `asyncio.Lock` ensures only one HTTP refresh runs at a time. Concurrent callers wait and share the refreshed result.
+
+**Fallback:** Returns `config.symbols` when REST client is `None`, the platform has fewer symbols than `min_symbols_threshold`, the network fails, or all pairs are filtered out.
+
+---
+
 ## Dependency Direction
 
 ```
@@ -376,3 +424,7 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 
 - `2026-03-21` — Initial CLAUDE.md created.
 - `2026-03-21` — Logging instrumentation added: `loop.py` generates a fresh `trace_id` per tick and passes it to `LogBatchWriter` for async DB persistence; includes EMA-based anomaly detection on tick latency. `journal.py` wraps every LLM call with `log_api_call()` context manager from `agent.logging_middleware`. `journal.py` and `loop.py` both call `configure_agent_logging()` at startup.
+- `2026-03-22` — Task 24: `SignalGenerator.generate()` now applies two post-ensemble filters: (1) confidence threshold filter (configurable via `AgentConfig.signal_confidence_threshold`, default 0.55) downgrades sub-threshold signals to HOLD; (2) volume confirmation filter (`_apply_volume_filter`) rejects signals when the latest candle volume is < 50% of the 20-period rolling average. New constants: `_VOLUME_LOOKBACK = 20`, `_VOLUME_MIN_RATIO = 0.5`. New methods: `_apply_volume_filter()`, `_compute_volume_ratio()`.
+- `2026-03-22` — Task 27: Added `ws_manager.py` with `WSManager` class. `TradingLoop` accepts optional `ws_manager` kwarg; `_observe()` merges buffered WS prices into `portfolio_state["ws_prices"]`; `tick()` checks for order-fill events via `wait_for_order_fill(timeout=0.05)`; `stop()` disconnects ws_manager. `AgentServer` initialises `WSManager` in `_init_ws_manager()` during `start()` and exposes it via `ws_manager` property; `_shutdown()` disconnects it.
+- `2026-03-22` — Task 26: Added `pair_selector.py` with `PairSelector`, `SelectedPairs`, `PairInfo`. Fetches all symbols via `GET /api/v1/market/prices`, then batch-fetches 24h tickers via `GET /api/v1/market/tickers` (batches of 100). Filters by `MIN_QUOTE_VOLUME_USD=$10M` and `MAX_SPREAD_PCT=5%`. Ranks top 30 by USDT volume and top 10 by `|change_pct|` (momentum tier). Results cached with configurable TTL (default 1h). `asyncio.Lock` ensures only one refresh runs concurrently. Degrades gracefully to `config.symbols` fallback on network errors. 42 new tests.
+- `2026-03-22` — Task 32: Memory-driven learning loop. `TradingJournal` gained two new public methods: `save_episodic_memory()` (encodes entry/exit price, PnL, regime, reasoning into an EPISODIC memory) and `save_procedural_memory()` (encodes rule-pattern learnings as PROCEDURAL, with dedup via `search()` + `reinforce()` before creating a new record). `generate_reflection()` now calls `save_episodic_memory()` on every completed trade in addition to `_save_learnings_to_memory()`. `_save_learnings_to_memory()` updated: PROCEDURAL-keyword learnings with a known regime are routed through `save_procedural_memory()` for automatic reinforcement; others remain EPISODIC. 29 new tests in `agent/tests/test_memory_learning_loop.py`.

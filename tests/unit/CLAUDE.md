@@ -1,8 +1,8 @@
 # Unit Tests
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-22 -->
 
-> 1203 unit tests across 72 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
+> 1219 unit tests across 73 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
 
 ## What This Module Does
 
@@ -84,6 +84,7 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_ws_manager.py` | 23 | `WebSocketManager` — connect, subscribe, unsubscribe, broadcast, channel routing |
 | `test_agent_api_call_repo.py` | 9 | `AgentApiCallRepository` — bulk save, list by trace_id, aggregate latency/cost stats |
 | `test_agent_strategy_signal_repo.py` | 10 | `AgentStrategySignalRepository` — bulk save, list by source/action, daily attribution query |
+| `test_task_agent_analytics.py` | 16 | `settle_agent_decisions` Celery task — settlement flows, pending-skip, missing-order, negative PnL, cancelled orders, beat schedule registration |
 
 ## Mock Patterns
 

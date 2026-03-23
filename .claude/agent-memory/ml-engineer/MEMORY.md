@@ -40,7 +40,14 @@ Five complementary strategies that can operate independently or together through
 ## Ensemble Combiner (`agent/strategies/ensemble/`)
 - `MetaLearner` weighted voting: `score = sum(confidence × weight[source])`. Falls back to HOLD if `combined_confidence < threshold` or all sources disagree
 - Static converters: `rl_weights_to_signals()`, `genome_to_signals()`, `regime_to_signals()`
-- Config via `EnsembleConfig` (env prefix `ENSEMBLE_`); disable risk overlay with `enable_risk_overlay=False`
+- Config via `EnsembleConfig` (env prefix `ENSEMBLE_`); `weights: dict[str, float]` field (keys: `"rl"`, `"evolved"`, `"regime"`); no `optimal_weights_path` field — weights are set directly
+- Weight optimization utilities (Task 14, 2026-03-22):
+  - `save_optimal_weights_json(weights, path)` — writes compact `{"rl": 0.45, "evolved": 0.30, "regime": 0.25}` JSON
+  - `load_optimal_weights(path)` — reads and validates the compact file
+  - `apply_optimal_weights(config, weights)` — returns new `EnsembleConfig` with weights updated via `model_copy()`
+  - `validate_ensemble_beats_baseline(optimal, equal_weight)` — returns `(bool, message)` for post-opt gate
+  - CLI `--seed` and `--base-url` both present; API key from env only (`ENSEMBLE_PLATFORM_API_KEY` or `PLATFORM_API_KEY`)
+  - After optimization, compact `optimal_weights.json` is written alongside the full timestamped report
 - Data flow: candles → PPODeployBridge + StrategyGenome + RegimeSwitcher → MetaLearner → RiskMiddleware → ExecutionDecision → SDK/REST order
 
 ## tradeready-gym Environments
@@ -82,6 +89,27 @@ Five complementary strategies that can operate independently or together through
 - Model integrity via SHA-256: call `save_checksum()` after every model save, `verify_checksum()` before every model load; raises `SecurityError` on mismatch
 - Always call `env.close()` at end of training to finalize `TrainingTracker` run on platform
 
+## Walk-Forward Validation (`agent/strategies/walk_forward.py`)
+- `WalkForwardConfig` (Pydantic BaseSettings, env prefix `WF_`): `data_start`, `data_end`, `train_months` (default 6), `oos_months` (default 1), `min_wfe_threshold` (default 0.5), `results_dir`
+- `generate_windows()` → list of `(train_start, train_end, oos_start, oos_end)` date tuples; uses `_add_months()` with end-of-month clamping; stops when OOS end exceeds data range
+- `compute_wfe(is_metrics, oos_metrics) -> float | None` — returns `None` when IS mean is zero or lists empty; raises `ValueError` on length mismatch
+- `run_walk_forward()` — async orchestrator; exceptions per-window are caught and stored as `WindowResult(is_successful=False, error=...)`; JSON report written to `results_dir`
+- `WalkForwardResult.is_deployable` — `False` when `wfe < min_wfe_threshold`; also `overfit_warning=True`
+- `_create_evo_battle_runner(evo_config)` — named async factory for BattleRunner; primary test seam for evolutionary integration tests (patch `agent.strategies.walk_forward._create_evo_battle_runner`)
+- Do NOT call `configure_agent_logging()` at module level — causes `AttributeError: 'PrintLogger' object has no attribute 'name'` in tests; use `structlog.get_logger(__name__)` directly
+- RL integration uses `asyncio.to_thread` for SB3 (synchronous, CPU-bound)
+- 94 tests in `agent/tests/test_walk_forward.py` (11 test classes)
+
+## Retraining Pipeline (`agent/strategies/retrain.py`)
+- `RetrainOrchestrator` manages 4 schedules: ensemble weights (8h), regime classifier (7d), genome population (7d, 2-3 new generations), PPO RL (30d, rolling 6-month window)
+- All 4 `retrain_*()` methods are fully non-crashing — exceptions caught, returned as `RetrainResult(success=False)`
+- A/B gate via `_build_comparison()`: no incumbent always deploys; improvement must exceed `config.min_improvement` (default 0.01)
+- `run_scheduled_cycle()` checks elapsed hours and runs overdue jobs concurrently via `asyncio.gather`
+- All training callables are injectable (constructor kwargs: `rl_trainer`, `genome_evolver`, `regime_trainer`, `ensemble_optimizer`) — primary test seam for mocking
+- Schedule state persisted in `ScheduleState` in-memory; results persisted as JSON to `config.results_dir` via fire-and-forget async task
+- Config via `RetrainConfig` (Pydantic BaseSettings, env prefix `RETRAIN_`)
+- 57 unit tests in `agent/tests/test_retrain.py`
+
 ## Install Commands
 ```bash
 pip install -e "agent/[rl]"          # SB3 + torch
@@ -89,3 +117,7 @@ pip install -e "agent/[evolutionary]"  # GA extras
 pip install -e "agent/[ml]"          # all ML deps
 pip install -e tradeready-gym/
 ```
+- [project_reward_system.md](project_reward_system.md) — Reward function patterns, registration points, and CompositeReward implementation notes
+- [feedback_test_patterns.md](feedback_test_patterns.md) — Test patterns confirmed in this codebase (gym tests, RLConfig tests, mock patterns)
+- [project_evolutionary_oos.md](project_evolutionary_oos.md) — Task 12 OOS fitness upgrade: conventions, weight rationale, BattleRunner API extension
+- [feedback_regime_feature_pipeline.md](feedback_regime_feature_pipeline.md) — How to add new features to the regime classifier (the 3-file pipeline pattern)

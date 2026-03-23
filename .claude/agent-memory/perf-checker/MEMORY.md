@@ -68,3 +68,6 @@ Use semaphore bound of 5 for external REST calls, 10 for internal service calls.
 - Code-split via `next/dynamic` for: TradingView charts, Recharts, heavy dashboard sections
 - `font-mono` (JetBrains Mono) numbers render faster than variable-width fonts in tables
 - Bundle analysis: `ANALYZE=true pnpm build` (requires `@next/bundle-analyzer`)
+- [feedback_agent_scope.md](feedback_agent_scope.md) — Scope: this agent audits agent/ trading code (Python SDK-backed), not the main src/ platform
+- [project_context_builder_cache.md](project_context_builder_cache.md) — ContextBuilder opens a new SDK client per build() call; Task 37 requests a 30s TTL cache
+- [project_known_patterns.md](project_known_patterns.md) — Known safe/unsafe patterns discovered in agent/ trading subsystem

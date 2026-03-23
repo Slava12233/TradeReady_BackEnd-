@@ -70,3 +70,4 @@
 | Grafana | `http://localhost:3000` |
 | Frontend | `http://localhost:3000` (pnpm dev) |
 | WebSocket | `ws://localhost:8000/ws/v1?api_key=...` |
+- [project_monitoring_stack.md](project_monitoring_stack.md) — Prometheus + Grafana monitoring config patterns and common issues

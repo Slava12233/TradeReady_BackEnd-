@@ -215,4 +215,12 @@ app.conf.beat_schedule = {
         "task": "src.tasks.agent_analytics.agent_platform_health_report",
         "schedule": crontab(hour=6, minute=0),  # 06:00 UTC daily — off-peak
     },
+    # Every-5-minute decision outcome settlement — closes the feedback loop from
+    # trade outcome to agent learning.  Finds unresolved AgentDecision rows,
+    # matches them to filled orders, computes realised PnL from Trade rows, and
+    # writes outcome_pnl / outcome_recorded_at back to each decision.
+    "settle-agent-decisions": {
+        "task": "src.tasks.agent_analytics.settle_agent_decisions",
+        "schedule": 300.0,  # every 5 minutes
+    },
 }

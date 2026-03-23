@@ -15,12 +15,12 @@
 - `get_settings()` caches on first call — tests MUST patch `src.config.get_settings` before the cached instance is created
 - The `test_settings` fixture in conftest handles this correctly; always use it, never construct `Settings` manually
 
-## Test Counts (last verified 2026-03-21)
+## Test Counts (last verified 2026-03-22)
 
 - Unit tests: 72 files, 1203 tests (`tests/unit/`) — added `test_agent_api_call_repo.py` (9 tests), `test_agent_strategy_signal_repo.py` (10 tests)
 - Integration tests: 24 files, 504 tests (`tests/integration/`)
 - Frontend tests: 207 unit tests (`Frontend/tests/`)
-- Agent package tests: 32 files (`agent/tests/`) — added `test_logging_writer.py` (17 tests)
+- Agent package tests: 35 files (`agent/tests/`) — added `test_redis_memory_cache.py` (25 tests), `test_server_writer_wiring.py` (20 tests), `test_server_handlers.py` (54 tests)
 - Agent strategy tests: 578 tests (`agent/strategies/`)
 
 **Pre-existing failures in `agent/tests/` (245 total, as of 2026-03-21):**
@@ -95,3 +95,12 @@ New tests go in `tests/unit/test_<module_name>.py`
 Agent tests use `monkeypatch` to set env vars and pass `_env_file=None` to `AgentConfig` to prevent reading a real `.env` during tests.
 
 **Agent pytest quirk:** `agent/pyproject.toml` does not include `pytest-timeout`, so `--timeout=30` flag is rejected with exit code 4. Do not pass `--timeout` when running `agent/tests/`.
+
+## Phase 0 Group A Wiring Pattern (2026-03-22)
+
+`log_api_call()` in `agent/logging_middleware.py` accepts an optional keyword-only `writer: LogBatchWriter | None = None` parameter. When provided, a record dict with `channel`, `endpoint`, `method`, `latency_ms`, and error info is passed to `writer.add_api_call(record)` after the body completes (success or failure). Writer errors are always swallowed.
+
+`AgentServer` in `agent/server.py` has a `batch_writer` property backed by `_batch_writer: LogBatchWriter | None`. The writer is created and started in `_init_dependencies()` when DB is available, and `writer.stop()` is called first in `_shutdown()` (before `_persist_state`) so buffered records are drained before closing connections. Writer stop errors are swallowed and logged.
+- [feedback_ann401_any_intentional.md](feedback_ann401_any_intentional.md) — ANN401 errors in ML strategy files are intentional and pre-existing
+- [project_agent_tests_location.md](project_agent_tests_location.md) — agent/ tests are independent from tests/ and use their own conftest
+- [feedback_f821_ensemble_run.md](feedback_f821_ensemble_run.md) — F821 undefined RiskMiddleware bug found and fixed in ensemble/run.py

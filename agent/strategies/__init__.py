@@ -12,8 +12,13 @@ Public API (evolutionary):
     clip_genome          - Enforce all parameter bounds in-place
 
 Public API (risk):
+    DrawdownTier         - Single drawdown tier (threshold → multiplier)
+    DrawdownProfile      - Per-agent configurable drawdown response profile
+    AGGRESSIVE_PROFILE   - Preset: Momentum/Evolved strategies
+    MODERATE_PROFILE     - Preset: Balanced/Regime strategies (default)
+    CONSERVATIVE_PROFILE - Preset: tightest drawdown response
     RiskConfig           - Configurable thresholds for portfolio-level risk checks
-    RiskAssessment       - Result of a full portfolio risk assessment
+    RiskAssessment       - Result of a full portfolio risk assessment (includes scale_factor)
     TradeApproval        - Result of a pre-trade approval check
     RiskAgent            - Stateful agent for portfolio-level risk monitoring
 
@@ -36,8 +41,16 @@ Public API (ensemble):
     ConsensusSignal      - Combined output from MetaLearner across all sources
     MetaLearner          - Weighted ensemble combiner; converts any mix of signals to
                            ConsensusSignal; includes rl/genome/regime conversion helpers
+
+Public API (drift):
+    DriftConfig          - Page-Hinkley sensitivity and recovery parameters
+    DriftUpdate          - Result of a single detector update call
+    DriftDetector        - Page-Hinkley drift detector for per-strategy performance
 """
 
+from agent.strategies.drift import DriftConfig, DriftDetector, DriftUpdate
+from agent.strategies.ensemble.meta_learner import MetaLearner
+from agent.strategies.ensemble.signals import ConsensusSignal, SignalSource, TradeAction, WeightedSignal
 from agent.strategies.evolutionary.battle_runner import BattleRunner
 from agent.strategies.evolutionary.genome import StrategyGenome
 from agent.strategies.evolutionary.operators import clip_genome, crossover, mutate, tournament_select
@@ -54,9 +67,17 @@ from agent.strategies.regime import (
     generate_training_data,
     label_candles,
 )
-from agent.strategies.ensemble.meta_learner import MetaLearner
-from agent.strategies.ensemble.signals import ConsensusSignal, SignalSource, TradeAction, WeightedSignal
-from agent.strategies.risk.risk_agent import RiskAgent, RiskAssessment, RiskConfig, TradeApproval
+from agent.strategies.risk.risk_agent import (
+    AGGRESSIVE_PROFILE,
+    CONSERVATIVE_PROFILE,
+    MODERATE_PROFILE,
+    DrawdownProfile,
+    DrawdownTier,
+    RiskAgent,
+    RiskAssessment,
+    RiskConfig,
+    TradeApproval,
+)
 from agent.strategies.rl.config import RLConfig
 
 __all__ = [
@@ -71,6 +92,11 @@ __all__ = [
     "clip_genome",
     "BattleRunner",
     # Risk
+    "DrawdownTier",
+    "DrawdownProfile",
+    "AGGRESSIVE_PROFILE",
+    "MODERATE_PROFILE",
+    "CONSERVATIVE_PROFILE",
     "RiskConfig",
     "RiskAssessment",
     "TradeApproval",
@@ -92,4 +118,8 @@ __all__ = [
     "WeightedSignal",
     "ConsensusSignal",
     "MetaLearner",
+    # Drift detection
+    "DriftConfig",
+    "DriftUpdate",
+    "DriftDetector",
 ]

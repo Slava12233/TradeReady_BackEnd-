@@ -58,6 +58,12 @@ _CHARS_PER_TOKEN: int = 4
 # the context has been assembled.
 _RESPONSE_RESERVE_TOKENS: int = 1500
 
+# Maximum PROCEDURAL memories surfaced in the targeted "past experience" block.
+_PAST_EXPERIENCE_LIMIT: int = 5
+
+# Maximum EPISODIC memories included in the general learnings section.
+_EPISODIC_CONTEXT_CAP: int = 5
+
 
 def _estimate_tokens(text: str) -> int:
     """Return a rough token count for *text*.
@@ -125,6 +131,8 @@ class ContextBuilder:
         session: AgentSession,
         *,
         max_tokens: int | None = None,
+        symbol: str | None = None,
+        regime: str | None = None,
     ) -> list[dict[str, Any]]:
         """Assemble a complete LLM context for the given agent and session.
 
@@ -138,7 +146,8 @@ class ContextBuilder:
             2. Current portfolio state
             3. Active strategy information
             4. Current permissions and budget
-            5. Recent learnings from memory store
+            5. Recent learnings from memory store (with targeted past-experience
+               block when ``symbol``/``regime`` are provided)
             6. Recent conversation messages (from ``session.get_context()``)
 
         Args:
@@ -147,6 +156,13 @@ class ContextBuilder:
                 whose messages will be appended last.
             max_tokens: Token budget for the assembled context.  Defaults to
                 ``config.context_max_tokens - _RESPONSE_RESERVE_TOKENS``.
+            symbol: Optional trading pair being analysed (e.g. ``"BTCUSDT"``).
+                When provided, the learnings section includes top-5 PROCEDURAL
+                memories matching this symbol + regime before the general
+                recent-memories list.
+            regime: Optional market regime at analysis time (e.g.
+                ``"trending_up"``).  Used together with ``symbol`` to scope
+                the past-experience query in the learnings section.
 
         Returns:
             List of ``{"role": str, "content": str}`` dicts, ready to be
@@ -223,7 +239,9 @@ class ContextBuilder:
         # ------------------------------------------------------------------
         # 5. Recent learnings from memory store
         # ------------------------------------------------------------------
-        learnings_block = await self._fetch_learnings_section(agent_id)
+        learnings_block = await self._fetch_learnings_section(
+            agent_id, symbol=symbol, regime=regime
+        )
         if learnings_block:
             learnings_tokens = _estimate_tokens(learnings_block)
             if tokens_used + learnings_tokens <= effective_max:
@@ -264,6 +282,48 @@ class ContextBuilder:
             max_tokens=effective_max,
         )
         return messages
+
+    async def build_trade_context(
+        self,
+        agent_id: str,
+        session: AgentSession,
+        symbol: str,
+        regime: str,
+        *,
+        max_tokens: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Assemble LLM context scoped to a specific trading decision.
+
+        Convenience wrapper around :meth:`build` that makes ``symbol`` and
+        ``regime`` required rather than optional.  The learnings section will
+        always include the targeted "Past experience" block for this symbol +
+        regime combination, providing the LLM with up to
+        :data:`_PAST_EXPERIENCE_LIMIT` relevant PROCEDURAL memories before
+        it analyses the current market conditions.
+
+        This is the preferred entry point when the agent is about to make a
+        trade decision for a specific symbol in a known regime, e.g. inside
+        :class:`~agent.trading.loop.TradingLoop` before calling the signal
+        generator.
+
+        Args:
+            agent_id: UUID string of the agent.
+            session: The active :class:`~agent.conversation.session.AgentSession`.
+            symbol: Trading pair being analysed (e.g. ``"BTCUSDT"``).
+            regime: Market regime at analysis time (e.g. ``"trending_up"``).
+            max_tokens: Optional token budget override.
+
+        Returns:
+            List of ``{"role": str, "content": str}`` dicts, ready to be
+            passed to a chat completions API.  Never empty.
+        """
+        return await self.build(
+            agent_id=agent_id,
+            session=session,
+            max_tokens=max_tokens,
+            symbol=symbol,
+            regime=regime,
+        )
 
     # ------------------------------------------------------------------
     # Private section builders
@@ -433,7 +493,13 @@ class ContextBuilder:
             f"Min signal confidence required to trade: {min_confidence}"
         )
 
-    async def _fetch_learnings_section(self, agent_id: str) -> str:
+    async def _fetch_learnings_section(
+        self,
+        agent_id: str,
+        *,
+        symbol: str | None = None,
+        regime: str | None = None,
+    ) -> str:
         """Fetch recent learnings from the long-term memory store.
 
         Retrieves up to ``memory_search_limit`` recent memories from the
@@ -441,8 +507,20 @@ class ContextBuilder:
         one was supplied.  Memories are formatted as a bulleted list grouped
         by type (procedural first, then semantic, then episodic).
 
+        When ``symbol`` and/or ``regime`` are provided, this method also
+        fetches the top-5 PROCEDURAL memories that are relevant to that
+        specific trading context (via keyword search) and surfaces them
+        first under a "Past experience" sub-heading.  This gives the LLM
+        targeted learnings from past trades under similar conditions before
+        it makes a new decision.
+
         Args:
             agent_id: UUID string of the agent.
+            symbol: Optional trading pair being analysed (e.g.
+                ``"BTCUSDT"``).  Used to scope the past-experience query.
+            regime: Optional market regime string at analysis time (e.g.
+                ``"trending_up"``).  Combined with ``symbol`` to build the
+                search query.
 
         Returns:
             Formatted string of recent learnings, or empty string if the
@@ -452,19 +530,68 @@ class ContextBuilder:
             return ""
 
         try:
+            from agent.memory.store import MemoryType  # noqa: PLC0415
+
+            lines: list[str] = ["## Recent Learnings"]
+            added_ids: set[str] = set()
+
+            # ------------------------------------------------------------------
+            # Past experience: targeted PROCEDURAL memories for this context.
+            # ------------------------------------------------------------------
+            if symbol or regime:
+                query_terms = " ".join(filter(None, [symbol, regime]))
+                try:
+                    past_experience = await self._memory_store.search(
+                        agent_id=agent_id,
+                        query=query_terms,
+                        memory_type=MemoryType.PROCEDURAL,
+                        limit=_PAST_EXPERIENCE_LIMIT,
+                    )
+                    if past_experience:
+                        context_label_parts: list[str] = []
+                        if symbol:
+                            context_label_parts.append(symbol)
+                        if regime:
+                            context_label_parts.append(f"{regime} regime")
+                        context_label = " / ".join(context_label_parts)
+                        lines.append(f"### Past Experience ({context_label})")
+                        for m in past_experience:
+                            confidence_pct = int(float(m.confidence) * 100)
+                            reinforcement_note = (
+                                f", reinforced {m.times_reinforced}x"
+                                if m.times_reinforced > 1
+                                else ""
+                            )
+                            lines.append(
+                                f"- {m.content} "
+                                f"(confidence: {confidence_pct}%{reinforcement_note})"
+                            )
+                            added_ids.add(m.id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "agent.session.context.learnings.past_experience_failed",
+                        agent_id=agent_id,
+                        symbol=symbol,
+                        regime=regime,
+                        error=str(exc),
+                    )
+
+            # ------------------------------------------------------------------
+            # General recent memories (all types).
+            # ------------------------------------------------------------------
             memories = await self._memory_store.get_recent(
                 agent_id, limit=self._config.memory_search_limit
             )
-            if not memories:
-                return ""
+            # Exclude any already shown in the past-experience block.
+            memories = [m for m in memories if m.id not in added_ids]
 
-            from agent.memory.store import MemoryType  # noqa: PLC0415
+            if not memories and not added_ids:
+                return ""
 
             procedural = [m for m in memories if m.memory_type == MemoryType.PROCEDURAL]
             semantic = [m for m in memories if m.memory_type == MemoryType.SEMANTIC]
             episodic = [m for m in memories if m.memory_type == MemoryType.EPISODIC]
 
-            lines: list[str] = ["## Recent Learnings"]
             if procedural:
                 lines.append("### Rules and Procedures")
                 for m in procedural:
@@ -476,8 +603,12 @@ class ContextBuilder:
                     lines.append(f"- {m.content}")
             if episodic:
                 lines.append("### Recent Experiences")
-                for m in episodic[:5]:  # Cap episodic to 5 to save tokens.
+                for m in episodic[:_EPISODIC_CONTEXT_CAP]:
                     lines.append(f"- {m.content}")
+
+            # If lines only contains the header and nothing else, return empty.
+            if len(lines) == 1:
+                return ""
 
             return "\n".join(lines)
 

@@ -26,7 +26,15 @@ Processing pipeline for each signal::
     4. DynamicSizer.calculate_size(...)             → final_size_pct (float)
         │
         ▼
-    5. (optional) SDK place_market_order(...)       → order_id
+    5. Correlation check: _check_correlation()      → correlation-adjusted size
+       • Fetches 20-period candle returns for the proposed asset and each open
+         position via SDK get_candles()
+       • Computes rolling Pearson correlation on log-returns
+       • If max(|r|) > 0.7 with any existing position: size *= (1 - max_corr)
+       • Caps total correlated exposure at 2× single-position risk budget
+        │
+        ▼
+    6. (optional) SDK place_market_order(...)       → order_id
         │
         ▼
     ExecutionDecision
@@ -65,6 +73,8 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
+import math
 from decimal import Decimal
 from typing import Any
 
@@ -72,7 +82,7 @@ import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.strategies.risk.risk_agent import RiskAgent, RiskAssessment
-from agent.strategies.risk.sizing import DynamicSizer
+from agent.strategies.risk.sizing import DynamicSizer, SizerConfig
 from agent.strategies.risk.veto import TradeSignal, VetoDecision, VetoPipeline
 
 logger = structlog.get_logger(__name__)
@@ -84,6 +94,25 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 _DEFAULT_ATR: float = 1.0
 _DEFAULT_AVG_ATR: float = 1.0
+
+# ---------------------------------------------------------------------------
+# Correlation gate constants.
+# ---------------------------------------------------------------------------
+
+# Number of candles fetched per symbol for the correlation calculation.
+# 20 periods is the minimum for a statistically meaningful estimate.
+_CORRELATION_LOOKBACK: int = 20
+
+# Candle interval used when fetching returns data.
+_CORRELATION_INTERVAL: str = "1h"
+
+# Pearson |r| threshold above which position size is reduced.
+_CORRELATION_THRESHOLD: float = 0.70
+
+# Maximum total correlated exposure expressed as a multiple of the single-
+# position risk budget (from SizerConfig.max_single_position).
+# Example: if max_single_position = 10 %, correlated exposure cap = 20 %.
+_CORRELATED_EXPOSURE_MULTIPLIER: float = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -220,12 +249,14 @@ class RiskMiddleware:
         risk_agent: RiskAgent,
         veto_pipeline: VetoPipeline,
         dynamic_sizer: DynamicSizer,
-        sdk_client: Any,
+        sdk_client: Any,  # noqa: ANN401 — intentional: accepts any SDK-compatible client
+        sizer_config: SizerConfig | None = None,
     ) -> None:
         self._risk_agent = risk_agent
         self._veto_pipeline = veto_pipeline
         self._dynamic_sizer = dynamic_sizer
         self._sdk = sdk_client
+        self._sizer_config = sizer_config or SizerConfig()
         self._log = logger.bind(component="RiskMiddleware")
 
     # ------------------------------------------------------------------
@@ -369,6 +400,25 @@ class RiskMiddleware:
             error_msg = f"Dynamic sizing failed (fallback to veto size): {exc}"
             log.warning("agent.strategy.risk.middleware.sizing_error", error=error_msg)
             final_size = veto.adjusted_size_pct
+
+        # ------------------------------------------------------------------
+        # Step 5: Correlation check — reduce size when the proposed asset is
+        # highly correlated with existing positions.  Errors are non-fatal:
+        # the pre-correlation size is used as a safe fallback.
+        # ------------------------------------------------------------------
+        try:
+            final_size = await self._check_correlation(
+                signal=signal,
+                positions=positions,
+                current_size=final_size,
+                equity=assessment.equity,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "agent.strategy.risk.middleware.correlation_check_error",
+                error=str(exc),
+                fallback_size=final_size,
+            )
 
         log.info(
             "agent.strategy.risk.middleware.process_signal.complete",
@@ -514,6 +564,265 @@ class RiskMiddleware:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _check_correlation(
+        self,
+        signal: TradeSignal,
+        positions: list[dict[str, Any]],
+        current_size: float,
+        equity: Decimal,
+    ) -> float:
+        """Reduce position size when the proposed asset is highly correlated with open positions.
+
+        Fetches 20-period hourly candles for the proposed symbol and for each
+        existing position, computes log-return series, and then calculates the
+        rolling 20-period Pearson correlation between each pair.
+
+        Size reduction logic:
+            * If ``max(|r|) > CORRELATION_THRESHOLD`` (0.70): multiply
+              ``current_size`` by ``(1 - max_corr)`` where ``max_corr`` is the
+              highest absolute Pearson correlation found across all pairs.
+            * After reduction, also enforce a cap: the resulting position must
+              not cause total correlated exposure to exceed
+              ``2 × max_single_position`` of equity.
+
+        The method is **non-raising** when called from :meth:`process_signal`.
+        Any exception bubbles up to the caller's try/except block, which logs a
+        warning and falls back to the pre-correlation size.
+
+        Args:
+            signal: Proposed trade signal (provides the target symbol).
+            positions: Current open positions as normalised dicts with a
+                ``"symbol"`` key.  Each symbol's candles are fetched
+                concurrently.
+            current_size: Position size fraction after dynamic sizing, in
+                ``(0, 1]``.
+            equity: Current total portfolio equity in USDT (``Decimal``).
+
+        Returns:
+            Adjusted position size fraction as a ``float``.  Guaranteed to be
+            in ``[0.0, 1.0]``.  Returns ``current_size`` unchanged when there
+            are no existing positions to correlate against, or when all
+            correlations are below the threshold.
+
+        Example::
+
+            adjusted = await middleware._check_correlation(
+                signal=signal,
+                positions=[{"symbol": "ETHUSDT"}],
+                current_size=0.08,
+                equity=Decimal("10000.00"),
+            )
+            # adjusted < 0.08 when BTC/ETH r > 0.70
+        """
+        if not positions:
+            return current_size
+
+        # Collect distinct symbols from existing positions (excluding the
+        # proposed symbol itself to avoid self-correlation).
+        position_symbols: list[str] = []
+        seen: set[str] = set()
+        for pos in positions:
+            sym = str(pos.get("symbol", "")).upper()
+            if sym and sym != signal.symbol.upper() and sym not in seen:
+                position_symbols.append(sym)
+                seen.add(sym)
+
+        if not position_symbols:
+            return current_size
+
+        # ----------------------------------------------------------------
+        # Fetch candles concurrently — one request per symbol + proposed.
+        # ----------------------------------------------------------------
+        all_symbols = [signal.symbol] + position_symbols
+        candle_results: list[Any] = await asyncio.gather(
+            *[
+                self._sdk.get_candles(sym, _CORRELATION_INTERVAL, _CORRELATION_LOOKBACK + 1)
+                for sym in all_symbols
+            ],
+            return_exceptions=True,
+        )
+
+        # Extract return series (log-returns of close prices).
+        returns_by_symbol: dict[str, list[float]] = {}
+        for sym, result in zip(all_symbols, candle_results):
+            if isinstance(result, BaseException):
+                self._log.warning(
+                    "agent.strategy.risk.middleware.correlation_candle_error",
+                    symbol=sym,
+                    error=str(result),
+                )
+                continue
+            series = self._candles_to_log_returns(result)
+            if len(series) >= 2:
+                returns_by_symbol[sym] = series
+
+        # Need the proposed symbol's returns plus at least one position's.
+        proposed_sym = signal.symbol.upper()
+        if proposed_sym not in returns_by_symbol:
+            self._log.debug(
+                "agent.strategy.risk.middleware.correlation_skipped",
+                reason="proposed symbol candles unavailable",
+                symbol=proposed_sym,
+            )
+            return current_size
+
+        proposed_returns = returns_by_symbol[proposed_sym]
+
+        # ----------------------------------------------------------------
+        # Compute rolling Pearson correlation for each position.
+        # ----------------------------------------------------------------
+        max_corr: float = 0.0
+        for sym, pos_returns in returns_by_symbol.items():
+            if sym == proposed_sym:
+                continue
+            corr = self._pearson_correlation(proposed_returns, pos_returns)
+            abs_corr = abs(corr)
+            if abs_corr > max_corr:
+                max_corr = abs_corr
+            self._log.debug(
+                "agent.strategy.risk.middleware.correlation_pair",
+                symbol_a=proposed_sym,
+                symbol_b=sym,
+                pearson_r=f"{corr:.4f}",
+                abs_r=f"{abs_corr:.4f}",
+            )
+
+        if max_corr <= _CORRELATION_THRESHOLD:
+            self._log.debug(
+                "agent.strategy.risk.middleware.correlation_below_threshold",
+                max_corr=f"{max_corr:.4f}",
+                threshold=_CORRELATION_THRESHOLD,
+            )
+            return current_size
+
+        # ----------------------------------------------------------------
+        # Apply proportional size reduction: size *= (1 - max_corr).
+        # ----------------------------------------------------------------
+        reduction_factor = Decimal(str(1.0 - max_corr))
+        reduced_size = Decimal(str(current_size)) * reduction_factor
+        self._log.info(
+            "agent.strategy.risk.middleware.correlation_size_reduced",
+            proposed_symbol=proposed_sym,
+            max_corr=f"{max_corr:.4f}",
+            reduction_factor=f"{float(reduction_factor):.4f}",
+            size_before=f"{current_size:.4f}",
+            size_after=f"{float(reduced_size):.4f}",
+        )
+
+        # ----------------------------------------------------------------
+        # Cap total correlated exposure at 2 × max_single_position.
+        # ----------------------------------------------------------------
+        max_single = self._sizer_config.max_single_position
+        exposure_cap = max_single * Decimal(str(_CORRELATED_EXPOSURE_MULTIPLIER))
+
+        # Sum existing correlated positions' exposure as a fraction of equity.
+        if equity > Decimal("0"):
+            correlated_exposure = Decimal("0")
+            for pos in positions:
+                sym = str(pos.get("symbol", "")).upper()
+                pos_returns_sym = returns_by_symbol.get(sym)
+                if pos_returns_sym is None:
+                    continue
+                corr = self._pearson_correlation(proposed_returns, pos_returns_sym)
+                if abs(corr) > _CORRELATION_THRESHOLD:
+                    pos_value = Decimal(str(pos.get("market_value", "0")))
+                    correlated_exposure += pos_value / equity
+
+            available_corr_cap = exposure_cap - correlated_exposure
+            if available_corr_cap < reduced_size:
+                capped = max(available_corr_cap, Decimal("0"))
+                self._log.info(
+                    "agent.strategy.risk.middleware.correlation_cap_applied",
+                    exposure_cap=f"{float(exposure_cap):.4f}",
+                    correlated_exposure=f"{float(correlated_exposure):.4f}",
+                    size_before=f"{float(reduced_size):.4f}",
+                    size_after=f"{float(capped):.4f}",
+                )
+                reduced_size = capped
+
+        # Clamp to [0, 1].
+        result = float(max(Decimal("0"), min(Decimal("1"), reduced_size)))
+        return result
+
+    @staticmethod
+    def _candles_to_log_returns(candles: Any) -> list[float]:  # noqa: ANN401
+        """Extract log-return series from a candle response.
+
+        Accepts either a list of dicts (``{"close": ...}``) or a list of
+        objects with a ``.close`` attribute, as returned by the SDK.
+
+        Args:
+            candles: Candle data from the SDK ``get_candles()`` call.  Can be
+                a list of dicts or a list of Pydantic/dataclass objects.
+
+        Returns:
+            List of log-returns computed as ``ln(close[t] / close[t-1])``.
+            Empty list when fewer than 2 close prices are extractable.
+        """
+        closes: list[float] = []
+        try:
+            for candle in candles:
+                if isinstance(candle, dict):
+                    raw = candle.get("close") or candle.get("c")
+                else:
+                    raw = getattr(candle, "close", None) or getattr(candle, "c", None)
+                if raw is not None:
+                    try:
+                        closes.append(float(raw))
+                    except (TypeError, ValueError):
+                        continue
+        except TypeError:
+            return []
+
+        if len(closes) < 2:
+            return []
+
+        log_returns: list[float] = []
+        for i in range(1, len(closes)):
+            prev = closes[i - 1]
+            curr = closes[i]
+            if prev > 0 and curr > 0:
+                log_returns.append(math.log(curr / prev))
+        return log_returns
+
+    @staticmethod
+    def _pearson_correlation(x: list[float], y: list[float]) -> float:
+        """Compute the Pearson correlation coefficient between two return series.
+
+        Uses only the overlapping tail of the two series (``min(len(x), len(y))``
+        most recent observations) so comparisons between series of different
+        lengths remain valid.  This mimics a rolling 20-period window
+        aligned to the most recent candle.
+
+        Args:
+            x: First return series (e.g. proposed asset log-returns).
+            y: Second return series (e.g. existing position log-returns).
+
+        Returns:
+            Pearson r in ``[-1.0, 1.0]``.  Returns ``0.0`` when either series
+            is empty, when their overlap is fewer than 2 observations, or when
+            the standard deviation of either series is zero (constant series).
+        """
+        n = min(len(x), len(y))
+        if n < 2:
+            return 0.0
+
+        # Align to the most-recent n observations.
+        xs = x[-n:]
+        ys = y[-n:]
+
+        mean_x = sum(xs) / n
+        mean_y = sum(ys) / n
+
+        cov = sum((a - mean_x) * (b - mean_y) for a, b in zip(xs, ys)) / n
+        var_x = sum((a - mean_x) ** 2 for a in xs) / n
+        var_y = sum((b - mean_y) ** 2 for b in ys) / n
+
+        denom = math.sqrt(var_x * var_y)
+        if denom == 0.0:
+            return 0.0
+        return cov / denom
 
     async def _fetch_portfolio_state(
         self,

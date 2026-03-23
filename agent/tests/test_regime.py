@@ -283,7 +283,7 @@ class TestGenerateTrainingData:
     def test_feature_columns_present(self) -> None:
         candles = _make_large_dataset(500)
         features, labels = generate_training_data(candles, window=20)
-        expected_cols = {"adx", "atr_ratio", "bb_width", "rsi", "macd_hist"}
+        expected_cols = {"adx", "atr_ratio", "bb_width", "rsi", "macd_hist", "volume_ratio"}
         assert expected_cols.issubset(set(features.columns))
 
     def test_no_nan_in_features(self) -> None:
@@ -362,7 +362,9 @@ class TestRegimeClassifierBackendResolution:
 
 class TestRegimeClassifierTrain:
     def test_train_raises_without_data(self) -> None:
-        features = pd.DataFrame({"adx": [], "atr_ratio": [], "bb_width": [], "rsi": [], "macd_hist": []})
+        features = pd.DataFrame({
+            "adx": [], "atr_ratio": [], "bb_width": [], "rsi": [], "macd_hist": [], "volume_ratio": [],
+        })
         labels = pd.Series([], dtype="object")
         clf = RegimeClassifier(seed=0, use_xgboost=False)
         with pytest.raises(ValueError):
@@ -580,10 +582,15 @@ class TestRegimeClassifierAcceptanceCriteria:
         assert regime.value in clf._label_encoder
 
     def test_feature_set_matches_platform_indicators(self) -> None:
-        """Feature names must match ADX, ATR, BB, RSI, MACD — platform indicators."""
+        """Feature names must include ADX, ATR, BB, RSI, MACD, and volume_ratio."""
         clf = RegimeClassifier(seed=0, use_xgboost=False)
-        expected = {"adx", "atr_ratio", "bb_width", "rsi", "macd_hist"}
+        expected = {"adx", "atr_ratio", "bb_width", "rsi", "macd_hist", "volume_ratio"}
         assert set(clf._feature_names) == expected
+
+    def test_feature_count_is_six(self) -> None:
+        """The classifier must have exactly 6 features after adding volume_ratio."""
+        clf = RegimeClassifier(seed=0, use_xgboost=False)
+        assert len(clf._feature_names) == 6
 
 
 class TestPrintEvaluation:

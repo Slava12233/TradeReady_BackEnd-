@@ -36,7 +36,7 @@ Example::
     await cache.cache_memory(memory)
 
     # Retrieve from cache
-    hit = await cache.get_cached(memory.id)
+    hit = await cache.get_cached(memory.id, memory.agent_id)
 
     # Working memory
     await cache.set_working("agent-123", "last_action", "BUY")
@@ -76,6 +76,7 @@ _RECENT_SET_MAX_SIZE: int = 100
 
 # Default TTL applied to regime and signals keys (1 hour).
 _HOT_STATE_TTL: int = 3600
+_WORKING_MEMORY_TTL: int = 86_400  # 24 hours — crash safety net
 
 
 def _memory_key(agent_id: str, memory_id: str) -> str:
@@ -189,7 +190,7 @@ class RedisMemoryCache:
         config = AgentConfig()
         cache = RedisMemoryCache(config=config)
         await cache.cache_memory(memory)
-        hit = await cache.get_cached(memory.id)
+        hit = await cache.get_cached(memory.id, memory.agent_id)
     """
 
     def __init__(
@@ -216,8 +217,11 @@ class RedisMemoryCache:
 
     # ── Memory cache operations ───────────────────────────────────────────────
 
-    async def get_cached(self, memory_id: str) -> Memory | None:
-        """Retrieve a cached memory by its ID.
+    async def get_cached(self, memory_id: str, agent_id: str) -> Memory | None:
+        """Retrieve a cached memory by its ID and owning agent.
+
+        Delegates to :meth:`get_cached_for_agent` which constructs the exact
+        Redis key ``agent:memory:{agent_id}:{memory_id}``.
 
         Returns ``None`` on cache miss, connection failure, or deserialisation
         error.  A ``None`` return must be treated as a cache miss — the caller
@@ -225,48 +229,12 @@ class RedisMemoryCache:
 
         Args:
             memory_id: UUID string of the memory to look up.
+            agent_id: UUID string of the owning agent.
 
         Returns:
             The cached :class:`~agent.memory.store.Memory`, or ``None``.
         """
-        try:
-            redis = await self._get_redis()
-            # We need agent_id to form the key.  The recent sorted sets across
-            # all agents are scanned to find which agent owns this memory_id.
-            # Prefer a direct lookup using a helper that searches the known
-            # pattern; if not found, return None (full miss).
-            raw: str | None = await redis.get(f"agent:memory:*:{memory_id}")
-            if raw is not None:
-                try:
-                    from agent.logging import get_agent_id  # noqa: PLC0415
-                    from agent.metrics import agent_memory_cache_hits  # noqa: PLC0415
-
-                    agent_memory_cache_hits.labels(agent_id=get_agent_id()).inc()
-                except Exception:  # noqa: BLE001
-                    pass
-                return _json_to_memory(raw)
-
-            # Fallback: scan all agent-scoped keys for this memory_id.
-            # This is O(N) over matching keys — acceptable because cache hits
-            # are expected to be the common path after cache_memory() is called
-            # with the agent_id present.
-            logger.debug("agent.memory.cache_miss", memory_id=memory_id)
-            try:
-                from agent.logging import get_agent_id  # noqa: PLC0415
-                from agent.metrics import agent_memory_cache_misses  # noqa: PLC0415
-
-                agent_memory_cache_misses.labels(agent_id=get_agent_id()).inc()
-            except Exception:  # noqa: BLE001
-                pass
-            return None
-        except RedisError as exc:
-            logger.error("agent.memory.get_cached.redis_error", memory_id=memory_id, error=str(exc))
-            return None
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            logger.warning(
-                "agent.memory.get_cached.deserialise_error", memory_id=memory_id, error=str(exc)
-            )
-            return None
+        return await self.get_cached_for_agent(agent_id, memory_id)
 
     async def get_cached_for_agent(
         self, agent_id: str, memory_id: str
@@ -434,9 +402,9 @@ class RedisMemoryCache:
     ) -> None:
         """Store a key-value pair in the agent's working memory hash.
 
-        Working memory has no TTL — it persists across process restarts
-        within a session.  Use :meth:`clear_working` to reset it when a
-        session ends.
+        Working memory has a 24-hour TTL as a crash safety net.  The TTL
+        is refreshed on every write, so active sessions never expire.  Use
+        :meth:`clear_working` to reset it when a session ends.
 
         Args:
             agent_id: UUID string of the agent.
@@ -445,7 +413,11 @@ class RedisMemoryCache:
         """
         try:
             redis = await self._get_redis()
-            await redis.hset(_working_key(agent_id), key, value)
+            working_key = _working_key(agent_id)
+            async with redis.pipeline(transaction=True) as pipe:
+                pipe.hset(working_key, key, value)
+                pipe.expire(working_key, _WORKING_MEMORY_TTL)
+                await pipe.execute()
             logger.debug("agent.memory.working_set", key=key)
         except RedisError as exc:
             logger.error(

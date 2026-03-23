@@ -421,12 +421,19 @@ class TradingJournal:
             tags=tags,
         )
 
+        # Save structured episodic memory for the completed trade (best-effort).
+        await self.save_episodic_memory(
+            agent_id=str(decision_row["agent_id"]),
+            decision_row=decision_row,
+        )
+
         # Save learnings to memory store (best-effort).
         if reflection is not None:
             await self._save_learnings_to_memory(
                 agent_id=str(decision_row["agent_id"]),
                 learnings=reflection.learnings,
                 source=f"reflection_{decision_id}",
+                decision_row=decision_row,
             )
 
         entry = JournalEntry(
@@ -1102,6 +1109,231 @@ class TradingJournal:
         )
 
     # ------------------------------------------------------------------
+    # Public — structured memory creation
+    # ------------------------------------------------------------------
+
+    async def save_episodic_memory(
+        self,
+        agent_id: str,
+        decision_row: dict[str, Any],
+        entry_price: Decimal | None = None,
+        exit_price: Decimal | None = None,
+        regime: str | None = None,
+    ) -> str:
+        """Save a structured EPISODIC memory for a completed trade.
+
+        Encodes the factual record of what happened — entry/exit prices,
+        realised PnL, market regime, and the reasoning chain — into a
+        single :class:`~agent.memory.store.Memory` record of type
+        ``EPISODIC``.  This gives the agent a searchable event log it
+        can query later with ``search(symbol + regime)``.
+
+        Args:
+            agent_id: UUID string of the owning agent.
+            decision_row: Dict from :meth:`_fetch_decision` with trade data.
+            entry_price: Optional entry price captured at order placement.
+                If not supplied, ``decision_row["market_snapshot"]`` is
+                consulted as a fallback.
+            exit_price: Optional exit price captured at position close.
+            regime: Market regime string at the time of the trade (e.g.
+                ``"trending_up"``, ``"ranging"``).  Falls back to the
+                ``risk_assessment.detected_regime`` field if not supplied.
+
+        Returns:
+            The server-assigned UUID string of the persisted memory, or
+            empty string if saving failed or no memory store is configured.
+
+        Raises:
+            *Never raises*.  All errors are caught and logged.
+        """
+        if self._memory_store is None:
+            return ""
+
+        try:
+            from agent.memory.store import Memory, MemoryType  # noqa: PLC0415
+        except ImportError:
+            return ""
+
+        symbol = decision_row.get("symbol", "unknown")
+        direction = decision_row.get("direction", "unknown")
+        pnl_raw = decision_row.get("outcome_pnl")
+        pnl_str = f"{float(pnl_raw):.4f}" if pnl_raw is not None else "N/A"
+        confidence = decision_row.get("confidence")
+        confidence_str = f"{float(confidence):.0%}" if confidence else "unknown"
+        reasoning_snippet = (decision_row.get("reasoning") or "")[:200]
+
+        # Derive prices from snapshot if not explicitly provided.
+        snapshot: dict[str, Any] = decision_row.get("market_snapshot") or {}
+        entry_str = str(entry_price) if entry_price is not None else snapshot.get(symbol, "unknown")
+        exit_str = str(exit_price) if exit_price is not None else "unknown"
+
+        # Derive regime from risk assessment if not provided.
+        risk_data: dict[str, Any] = decision_row.get("risk_assessment") or {}
+        effective_regime = regime or risk_data.get("detected_regime", "unknown")
+
+        content = (
+            f"Trade {direction.upper()} {symbol} in {effective_regime} regime: "
+            f"entry={entry_str}, exit={exit_str}, PnL={pnl_str} USDT, "
+            f"confidence={confidence_str}. Reasoning: {reasoning_snippet}"
+        )
+
+        # Confidence of this memory tracks trade signal confidence.
+        try:
+            mem_confidence = Decimal(str(round(float(confidence), 4))) if confidence else Decimal("0.8000")
+            mem_confidence = max(Decimal("0"), min(Decimal("1"), mem_confidence))
+        except Exception:  # noqa: BLE001
+            mem_confidence = Decimal("0.8000")
+
+        now = datetime.now(UTC)
+        try:
+            mem = Memory(
+                id="",
+                agent_id=agent_id,
+                memory_type=MemoryType.EPISODIC,
+                content=content,
+                source=f"trade_{decision_row.get('id', 'unknown')}",
+                confidence=mem_confidence,
+                times_reinforced=1,
+                created_at=now,
+                last_accessed_at=now,
+            )
+            memory_id = await self._memory_store.save(mem)
+            self._log.debug(
+                "agent.trade.journal.episodic_memory.saved",
+                agent_id=agent_id,
+                symbol=symbol,
+                memory_id=memory_id,
+                regime=effective_regime,
+            )
+            return memory_id
+        except Exception as exc:  # noqa: BLE001
+            self._log.warning(
+                "agent.trade.journal.episodic_memory.save_error",
+                agent_id=agent_id,
+                symbol=symbol,
+                error=str(exc),
+            )
+            return ""
+
+    async def save_procedural_memory(
+        self,
+        agent_id: str,
+        pattern: str,
+        regime: str,
+        symbol: str | None = None,
+        confidence: Decimal | None = None,
+        source: str = "trade_reflection",
+    ) -> str:
+        """Save or reinforce a PROCEDURAL memory encoding a trading rule.
+
+        Encodes actionable pattern learnings such as "RSI divergence works
+        well in trending regime for BTC" or "avoid entries when volume is
+        below average in ranging markets".
+
+        Before creating a new record, searches for existing procedural
+        memories with similar content.  If a close match is found, that
+        memory is reinforced instead of duplicating it.  This causes
+        frequently-confirmed patterns to accumulate ``times_reinforced``
+        count and surface higher in future retrieval scoring.
+
+        Args:
+            agent_id: UUID string of the owning agent.
+            pattern: Human-readable rule or pattern discovered
+                (e.g. ``"pattern RSI divergence worked in trending_up"``).
+            regime: Market regime the pattern applies to.
+            symbol: Optional trading pair the pattern applies to.  When
+                provided, the content is scoped to that symbol.
+            confidence: Certainty of this rule in ``[0, 1]``.  Defaults to
+                ``Decimal("0.7500")``.
+            source: Origin label for the memory record.
+
+        Returns:
+            The UUID string of the saved or reinforced memory, or empty
+            string on any error.
+
+        Raises:
+            *Never raises*.  All errors are caught and logged.
+        """
+        if self._memory_store is None:
+            return ""
+
+        try:
+            from agent.memory.store import Memory, MemoryType  # noqa: PLC0415
+        except ImportError:
+            return ""
+
+        effective_confidence = confidence if confidence is not None else Decimal("0.7500")
+
+        # Build the canonical content string for this procedural rule.
+        scope = f" for {symbol}" if symbol else ""
+        content = f"{pattern}{scope} in {regime} regime"
+
+        # Search for an existing matching procedural memory to reinforce.
+        try:
+            query_terms = f"{symbol or ''} {regime}".strip()
+            existing_memories = await self._memory_store.search(
+                agent_id=agent_id,
+                query=query_terms,
+                memory_type=MemoryType.PROCEDURAL,
+                limit=5,
+            )
+            for existing in existing_memories:
+                # Treat any existing memory that overlaps significantly as a match.
+                if (
+                    regime.lower() in existing.content.lower()
+                    and (symbol is None or symbol.lower() in existing.content.lower())
+                    and len(set(pattern.lower().split()) & set(existing.content.lower().split())) >= 2  # noqa: PLR2004
+                ):
+                    await self._memory_store.reinforce(existing.id)
+                    self._log.debug(
+                        "agent.trade.journal.procedural_memory.reinforced",
+                        agent_id=agent_id,
+                        memory_id=existing.id,
+                        times_reinforced=existing.times_reinforced + 1,
+                        regime=regime,
+                    )
+                    return existing.id
+        except Exception as exc:  # noqa: BLE001
+            self._log.debug(
+                "agent.trade.journal.procedural_memory.search_error",
+                agent_id=agent_id,
+                error=str(exc),
+                hint="Proceeding to save new memory.",
+            )
+
+        # No matching memory found — create a new one.
+        now = datetime.now(UTC)
+        try:
+            mem = Memory(
+                id="",
+                agent_id=agent_id,
+                memory_type=MemoryType.PROCEDURAL,
+                content=content,
+                source=source,
+                confidence=effective_confidence,
+                times_reinforced=1,
+                created_at=now,
+                last_accessed_at=now,
+            )
+            memory_id = await self._memory_store.save(mem)
+            self._log.debug(
+                "agent.trade.journal.procedural_memory.saved",
+                agent_id=agent_id,
+                symbol=symbol,
+                regime=regime,
+                memory_id=memory_id,
+            )
+            return memory_id
+        except Exception as exc:  # noqa: BLE001
+            self._log.warning(
+                "agent.trade.journal.procedural_memory.save_error",
+                agent_id=agent_id,
+                pattern=pattern[:60],
+                error=str(exc),
+            )
+            return ""
+
+    # ------------------------------------------------------------------
     # Private — memory store integration
     # ------------------------------------------------------------------
 
@@ -1110,11 +1342,22 @@ class TradingJournal:
         agent_id: str,
         learnings: list[str],
         source: str,
+        decision_row: dict[str, Any] | None = None,
     ) -> None:
         """Save extracted learnings to the agent memory store.
 
-        Each learning string is stored as a separate
-        :class:`~agent.memory.store.Memory` record with type ``EPISODIC``.
+        Each learning string is classified as EPISODIC or PROCEDURAL based
+        on its content, then stored as a separate
+        :class:`~agent.memory.store.Memory` record.  Strings that match
+        procedural patterns (contain keywords like "avoid", "always",
+        "works in", "regime") are saved as PROCEDURAL — the rest are
+        saved as EPISODIC.
+
+        When a ``decision_row`` is supplied, this method also calls
+        :meth:`save_episodic_memory` to store the full structured trade
+        event and :meth:`save_procedural_memory` for any regime-specific
+        patterns extracted from the learnings.
+
         Failures are logged and silently swallowed — memory persistence must
         never block the reflection pipeline.
 
@@ -1122,6 +1365,10 @@ class TradingJournal:
             agent_id: UUID string of the owning agent.
             learnings: Concrete lesson strings to persist.
             source: Origin reference (e.g. ``"reflection_<decision_id>"``).
+            decision_row: Optional full decision dict from
+                :meth:`_fetch_decision`.  When provided, a structured EPISODIC
+                memory is also saved and any regime-scoped rules are saved
+                as PROCEDURAL memories.
         """
         if not learnings:
             return
@@ -1139,22 +1386,50 @@ class TradingJournal:
             self._log.debug("agent.trade.journal.save_learnings.import_failed")
             return
 
+        # Derive regime from decision_row for procedural classification.
+        regime: str | None = None
+        symbol: str | None = None
+        if decision_row is not None:
+            risk_data: dict[str, Any] = decision_row.get("risk_assessment") or {}
+            regime = risk_data.get("detected_regime")
+            symbol = decision_row.get("symbol")
+
+        # Keywords that indicate a procedural (rule-based) learning.
+        _PROCEDURAL_KEYWORDS = frozenset({
+            "avoid", "always", "never", "works in", "regime", "pattern",
+            "rule", "when", "should", "must", "consider",
+        })
+
         now = datetime.now(UTC)
 
         async def _save_one(content: str) -> None:
             try:
-                mem = Memory(
-                    id="",  # server assigns
-                    agent_id=agent_id,
-                    memory_type=MemoryType.EPISODIC,
-                    content=content,
-                    source=source,
-                    confidence=Decimal("0.8000"),
-                    times_reinforced=1,
-                    created_at=now,
-                    last_accessed_at=now,
-                )
-                await self._memory_store.save(mem)
+                lower = content.lower()
+                is_procedural = any(kw in lower for kw in _PROCEDURAL_KEYWORDS)
+
+                if is_procedural and regime:
+                    # Delegate to save_procedural_memory for dedup + reinforce.
+                    await self.save_procedural_memory(
+                        agent_id=agent_id,
+                        pattern=content,
+                        regime=regime,
+                        symbol=symbol,
+                        confidence=Decimal("0.7500"),
+                        source=source,
+                    )
+                else:
+                    mem = Memory(
+                        id="",
+                        agent_id=agent_id,
+                        memory_type=MemoryType.PROCEDURAL if is_procedural else MemoryType.EPISODIC,
+                        content=content,
+                        source=source,
+                        confidence=Decimal("0.8000"),
+                        times_reinforced=1,
+                        created_at=now,
+                        last_accessed_at=now,
+                    )
+                    await self._memory_store.save(mem)
             except Exception as exc:  # noqa: BLE001
                 self._log.warning(
                     "agent.trade.journal.save_learnings.save_error",

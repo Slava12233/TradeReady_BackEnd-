@@ -207,6 +207,36 @@ def _rsi_series(closes: np.ndarray, period: int = 14) -> np.ndarray:
     return result
 
 
+def _volume_ratio_series(volumes: np.ndarray, period: int = 20) -> np.ndarray:
+    """Volume ratio (current volume / SMA of volume over `period` bars).
+
+    A ratio > 1 means above-average volume; < 1 means below-average.  This
+    feature captures volume-driven regime transitions (e.g. breakout on
+    high volume, accumulation on low volume) that price-only indicators miss.
+
+    Returns same-length float array; ``nan`` for the first ``period - 1``
+    positions where the rolling SMA cannot be computed.
+
+    Args:
+        volumes: Array of per-candle volume values.
+        period: Rolling window length for the volume SMA (default 20).
+
+    Returns:
+        Float array of length ``len(volumes)``.  Positions where the SMA is
+        zero (all-zero volume window) are returned as ``nan`` to avoid
+        division-by-zero artefacts.
+    """
+    n = len(volumes)
+    result = np.full(n, np.nan)
+    for i in range(period - 1, n):
+        window = volumes[i - period + 1 : i + 1]
+        sma = float(np.mean(window))
+        if sma == 0.0:
+            continue
+        result[i] = float(volumes[i]) / sma
+    return result
+
+
 def _macd_hist_series(
     closes: np.ndarray,
     fast: int = 12,
@@ -346,11 +376,19 @@ def generate_training_data(
     - ``bb_width``: Bollinger Band width relative to middle band
     - ``rsi``: Relative Strength Index
     - ``macd_hist``: MACD histogram
+    - ``volume_ratio``: Current volume / 20-period SMA of volume — captures
+      volume-driven regime transitions (breakouts, accumulation) that
+      price-only indicators cannot detect
 
     Args:
         candles: List of OHLCV dicts (same format as ``label_candles``).
-        window: Rolling period for ADX and ATR (default 20). RSI uses 14
-                and Bollinger Bands use 20 regardless of this parameter.
+                 Each dict must contain a ``volume`` key for ``volume_ratio``
+                 to be computed; candles without a ``volume`` key are treated
+                 as having zero volume (``volume_ratio`` will be NaN for those
+                 rows and they will be dropped from the output).
+        window: Rolling period for ADX and ATR (default 20). RSI uses 14,
+                Bollinger Bands use 20, and volume SMA uses 20 regardless of
+                this parameter.
 
     Returns:
         A tuple of (features_df, labels_series). Both have the same integer
@@ -370,6 +408,7 @@ def generate_training_data(
     highs = np.array([float(c.get("high", c.get("close", 0))) for c in candles], dtype=np.float64)
     lows = np.array([float(c.get("low", c.get("close", 0))) for c in candles], dtype=np.float64)
     closes = np.array([float(c["close"]) for c in candles], dtype=np.float64)
+    volumes = np.array([float(c.get("volume", 0.0)) for c in candles], dtype=np.float64)
 
     # Compute all features as same-length arrays (nan where insufficient).
     adx_arr = _adx_series(highs, lows, closes, period=window)
@@ -379,6 +418,11 @@ def generate_training_data(
     bb_width_arr = _bb_width_series(closes, period=20)
     rsi_arr = _rsi_series(closes, period=14)
     macd_hist_arr = _macd_hist_series(closes, fast=12, slow=26, signal=9)
+    # volume_ratio = current volume / 20-period SMA of volume.
+    # Captures volume-driven regime transitions (breakouts, accumulation phases)
+    # that price-only indicators cannot detect.  A ratio > 1 indicates
+    # above-average activity; < 1 indicates below-average activity.
+    volume_ratio_arr = _volume_ratio_series(volumes, period=20)
 
     features_df = pd.DataFrame(
         {
@@ -387,6 +431,7 @@ def generate_training_data(
             "bb_width": bb_width_arr,
             "rsi": rsi_arr,
             "macd_hist": macd_hist_arr,
+            "volume_ratio": volume_ratio_arr,
         },
         index=range(n),
     )

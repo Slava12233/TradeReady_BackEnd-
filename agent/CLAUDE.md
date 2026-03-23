@@ -1,6 +1,6 @@
 # agent/ — TradeReady Platform Testing Agent
 
-<!-- last-updated: 2026-03-21 (logging system) -->
+<!-- last-updated: 2026-03-22 -->
 
 > Autonomous AI agent for end-to-end testing of the AiTradingAgent platform using Pydantic AI + OpenRouter.
 
@@ -19,10 +19,11 @@ agent/
 ├── config.py                # AgentConfig (pydantic-settings BaseSettings)
 ├── main.py                  # CLI parser, workflow dispatch, report persistence; uses configure_agent_logging()
 ├── logging.py               # configure_agent_logging() — centralized structlog config with trace_id/span_id/agent_id context
-├── logging_middleware.py    # log_api_call() context manager, LLM cost estimator, set_agent_id()
+├── logging_middleware.py    # log_api_call() context manager (accepts optional writer: LogBatchWriter), LLM cost estimator, set_agent_id()
 ├── logging_writer.py        # LogBatchWriter — async batched DB persistence for API call logs
 ├── metrics.py               # 16 Prometheus metrics in AGENT_REGISTRY (counters, histograms, gauges)
-├── server.py                # AgentServer with /metrics endpoint via asyncio.start_server; set_agent_id()
+├── server.py                # AgentServer with /metrics endpoint, LogBatchWriter singleton (batch_writer property), IntentRouter registered with 7 handlers; lifecycle managed via _init_dependencies()/_shutdown()
+├── server_handlers.py       # 7 async handler functions (trade, analyze, portfolio, status, journal, learn, permissions) + REASONING_LOOP_SENTINEL for general fallback
 ├── pyproject.toml           # Package config: tradeready-test-agent 0.1.0; adds prometheus-client dependency
 ├── .env.example             # All required env vars with placeholder values
 ├── reports/                 # Default output directory for JSON report files
@@ -38,7 +39,7 @@ agent/
 │   └── skill_context.py     # load_skill_context() — loads docs/skill.md
 ├── tools/
 │   ├── __init__.py          # Re-exports all 6 public tool factories
-│   ├── sdk_tools.py         # get_sdk_tools() — 7 tools via AsyncAgentExchangeClient
+│   ├── sdk_tools.py         # get_sdk_tools() — 13 tools via AsyncAgentExchangeClient; _serialize_order() helper
 │   ├── mcp_tools.py         # get_mcp_server(), get_mcp_server_with_jwt()
 │   ├── rest_tools.py        # PlatformRESTClient, get_rest_tools() — 11 REST tool functions
 │   └── agent_tools.py       # get_agent_tools() — 5 self-reflection/journal/feedback tools
@@ -68,7 +69,9 @@ agent/
 │   ├── monitor.py           # PositionMonitor — stop-loss/take-profit/max-hold exits
 │   ├── journal.py           # TradingJournal — decision records, LLM reflections, summaries
 │   ├── strategy_manager.py  # StrategyManager — rolling windows, degradation, adjustments
-│   └── ab_testing.py        # ABTestRunner, ABTest — A/B test framework
+│   ├── ab_testing.py        # ABTestRunner, ABTest — A/B test framework
+│   ├── pair_selector.py     # PairSelector, SelectedPairs, PairInfo — volume/momentum pair ranking with TTL cache
+│   └── ws_manager.py        # WSManager — WebSocket integration: ticker + order channels, fill notifications, REST fallback
 ├── workflows/
 │   ├── __init__.py          # Re-exports all 4 workflow runner functions
 │   ├── smoke_test.py        # run_smoke_test() — 10-step connectivity validation
@@ -80,8 +83,11 @@ agent/
 │   ├── rl/                  # PPO reinforcement learning (config, train, evaluate, deploy, data_prep, runner)
 │   ├── evolutionary/        # Genetic algorithm (genome, operators, population, battle_runner, evolve, analyze, config)
 │   ├── regime/              # Market regime detection (labeler, classifier, switcher, strategy_definitions, validate)
-│   ├── risk/                # Risk management overlay (risk_agent, veto, sizing, middleware)
-│   └── ensemble/            # Ensemble combiner (signals, meta_learner, optimize_weights, run, validate, config)
+│   ├── risk/                # Risk management overlay (risk_agent, veto, sizing, middleware, recovery)
+│   ├── ensemble/            # Ensemble combiner (signals, meta_learner, optimize_weights, run, validate, config, circuit_breaker, attribution)
+│   ├── drift.py             # DriftDetector — Page-Hinkley test on log-returns; integrated into TradingLoop
+│   ├── retrain.py           # RetrainOrchestrator — 4 schedules (ensemble 8h, regime 7d, genome 7d, PPO 30d), A/B gate
+│   └── walk_forward.py      # WalkForwardConfig, WalkForwardResult, generate_windows(), compute_wfe(), run_walk_forward()
 └── tests/
     ├── __init__.py
     ├── test_config.py              # AgentConfig field validation and defaults
@@ -413,7 +419,7 @@ The agent test suite is independent of the main platform test suite in `tests/`.
 
 `asyncio_mode = "auto"` is configured in `agent/pyproject.toml` — no `@pytest.mark.asyncio` decorator needed on async tests.
 
-The full agent test suite (including `agent/strategies/` and new logging tests) covers 967 tests (901 + 25 + 24 + 17).
+The full agent test suite (including `agent/strategies/` and all 37 master plan tasks) covers 2200+ tests across 50 test files in `agent/tests/`.
 
 ## Gotchas and Pitfalls
 
@@ -455,3 +461,7 @@ Each subdirectory has its own `CLAUDE.md` with full details. Read the local file
 - `2026-03-20` — Added Docker section (Dockerfile + docker-compose `agent` profile). Updated `[ml]` and `[all]` optional dependency tables. Added checksum security gotcha (`agent/strategies/checksum.py`). Added no-CLI-API-key gotcha. Updated total test count to 901.
 - `2026-03-21` — Added `conversation/`, `memory/`, `permissions/`, `trading/` packages to Directory Structure. Updated `tools/` entry for new `agent_tools.py`. Added 4 new entries to Sub-CLAUDE.md Index.
 - `2026-03-21` — Agent Logging System (34 tasks, 5 phases): added `logging.py`, `logging_middleware.py`, `logging_writer.py`, `metrics.py` to Directory Structure. Added 3 new test files (66 tests). Added `prometheus-client` dependency. Updated test count to 967.
+- `2026-03-22` — ALL 37/37 Trading Agent Master Plan tasks complete. Added `drift.py` (DriftDetector, Page-Hinkley), `retrain.py` (RetrainOrchestrator, 4 schedules, A/B gate, 57 tests), `walk_forward.py` (WFE, 94 tests). Added `circuit_breaker.py` (56 tests), `attribution.py` (45 tests), `recovery.py` (53 tests) to strategies. Added `ws_manager.py` (46 tests), `pair_selector.py` (42 tests) to trading. Updated directory structure. Total agent tests: 2200+.
+- `2026-03-22` — Tasks 21-37 (13 tasks, 289 new tests): RecoveryManager (53 tests), security review PASS, get_ticker/get_pnl tools + volume confirmation filter (35 tests), PairSelector (42 tests), WSManager (46 tests), settle_agent_decisions Celery task (16 tests), memory-driven learning loop (29 tests), 5 new REST tools (24 tests). Total: 1689+.
+- `2026-03-22` — Phase 1 branch + Phase 2 independent: 361 new tests across strategy submodules. Updated test count to 1400+.
+- `2026-03-22` — Phase 0 Group A: added `server_handlers.py` to Directory Structure; updated `server.py` and `logging_middleware.py` entries. Added `test_server_writer_wiring.py` (20 tests) + `test_server_handlers.py` (54 tests). Updated test count to 1041+.

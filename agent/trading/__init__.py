@@ -19,6 +19,9 @@ Exports:
     ABTestInactiveError: Raised when an operation requires an active test.
     DuplicateABTestError: Raised when creating a second active test for the same strategy.
     InsufficientDataError: Raised when evaluate() is called before min_trades are reached.
+    PairSelector: Dynamically selects top tradeable pairs by volume and momentum.
+    SelectedPairs: Result container for a PairSelector refresh cycle.
+    PairInfo: Single-pair market snapshot (volume, change_pct, spread, close).
 """
 
 from agent.trading.ab_testing import (
@@ -34,6 +37,7 @@ from agent.trading.execution import TradeExecutor
 from agent.trading.journal import TradingJournal
 from agent.trading.loop import LoopStoppedError, TradingLoop
 from agent.trading.monitor import PositionMonitor
+from agent.trading.pair_selector import PairInfo, PairSelector, SelectedPairs
 from agent.trading.signal_generator import SignalGenerator, TradingSignal
 from agent.trading.strategy_manager import StrategyManager
 
@@ -53,4 +57,7 @@ __all__ = [
     "ABTestInactiveError",
     "DuplicateABTestError",
     "InsufficientDataError",
+    "PairSelector",
+    "SelectedPairs",
+    "PairInfo",
 ]
