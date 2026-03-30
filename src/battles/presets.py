@@ -129,7 +129,7 @@ def get_preset_config(key: str) -> dict[str, object]:
     preset = BATTLE_PRESETS.get(key)
     if preset is None:
         return {}
-    config = {
+    config: dict[str, object] = {
         "duration_type": preset.duration_type,
         "duration_seconds": preset.duration_seconds,
         "starting_balance": str(preset.starting_balance),

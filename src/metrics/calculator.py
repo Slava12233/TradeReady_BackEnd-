@@ -80,11 +80,7 @@ def calculate_unified_metrics(
     # ── ROI & PnL ─────────────────────────────────────────────────────────
     final_equity = snapshots[-1].equity if snapshots else starting_balance
     total_pnl = final_equity - starting_balance
-    roi_pct = (
-        ((total_pnl / starting_balance) * Decimal("100")).quantize(_QUANT2)
-        if starting_balance > _ZERO
-        else _ZERO
-    )
+    roi_pct = ((total_pnl / starting_balance) * Decimal("100")).quantize(_QUANT2) if starting_balance > _ZERO else _ZERO
 
     # ── Trade PnL classification ──────────────────────────────────────────
     pnls: list[Decimal] = []
@@ -95,11 +91,7 @@ def calculate_unified_metrics(
     wins = [p for p in pnls if p > _ZERO]
     losses = [p for p in pnls if p < _ZERO]
 
-    win_rate = (
-        (Decimal(len(wins)) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2)
-        if pnls
-        else _ZERO
-    )
+    win_rate = (Decimal(len(wins)) / Decimal(len(pnls)) * Decimal("100")).quantize(_QUANT2) if pnls else _ZERO
 
     avg_win = (sum(wins, _ZERO) / Decimal(len(wins))).quantize(_QUANT8) if wins else _ZERO
     avg_loss = (sum(losses, _ZERO) / Decimal(len(losses))).quantize(_QUANT8) if losses else _ZERO
@@ -111,11 +103,7 @@ def calculate_unified_metrics(
     best_trade = max(pnls) if pnls else _ZERO
     worst_trade = min(pnls) if pnls else _ZERO
 
-    trades_per_day = (
-        (Decimal(len(trades)) / duration_days).quantize(_QUANT2)
-        if duration_days > _ZERO
-        else _ZERO
-    )
+    trades_per_day = (Decimal(len(trades)) / duration_days).quantize(_QUANT2) if duration_days > _ZERO else _ZERO
 
     # ── Drawdown from equity curve ────────────────────────────────────────
     max_dd_pct = _ZERO
@@ -138,12 +126,8 @@ def calculate_unified_metrics(
                     dd_start_idx = current_dd_start
 
         if dd_start_idx < len(snapshots) - 1:
-            dd_seconds = (
-                snapshots[-1].timestamp - snapshots[dd_start_idx].timestamp
-            ).total_seconds()
-            max_dd_duration_days = (Decimal(str(dd_seconds)) / Decimal("86400")).quantize(
-                _QUANT2
-            )
+            dd_seconds = (snapshots[-1].timestamp - snapshots[dd_start_idx].timestamp).total_seconds()
+            max_dd_duration_days = (Decimal(str(dd_seconds)) / Decimal("86400")).quantize(_QUANT2)
 
     # ── Sharpe & Sortino ──────────────────────────────────────────────────
     annualize = Decimal(str(math.sqrt(365.25 * 86400 / snapshot_interval_seconds)))

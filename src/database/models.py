@@ -330,9 +330,7 @@ class Account(Base):
     backtest_sessions: Mapped[list[BacktestSession]] = relationship(
         "BacktestSession", back_populates="account", cascade="all, delete-orphan"
     )
-    battles: Mapped[list[Battle]] = relationship(
-        "Battle", back_populates="account", cascade="all, delete-orphan"
-    )
+    battles: Mapped[list[Battle]] = relationship("Battle", back_populates="account", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'suspended', 'archived')", name="ck_accounts_status"),
@@ -1789,9 +1787,7 @@ class BattleSnapshot(Base):
     battle: Mapped[Battle] = relationship("Battle", back_populates="battle_snapshots")
     agent: Mapped[Agent] = relationship("Agent")
 
-    __table_args__ = (
-        Index("idx_battle_snap", "battle_id", "agent_id", "timestamp"),
-    )
+    __table_args__ = (Index("idx_battle_snap", "battle_id", "agent_id", "timestamp"),)
 
     def __repr__(self) -> str:
         return f"<BattleSnapshot battle={self.battle_id} agent={self.agent_id} equity={self.equity}>"
@@ -2495,8 +2491,7 @@ class AgentJournal(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "entry_type IN ('reflection', 'insight', 'mistake', 'improvement', "
-            "'daily_review', 'weekly_review')",
+            "entry_type IN ('reflection', 'insight', 'mistake', 'improvement', 'daily_review', 'weekly_review')",
             name="ck_agent_journal_type",
         ),
         Index("idx_agent_journal_agent_created", "agent_id", "created_at"),
@@ -2701,8 +2696,7 @@ class AgentFeedback(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "category IN ('missing_data', 'missing_tool', 'performance_issue', "
-            "'bug', 'feature_request')",
+            "category IN ('missing_data', 'missing_tool', 'performance_issue', 'bug', 'feature_request')",
             name="ck_agent_feedback_category",
         ),
         CheckConstraint(
@@ -2718,10 +2712,7 @@ class AgentFeedback(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<AgentFeedback id={self.id} agent={self.agent_id} "
-            f"category={self.category!r} status={self.status!r}>"
-        )
+        return f"<AgentFeedback id={self.id} agent={self.agent_id} category={self.category!r} status={self.status!r}>"
 
 
 # ── AgentPermission ───────────────────────────────────────────────────────────
@@ -2885,15 +2876,10 @@ class AgentBudget(Base):
 
     agent: Mapped[Agent] = relationship("Agent")
 
-    __table_args__ = (
-        Index("idx_agent_budgets_agent", "agent_id", unique=True),
-    )
+    __table_args__ = (Index("idx_agent_budgets_agent", "agent_id", unique=True),)
 
     def __repr__(self) -> str:
-        return (
-            f"<AgentBudget agent={self.agent_id} trades_today={self.trades_today} "
-            f"loss_today={self.loss_today}>"
-        )
+        return f"<AgentBudget agent={self.agent_id} trades_today={self.trades_today} loss_today={self.loss_today}>"
 
 
 # ── AgentPerformance ─────────────────────────────────────────────────────────
@@ -3378,7 +3364,4 @@ class AgentAuditLog(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<AgentAuditLog id={self.id} agent={self.agent_id} "
-            f"action={self.action!r} outcome={self.outcome!r}>"
-        )
+        return f"<AgentAuditLog id={self.id} agent={self.agent_id} action={self.action!r} outcome={self.outcome!r}>"

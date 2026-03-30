@@ -41,7 +41,7 @@ class ExchangeAdapter(ABC):
         """
 
     @abstractmethod
-    async def fetch_ticker(self, symbol: str) -> dict:
+    async def fetch_ticker(self, symbol: str) -> dict:  # type: ignore[type-arg]
         """Fetch 24-hour rolling stats for a single symbol.
 
         Args:
@@ -74,7 +74,7 @@ class ExchangeAdapter(ABC):
         """
 
     @abstractmethod
-    async def fetch_order_book(self, symbol: str, limit: int = 20) -> dict:
+    async def fetch_order_book(self, symbol: str, limit: int = 20) -> dict:  # type: ignore[type-arg]
         """Fetch current order book depth.
 
         Args:
@@ -110,7 +110,7 @@ class ExchangeAdapter(ABC):
         Yields:
             :class:`ExchangeTick` as trades arrive.
         """
-        yield  # pragma: no cover — make this a generator  # noqa: B027
+        yield  # type: ignore[misc]  # pragma: no cover — make this a generator  # noqa: B027
 
     # ── Trading (Phase 8 — live execution) ─────────────────────────────────
 
@@ -122,7 +122,7 @@ class ExchangeAdapter(ABC):
         side: str,
         amount: Decimal,
         price: Decimal | None = None,
-    ) -> dict:
+    ) -> dict:  # type: ignore[type-arg]
         """Place an order on the exchange.
 
         Args:
@@ -137,7 +137,7 @@ class ExchangeAdapter(ABC):
         """
 
     @abstractmethod
-    async def cancel_order(self, order_id: str, symbol: str) -> dict:
+    async def cancel_order(self, order_id: str, symbol: str) -> dict:  # type: ignore[type-arg]
         """Cancel an open order.
 
         Args:

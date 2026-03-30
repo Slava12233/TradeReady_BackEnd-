@@ -426,6 +426,9 @@ class TestCapabilityManagerGrant:
         # We need to patch the lazily-imported AgentPermissionRepository inside grant_capability.
         # The cleanest way is to patch it at the repo module level that gets imported inside the function.
         from unittest.mock import patch as _patch  # noqa: PLC0415
+
+        from agent.permissions.roles import AgentRole  # noqa: PLC0415
+
         with (
             _patch(
                 "src.database.repositories.agent_permission_repo.AgentPermissionRepository",
@@ -435,6 +438,11 @@ class TestCapabilityManagerGrant:
                 self.manager,
                 "_get_db_session",
                 new=AsyncMock(return_value=mock_session),
+            ),
+            patch.object(
+                self.manager,
+                "get_role",
+                new=AsyncMock(return_value=AgentRole.ADMIN),
             ),
         ):
             await self.manager.grant_capability(
@@ -469,6 +477,7 @@ class TestCapabilityManagerRevoke:
         self.mock_redis = AsyncMock()
         self.config = _make_config()
         self.agent_id = str(uuid4())
+        self.revoker_id = str(uuid4())
         self.manager = CapabilityManager(config=self.config, redis=self.mock_redis)
 
     async def test_revoke_sets_capability_false_in_db(self) -> None:
@@ -485,6 +494,9 @@ class TestCapabilityManagerRevoke:
         mock_session.begin.return_value = mock_session_cm
 
         from unittest.mock import patch as _patch  # noqa: PLC0415
+
+        from agent.permissions.roles import AgentRole  # noqa: PLC0415
+
         with (
             _patch(
                 "src.database.repositories.agent_permission_repo.AgentPermissionRepository",
@@ -495,8 +507,13 @@ class TestCapabilityManagerRevoke:
                 "_get_db_session",
                 new=AsyncMock(return_value=mock_session),
             ),
+            patch.object(
+                self.manager,
+                "get_role",
+                new=AsyncMock(return_value=AgentRole.ADMIN),
+            ),
         ):
-            await self.manager.revoke_capability(self.agent_id, Capability.CAN_TRADE)
+            await self.manager.revoke_capability(self.agent_id, Capability.CAN_TRADE, granted_by=self.revoker_id)
 
         _, call_kwargs = mock_repo.upsert.call_args
         assert call_kwargs["capabilities"]["can_trade"] is False

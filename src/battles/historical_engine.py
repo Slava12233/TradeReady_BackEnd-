@@ -452,17 +452,19 @@ class HistoricalBattleEngine:
                     )
                 )
 
-            all_results.append({
-                "agent_id": agent_id,
-                "session_id": session.id,
-                "final_equity": portfolio.total_equity,
-                "total_pnl": total_pnl,
-                "roi_pct": roi_pct,
-                "total_trades": sandbox.total_trades,
-                "sharpe_ratio": um.sharpe_ratio,
-                "win_rate": um.win_rate,
-                "max_drawdown": um.max_drawdown_pct,
-            })
+            all_results.append(
+                {
+                    "agent_id": agent_id,
+                    "session_id": session.id,
+                    "final_equity": portfolio.total_equity,
+                    "total_pnl": total_pnl,
+                    "roi_pct": roi_pct,
+                    "total_trades": sandbox.total_trades,
+                    "sharpe_ratio": um.sharpe_ratio,
+                    "win_rate": um.win_rate,
+                    "max_drawdown": um.max_drawdown_pct,
+                }
+            )
 
         await db.flush()
 

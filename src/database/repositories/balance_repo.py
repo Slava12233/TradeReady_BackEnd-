@@ -746,10 +746,7 @@ class BalanceRepository:
             # 1. Deduct quote (from locked or available depending on order type)
             if from_locked:
                 quote_stmt = (
-                    update(Balance)
-                    .where(*quote_filter)
-                    .values(locked=Balance.locked - quote_spent)
-                    .returning(Balance)
+                    update(Balance).where(*quote_filter).values(locked=Balance.locked - quote_spent).returning(Balance)
                 )
             else:
                 quote_stmt = (
@@ -877,10 +874,7 @@ class BalanceRepository:
             # 1. Deduct base asset
             if from_locked:
                 base_stmt = (
-                    update(Balance)
-                    .where(*base_filter)
-                    .values(locked=Balance.locked - base_spent)
-                    .returning(Balance)
+                    update(Balance).where(*base_filter).values(locked=Balance.locked - base_spent).returning(Balance)
                 )
             else:
                 base_stmt = (

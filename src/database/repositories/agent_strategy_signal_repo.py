@@ -72,9 +72,7 @@ class AgentStrategySignalRepository:
         except IntegrityError as exc:
             await self._session.rollback()
             logger.exception("agent_strategy_signal.create.integrity_error", error=str(exc))
-            raise DatabaseError(
-                f"Integrity error while creating agent strategy signal: {exc}"
-            ) from exc
+            raise DatabaseError(f"Integrity error while creating agent strategy signal: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception("agent_strategy_signal.create.db_error", error=str(exc))
@@ -113,9 +111,7 @@ class AgentStrategySignalRepository:
         except IntegrityError as exc:
             await self._session.rollback()
             logger.exception("agent_strategy_signal.bulk_create.integrity_error", error=str(exc))
-            raise DatabaseError(
-                f"Integrity error during bulk create of agent strategy signals: {exc}"
-            ) from exc
+            raise DatabaseError(f"Integrity error during bulk create of agent strategy signals: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception("agent_strategy_signal.bulk_create.db_error", error=str(exc))
@@ -255,11 +251,7 @@ class AgentStrategySignalRepository:
                 {
                     "strategy_name": row.strategy_name,
                     "signal_count": row.signal_count,
-                    "avg_confidence": (
-                        Decimal(str(row.avg_confidence))
-                        if row.avg_confidence is not None
-                        else None
-                    ),
+                    "avg_confidence": (Decimal(str(row.avg_confidence)) if row.avg_confidence is not None else None),
                 }
                 for row in rows
             ]

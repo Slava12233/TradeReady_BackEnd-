@@ -99,7 +99,9 @@ def _setup_service_for_replay(
     """
     if new_battle is None:
         new_battle = _make_battle(
-            account_id=account_id, status="draft", battle_mode="historical",
+            account_id=account_id,
+            status="draft",
+            battle_mode="historical",
         )
 
     def _get_battle_side_effect(bid: UUID):
@@ -217,7 +219,9 @@ async def test_replay_override_agents_replaces_participants():
     service._battle_repo.add_participant = AsyncMock(side_effect=_track_add)
 
     await service.replay_battle(
-        source.id, account_id, override_agents=[new_agent_a, new_agent_b],
+        source.id,
+        account_id,
+        override_agents=[new_agent_a, new_agent_b],
     )
 
     assert len(added_agents) == 2

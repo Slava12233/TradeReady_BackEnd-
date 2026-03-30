@@ -449,10 +449,13 @@ class TestDispatchTrainingObservation:
 
     @pytest.mark.asyncio
     async def test_compare_training_runs_passes_run_ids(self) -> None:
+        run_id_1 = "550e8400-e29b-41d4-a716-446655440001"
+        run_id_2 = "550e8400-e29b-41d4-a716-446655440002"
+        run_ids_str = f"{run_id_1},{run_id_2}"
         mock_data = {
             "runs": [
-                {"run_id": "run-1", "avg_roi": "3.5"},
-                {"run_id": "run-2", "avg_roi": "5.1"},
+                {"run_id": run_id_1, "avg_roi": "3.5"},
+                {"run_id": run_id_2, "avg_roi": "5.1"},
             ]
         }
         client = AsyncMock(spec=httpx.AsyncClient)
@@ -460,7 +463,7 @@ class TestDispatchTrainingObservation:
 
         result = await _dispatch(
             "compare_training_runs",
-            {"run_ids": "run-1,run-2"},
+            {"run_ids": run_ids_str},
             client,
         )
 
@@ -468,6 +471,6 @@ class TestDispatchTrainingObservation:
         assert call_args[0][0] == "GET"
         assert call_args[0][1] == "/api/v1/training/compare"
         params = call_args[1]["params"]
-        assert params["run_ids"] == "run-1,run-2"
+        assert params["run_ids"] == run_ids_str
         parsed = json.loads(result[0].text)
         assert len(parsed["runs"]) == 2

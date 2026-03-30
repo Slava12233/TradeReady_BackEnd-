@@ -40,7 +40,10 @@ class ExitConditions(BaseModel):
     stop_loss_pct: float | None = Field(default=None, ge=0, le=100, description="Stop loss percentage from entry")
     take_profit_pct: float | None = Field(default=None, ge=0, le=1000, description="Take profit percentage from entry")
     trailing_stop_pct: float | None = Field(
-        default=None, ge=0, le=100, description="Trailing stop percentage from peak",
+        default=None,
+        ge=0,
+        le=100,
+        description="Trailing stop percentage from peak",
     )
     max_hold_candles: int | None = Field(default=None, ge=1, description="Max candles to hold a position")
     rsi_above: float | None = Field(default=None, description="Exit when RSI rises above this value")
@@ -56,7 +59,9 @@ class StrategyDefinition(BaseModel):
     entry_conditions: EntryConditions = Field(default_factory=EntryConditions)
     exit_conditions: ExitConditions = Field(default_factory=ExitConditions)
     position_size_pct: Decimal = Field(
-        default=Decimal("10"), ge=Decimal("1"), le=Decimal("100"),
+        default=Decimal("10"),
+        ge=Decimal("1"),
+        le=Decimal("100"),
         description="Position size as % of equity",
     )
     max_positions: int = Field(default=3, ge=1, le=50, description="Max simultaneous positions")

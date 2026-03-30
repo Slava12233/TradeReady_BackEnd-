@@ -6,8 +6,7 @@ get_versions, deploy (valid/invalid), undeploy.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -19,7 +18,6 @@ from src.utils.exceptions import (
     StrategyInvalidStateError,
     StrategyNotFoundError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

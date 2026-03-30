@@ -92,9 +92,7 @@ class TestCreate:
 
 
 class TestGetById:
-    async def test_get_by_id_returns_session(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_returns_session(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """get_by_id returns the session when it exists."""
         agent_session = _make_agent_session()
         mock_result = MagicMock()
@@ -105,9 +103,7 @@ class TestGetById:
 
         assert result is agent_session
 
-    async def test_get_by_id_not_found_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_not_found_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises AgentSessionNotFoundError when missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -116,9 +112,7 @@ class TestGetById:
         with pytest.raises(AgentSessionNotFoundError):
             await repo.get_by_id(uuid4())
 
-    async def test_get_by_id_db_error_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_db_error_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("timeout")
 
@@ -127,9 +121,7 @@ class TestGetById:
 
 
 class TestUpdate:
-    async def test_update_returns_updated_session(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_update_returns_updated_session(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """update executes an UPDATE statement and returns the row."""
         agent_session = _make_agent_session()
         agent_session.title = "Updated Title"
@@ -142,9 +134,7 @@ class TestUpdate:
         assert result is agent_session
         mock_session.execute.assert_awaited_once()
 
-    async def test_update_not_found_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_update_not_found_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """update raises AgentSessionNotFoundError when no row is updated."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -153,9 +143,7 @@ class TestUpdate:
         with pytest.raises(AgentSessionNotFoundError):
             await repo.update(uuid4(), title="Ghost")
 
-    async def test_update_db_error_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_update_db_error_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """update raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -166,9 +154,7 @@ class TestUpdate:
 
 
 class TestClose:
-    async def test_close_sets_is_active_false(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_close_sets_is_active_false(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """close delegates to update with is_active=False and ended_at."""
         closed_session = _make_agent_session(is_active=False)
         mock_result = MagicMock()
@@ -180,9 +166,7 @@ class TestClose:
         assert result is closed_session
         mock_session.execute.assert_awaited_once()
 
-    async def test_close_with_summary(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_close_with_summary(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """close passes summary text through to the update call."""
         closed_session = _make_agent_session(is_active=False)
         closed_session.summary = "Session ended cleanly"
@@ -196,9 +180,7 @@ class TestClose:
 
 
 class TestDelete:
-    async def test_delete_removes_existing_session(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_removes_existing_session(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """delete selects then deletes the row and flushes."""
         agent_session = _make_agent_session()
         mock_result = MagicMock()
@@ -210,9 +192,7 @@ class TestDelete:
         mock_session.delete.assert_awaited_once_with(agent_session)
         mock_session.flush.assert_awaited_once()
 
-    async def test_delete_not_found_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_not_found_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """delete raises AgentSessionNotFoundError when session is missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -250,9 +230,7 @@ class TestFindActive:
 
         assert result is None
 
-    async def test_find_active_db_error_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_find_active_db_error_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """find_active raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("timeout")
 
@@ -305,9 +283,7 @@ class TestListByAgent:
 
         assert result == []
 
-    async def test_list_by_agent_db_error_raises(
-        self, repo: AgentSessionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_list_by_agent_db_error_raises(self, repo: AgentSessionRepository, mock_session: AsyncMock) -> None:
         """list_by_agent raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 

@@ -339,9 +339,7 @@ class TestPermissionGatedTrade:
         assert result.capability_check_passed is True
         assert result.budget_check_passed is True
 
-    async def test_require_action_raises_permission_denied_for_viewer(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_require_action_raises_permission_denied_for_viewer(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """require_action() raises PermissionDenied when the capability check fails."""
         config = _make_agent_config(monkeypatch)
         agent_id = str(uuid4())
@@ -445,9 +443,7 @@ class TestPermissionGatedTrade:
 class TestBudgetEnforcement:
     """BudgetManager enforces trade count and exposure limits via Redis counters."""
 
-    async def test_check_budget_allows_trade_within_limits(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_check_budget_allows_trade_within_limits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """check_budget() returns allowed=True when all counters are below limits."""
         config = _make_agent_config(monkeypatch)
         agent_id = str(uuid4())
@@ -485,9 +481,7 @@ class TestBudgetEnforcement:
         assert result.allowed is True
         assert result.remaining_trades > 0
 
-    async def test_budget_denied_when_daily_trade_limit_reached(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_budget_denied_when_daily_trade_limit_reached(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """check_budget() returns allowed=False when daily trade count is exhausted.
 
         Simulates a Redis store where the trades_today counter already equals
@@ -534,9 +528,7 @@ class TestBudgetEnforcement:
         assert "daily trade limit" in result.reason.lower()
         assert result.remaining_trades == 0
 
-    async def test_check_and_record_increments_counters_atomically(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_check_and_record_increments_counters_atomically(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """check_and_record() atomically checks and increments the trade counter.
 
         After one allowed call, trades_today in Redis must be exactly 1 and
@@ -583,9 +575,7 @@ class TestBudgetEnforcement:
         assert mock_redis._store.get(trades_key) is not None
         assert int(mock_redis._store[trades_key]) == 1
 
-    async def test_budget_denied_when_position_size_exceeds_limit(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_budget_denied_when_position_size_exceeds_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """check_budget() denies a trade whose value exceeds max_position_size_usdt.
 
         Default max position size is 10 % of 10,000 USDT = 1,000 USDT.
@@ -637,9 +627,7 @@ class TestBudgetEnforcement:
 class TestTradeExecution:
     """TradeExecutor correctly calls the SDK, updates budgets, and records decisions."""
 
-    async def test_execute_buy_decision_calls_sdk_and_records_budget(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_execute_buy_decision_calls_sdk_and_records_budget(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """execute() calls SDK place_market_order and records trade in the budget.
 
         The decision persists to the DB via AgentDecisionRepository and the
@@ -686,9 +674,7 @@ class TestTradeExecution:
         assert result.fill_price == Decimal("67500.00")
         mock_sdk.place_market_order.assert_awaited_once_with("BTCUSDT", "buy", "0.0001")
 
-    async def test_execute_hold_decision_returns_no_op(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_execute_hold_decision_returns_no_op(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """execute() with action='hold' returns immediately without calling the SDK."""
         config = _make_agent_config(monkeypatch)
         agent_id = str(uuid4())
@@ -715,9 +701,7 @@ class TestTradeExecution:
         assert "hold" in result.error_message.lower()
         mock_sdk.place_market_order.assert_not_awaited()
 
-    async def test_execute_duplicate_decision_blocked_by_idempotency(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_execute_duplicate_decision_blocked_by_idempotency(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Submitting the same decision twice is blocked by the idempotency cache.
 
         The second call must return success=False without placing a second order.
@@ -1091,9 +1075,7 @@ class TestJournalReflection:
         assert "BTCUSDT" in entry.content or "Trade Reflection" in entry.content
         assert len(entry.content) > 0
 
-    async def test_generate_reflection_saves_learnings_to_memory_store(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_generate_reflection_saves_learnings_to_memory_store(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """generate_reflection() forwards extracted learnings to the memory store.
 
         When a MemoryStore is injected, _save_learnings_to_memory must be
@@ -1144,9 +1126,7 @@ class TestJournalReflection:
         # Memory store save must have been called for each learning.
         assert mock_memory_store.save.await_count >= 1
 
-    async def test_record_outcome_updates_decision_pnl(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_record_outcome_updates_decision_pnl(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """record_outcome() calls repo.update_outcome with the correct PnL value."""
         config = _make_agent_config(monkeypatch)
         decision_id = str(uuid4())

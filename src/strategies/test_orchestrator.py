@@ -93,7 +93,10 @@ class TestOrchestrator:
 
         for ep in range(1, episodes_total + 1):
             run_strategy_episode.delay(
-                str(test_run.id), ep, definition, backtest_config,
+                str(test_run.id),
+                ep,
+                definition,
+                backtest_config,
             )
 
         # Schedule aggregation after all episodes (fire-and-forget; episodes

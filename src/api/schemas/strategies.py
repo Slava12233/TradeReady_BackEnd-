@@ -31,14 +31,16 @@ class CreateStrategyRequest(_BaseSchema):
     definition: dict[str, Any] = Field(
         ...,
         description="Strategy definition JSON (pairs, timeframe, conditions, position sizing)",
-        examples=[{
-            "pairs": ["BTCUSDT"],
-            "timeframe": "1h",
-            "entry_conditions": {"rsi_below": 30},
-            "exit_conditions": {"take_profit_pct": 5, "stop_loss_pct": 2},
-            "position_size_pct": 10,
-            "max_positions": 3,
-        }],
+        examples=[
+            {
+                "pairs": ["BTCUSDT"],
+                "timeframe": "1h",
+                "entry_conditions": {"rsi_below": 30},
+                "exit_conditions": {"take_profit_pct": 5, "stop_loss_pct": 2},
+                "position_size_pct": 10,
+                "max_positions": 3,
+            }
+        ],
     )
 
 

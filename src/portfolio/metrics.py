@@ -337,11 +337,7 @@ class PerformanceMetrics:
             ]
             if agent_id is not None:
                 filters.append(TradeModel.agent_id == agent_id)
-            stmt = (
-                select(TradeModel)
-                .where(*filters)
-                .order_by(TradeModel.created_at.asc())
-            )
+            stmt = select(TradeModel).where(*filters).order_by(TradeModel.created_at.asc())
             if since is not None:
                 stmt = stmt.where(TradeModel.created_at >= since)
             result = await self._session.execute(stmt)

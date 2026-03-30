@@ -113,9 +113,9 @@ class SnapshotEngine:
 
     async def _get_agent_equity(self, agent_id: UUID) -> Decimal:
         """Total available + locked across all balances for an agent."""
-        stmt = select(
-            func.coalesce(func.sum(Balance.available + Balance.locked), Decimal("0"))
-        ).where(Balance.agent_id == agent_id)
+        stmt = select(func.coalesce(func.sum(Balance.available + Balance.locked), Decimal("0"))).where(
+            Balance.agent_id == agent_id
+        )
         result = await self._session.execute(stmt)
         return result.scalar_one()
 
@@ -159,11 +159,9 @@ class SnapshotEngine:
 
     async def _get_realized_pnl(self, agent_id: UUID) -> Decimal:
         """Sum of realized PnL from all trades for this agent."""
-        stmt = select(
-            func.coalesce(func.sum(Trade.realized_pnl), Decimal("0"))
-        ).where(Trade.agent_id == agent_id)
+        stmt = select(func.coalesce(func.sum(Trade.realized_pnl), Decimal("0"))).where(Trade.agent_id == agent_id)
         result = await self._session.execute(stmt)
-        return result.scalar_one()
+        return result.scalar_one()  # type: ignore[return-value]
 
     async def _get_trade_count(self, agent_id: UUID) -> int:
         """Count of all trades for this agent."""
@@ -173,10 +171,6 @@ class SnapshotEngine:
 
     async def _get_open_position_count(self, agent_id: UUID) -> int:
         """Count of open positions for this agent."""
-        stmt = (
-            select(func.count())
-            .select_from(Position)
-            .where(Position.agent_id == agent_id, Position.quantity > 0)
-        )
+        stmt = select(func.count()).select_from(Position).where(Position.agent_id == agent_id, Position.quantity > 0)
         result = await self._session.execute(stmt)
         return result.scalar_one()

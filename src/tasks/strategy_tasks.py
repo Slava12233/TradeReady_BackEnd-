@@ -18,7 +18,7 @@ from src.tasks.celery_app import app
 logger = logging.getLogger(__name__)
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.strategy_tasks.run_strategy_episode",
     soft_time_limit=300,
     time_limit=360,
@@ -115,9 +115,9 @@ async def _run_episode_async(
                 },
                 "positions": [
                     {
-                        "symbol": p.symbol,
-                        "quantity": str(p.quantity),
-                        "avg_entry_price": str(p.avg_entry_price),
+                        "symbol": p.symbol,  # type: ignore[attr-defined]
+                        "quantity": str(p.quantity),  # type: ignore[attr-defined]
+                        "avg_entry_price": str(p.avg_entry_price),  # type: ignore[attr-defined]
                     }
                     for p in step_result.portfolio.positions
                 ],
@@ -158,7 +158,7 @@ async def _run_episode_async(
                 "total_trades": result.total_trades,
                 "total_fees": float(result.total_fees),
                 "final_equity": float(result.final_equity),
-                "sharpe_ratio": float(result.metrics.sharpe_ratio) if result.metrics else None,
+                "sharpe_ratio": float(result.metrics.sharpe_ratio) if result.metrics else None,  # type: ignore[arg-type]
                 "max_drawdown_pct": float(result.metrics.max_drawdown_pct) if result.metrics else None,
                 "win_rate": float(result.metrics.win_rate) if result.metrics else None,
             }
@@ -184,7 +184,7 @@ async def _run_episode_async(
     return metrics
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.strategy_tasks.aggregate_test_results",
     soft_time_limit=60,
     time_limit=90,

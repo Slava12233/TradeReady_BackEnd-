@@ -77,13 +77,15 @@ async def report_episode(
 ) -> TrainingRunResponse:
     """Report a completed training episode."""
     metrics = {
-        k: v for k, v in {
+        k: v
+        for k, v in {
             "roi_pct": body.roi_pct,
             "sharpe_ratio": body.sharpe_ratio,
             "max_drawdown_pct": body.max_drawdown_pct,
             "total_trades": body.total_trades,
             "reward_sum": body.reward_sum,
-        }.items() if v is not None
+        }.items()
+        if v is not None
     }
 
     session_id = UUID(body.session_id) if body.session_id else None
@@ -210,7 +212,7 @@ async def get_run_detail(
             for ep in episodes
         ]
     except DatabaseError:
-        logger.warning("training.get_episodes.failed", run_id=str(run_id))
+        logger.warning("training.get_episodes.failed", run_id=str(run_id))  # type: ignore[call-arg]
 
     return TrainingRunDetailResponse(
         run_id=str(run.id),

@@ -25,30 +25,12 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _SESSION_FACTORY = "src.database.session.get_session_factory"
-_OBS_REPO = (
-    "src.database.repositories.agent_observation_repo"
-    ".AgentObservationRepository"
-)
-_JOURNAL_REPO = (
-    "src.database.repositories.agent_journal_repo"
-    ".AgentJournalRepository"
-)
-_LEARNING_REPO = (
-    "src.database.repositories.agent_learning_repo"
-    ".AgentLearningRepository"
-)
-_BUDGET_REPO = (
-    "src.database.repositories.agent_budget_repo"
-    ".AgentBudgetRepository"
-)
-_BUDGET_NOT_FOUND = (
-    "src.database.repositories.agent_budget_repo"
-    ".AgentBudgetNotFoundError"
-)
-_FEEDBACK_REPO = (
-    "src.database.repositories.agent_feedback_repo"
-    ".AgentFeedbackRepository"
-)
+_OBS_REPO = "src.database.repositories.agent_observation_repo.AgentObservationRepository"
+_JOURNAL_REPO = "src.database.repositories.agent_journal_repo.AgentJournalRepository"
+_LEARNING_REPO = "src.database.repositories.agent_learning_repo.AgentLearningRepository"
+_BUDGET_REPO = "src.database.repositories.agent_budget_repo.AgentBudgetRepository"
+_BUDGET_NOT_FOUND = "src.database.repositories.agent_budget_repo.AgentBudgetNotFoundError"
+_FEEDBACK_REPO = "src.database.repositories.agent_feedback_repo.AgentFeedbackRepository"
 _AGENT_JOURNAL_MODEL = "src.database.models.AgentJournal"
 _AGENT_LEARNING_MODEL = "src.database.models.AgentLearning"
 _AGENT_FEEDBACK_MODEL = "src.database.models.AgentFeedback"
@@ -188,9 +170,7 @@ class TestReflectOnTrade:
         tool_map, agent_id = _build_tools(mock_client, monkeypatch)
         return tool_map["reflect_on_trade"], mock_client, agent_id
 
-    async def test_successful_reflection_returns_trade_reflection_dict(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_successful_reflection_returns_trade_reflection_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """reflect_on_trade returns a TradeReflection dict when trade is found."""
         tool_fn, mock_client, agent_id = self._setup(monkeypatch)
 
@@ -244,9 +224,7 @@ class TestReflectOnTrade:
         assert "error" in result
         assert "not found" in result["error"].lower()
 
-    async def test_incomplete_trade_no_exit_returns_neutral_quality(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_incomplete_trade_no_exit_returns_neutral_quality(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """reflect_on_trade handles open position (no exit trade) gracefully."""
         tool_fn, mock_client, _agent_id = self._setup(monkeypatch)
 
@@ -292,9 +270,7 @@ class TestReflectOnTrade:
 
         assert "error" in result
 
-    async def test_profitable_trade_generates_positive_learning(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_profitable_trade_generates_positive_learning(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Profitable trade produces would_take_again=True and positive learnings."""
         tool_fn, mock_client, _agent_id = self._setup(monkeypatch)
 
@@ -324,9 +300,7 @@ class TestReflectOnTrade:
         assert result["would_take_again"] is True
         assert result["entry_quality"] == "good"
 
-    async def test_losing_trade_sets_would_take_again_false(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_losing_trade_sets_would_take_again_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Losing trade produces would_take_again=False and improvement_notes."""
         tool_fn, mock_client, _agent_id = self._setup(monkeypatch)
 
@@ -384,9 +358,7 @@ class TestReviewPortfolio:
         repo.get_by_agent.return_value = budget_row
         return repo
 
-    async def test_healthy_portfolio_returns_review_dict(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_healthy_portfolio_returns_review_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """review_portfolio returns a PortfolioReview dict for a healthy portfolio."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -423,9 +395,7 @@ class TestReviewPortfolio:
         assert isinstance(result["recommendations"], list)
         assert 0.0 <= result["health_score"] <= 1.0
 
-    async def test_concentrated_portfolio_triggers_risk_flag(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_concentrated_portfolio_triggers_risk_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Extreme concentration (>50% single asset) adds a risk flag."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -462,9 +432,7 @@ class TestReviewPortfolio:
         # Health score should be degraded
         assert result["health_score"] < 1.0
 
-    async def test_empty_portfolio_recommends_scanning(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_empty_portfolio_recommends_scanning(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Empty portfolio (no positions) adds a recommendation to scan for opportunities."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -559,9 +527,7 @@ class TestScanOpportunities:
         mock_redis.hgetall.side_effect = lambda key: prices if key == "prices" else {}
         return mock_redis
 
-    async def test_matches_found_returns_opportunity_list(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_matches_found_returns_opportunity_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """scan_opportunities returns a list of Opportunity dicts when matches exist."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -633,9 +599,7 @@ class TestScanOpportunities:
         for opp in result:
             assert opp.get("symbol") not in open_symbols
 
-    async def test_no_price_data_returns_error_list(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_no_price_data_returns_error_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """scan_opportunities returns [{'error': ...}] when no price data is available."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -654,9 +618,7 @@ class TestScanOpportunities:
         assert len(result) == 1
         assert "error" in result[0]
 
-    async def test_criteria_min_price_filters_out_low_price_symbols(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_criteria_min_price_filters_out_low_price_symbols(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """min_price criterion filters symbols below the threshold."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -683,9 +645,7 @@ class TestScanOpportunities:
         for opp in result:
             assert opp.get("symbol") != "SHIB1000USDT"
 
-    async def test_explicit_symbols_criteria_restricts_scan(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_explicit_symbols_criteria_restricts_scan(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """symbols=[...] criterion restricts the scan to specified symbols only."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -707,9 +667,7 @@ class TestScanOpportunities:
         for opp in result:
             assert opp["symbol"] == "BTCUSDT"
 
-    async def test_trending_down_criterion_sets_short_direction(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_trending_down_criterion_sets_short_direction(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """trending_down=True sets direction='short' for returned opportunities."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -748,9 +706,7 @@ class TestJournalEntry:
         tool_map, _agent_id = _build_tools(mock_client, monkeypatch)
         return tool_map["journal_entry"], mock_client
 
-    async def test_normal_entry_returns_journal_entry_dict(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_normal_entry_returns_journal_entry_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry returns a JournalEntry dict on normal write."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -784,9 +740,7 @@ class TestJournalEntry:
         assert "market_context" in result
         assert "created_at" in result
 
-    async def test_auto_tagging_detects_risk_keywords(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_auto_tagging_detects_risk_keywords(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry auto-tags content containing risk keywords."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -815,9 +769,7 @@ class TestJournalEntry:
         # "risk" tag expected from keywords: stop, loss, drawdown
         assert "risk" in result["tags"]
 
-    async def test_auto_tagging_detects_momentum_keywords(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_auto_tagging_detects_momentum_keywords(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry auto-tags content containing momentum keywords."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -845,9 +797,7 @@ class TestJournalEntry:
 
         assert "momentum" in result["tags"]
 
-    async def test_market_context_captured_when_redis_available(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_market_context_captured_when_redis_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry captures market prices from Redis into market_context."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -878,9 +828,7 @@ class TestJournalEntry:
         assert "total_pairs_tracked" in ctx
         assert ctx["total_pairs_tracked"] == len(prices)
 
-    async def test_entry_type_default_is_reflection(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_entry_type_default_is_reflection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry defaults to entry_type='reflection' when not specified."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -908,9 +856,7 @@ class TestJournalEntry:
 
         assert result["entry_type"] == "reflection"
 
-    async def test_custom_entry_type_is_preserved(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_custom_entry_type_is_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry preserves the caller-supplied entry_type in output."""
         tool_fn, mock_client = self._setup(monkeypatch)
 
@@ -952,9 +898,7 @@ class TestRequestPlatformFeature:
         tool_map, _agent_id = _build_tools(mock_client, monkeypatch)
         return tool_map["request_platform_feature"], mock_client
 
-    def _mock_feedback_db(
-        self, existing_feedback: MagicMock | None = None
-    ) -> tuple[AsyncMock, AsyncMock, MagicMock]:
+    def _mock_feedback_db(self, existing_feedback: MagicMock | None = None) -> tuple[AsyncMock, AsyncMock, MagicMock]:
         """Return (mock_session, mock_feedback_repo, mock_stmt) triple.
 
         The mock_session.execute is pre-wired to return a result whose
@@ -985,9 +929,7 @@ class TestRequestPlatformFeature:
 
         return mock_session, mock_feedback_repo, mock_stmt
 
-    async def test_new_request_creates_and_returns_feedback_entry(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_new_request_creates_and_returns_feedback_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """request_platform_feature creates a new entry when no duplicate exists."""
         tool_fn, _mock_client = self._setup(monkeypatch)
 
@@ -1015,9 +957,7 @@ class TestRequestPlatformFeature:
         assert result["category"] == "feature_request"
         assert result["priority"] == "medium"
 
-    async def test_duplicate_detection_returns_existing_entry(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_duplicate_detection_returns_existing_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """request_platform_feature detects a duplicate and returns existing entry."""
         tool_fn, _mock_client = self._setup(monkeypatch)
 
@@ -1049,9 +989,7 @@ class TestRequestPlatformFeature:
         # No new row should have been created
         mock_feedback_repo.create.assert_not_called()
 
-    async def test_bug_report_category_maps_to_high_priority(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_bug_report_category_maps_to_high_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Bug reports receive 'high' priority automatically."""
         tool_fn, _mock_client = self._setup(monkeypatch)
 
@@ -1074,9 +1012,7 @@ class TestRequestPlatformFeature:
         assert result["priority"] == "high"
         assert result["category"] == "bug_report"
 
-    async def test_ux_category_maps_to_low_priority(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_ux_category_maps_to_low_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """UX category receives 'low' priority."""
         tool_fn, _mock_client = self._setup(monkeypatch)
 
@@ -1098,9 +1034,7 @@ class TestRequestPlatformFeature:
 
         assert result["priority"] == "low"
 
-    async def test_database_error_returns_error_dict(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_database_error_returns_error_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """request_platform_feature returns error dict when DB raises DatabaseError."""
         tool_fn, _mock_client = self._setup(monkeypatch)
 
@@ -1125,9 +1059,7 @@ class TestRequestPlatformFeature:
 
         assert "error" in result
 
-    async def test_performance_category_maps_to_medium_priority(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_performance_category_maps_to_medium_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Performance category receives 'medium' priority."""
         tool_fn, _mock_client = self._setup(monkeypatch)
 

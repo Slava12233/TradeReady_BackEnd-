@@ -201,12 +201,7 @@ class SnapshotRepository:
             ]
             if agent_id is not None:
                 filters.append(PortfolioSnapshot.agent_id == agent_id)
-            stmt = (
-                select(PortfolioSnapshot)
-                .where(*filters)
-                .order_by(PortfolioSnapshot.created_at.desc())
-                .limit(limit)
-            )
+            stmt = select(PortfolioSnapshot).where(*filters).order_by(PortfolioSnapshot.created_at.desc()).limit(limit)
             if since is not None:
                 stmt = stmt.where(PortfolioSnapshot.created_at >= since)
             if until is not None:

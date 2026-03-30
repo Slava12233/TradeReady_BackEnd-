@@ -90,7 +90,7 @@ app.conf.update(
     task_queues=(
         Queue("default"),
         Queue("high_priority"),  # reserved for limit_order_monitor
-        Queue("ml_training"),    # reserved for long-running ML retraining tasks
+        Queue("ml_training"),  # reserved for long-running ML retraining tasks
     ),
     task_routes={
         "src.tasks.limit_order_monitor.run_limit_order_monitor": {

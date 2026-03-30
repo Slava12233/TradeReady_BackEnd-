@@ -187,9 +187,7 @@ async def _run_strategy_attribution() -> dict[str, Any]:
 
                 # Aggregate decision outcomes by strategy via trace_id join.
                 # strategy_name -> list[outcome_pnl]
-                strategy_pnl: dict[str, list[Decimal]] = {
-                    row["strategy_name"]: [] for row in attribution_rows  # type: ignore[index]
-                }
+                strategy_pnl: dict[str, list[Decimal]] = {str(row["strategy_name"]): [] for row in attribution_rows}
 
                 if trace_to_strategy:
                     outcome_stmt = select(
@@ -228,9 +226,7 @@ async def _run_strategy_attribution() -> dict[str, Any]:
                     }
 
                     win_rate: Decimal | None = (
-                        Decimal(str(winning_outcomes)) / Decimal(str(outcome_count))
-                        if outcome_count > 0
-                        else None
+                        Decimal(str(winning_outcomes)) / Decimal(str(outcome_count)) if outcome_count > 0 else None
                     )
 
                     perf_row = AgentPerformance(
@@ -383,11 +379,7 @@ async def _run_memory_effectiveness() -> dict[str, Any]:
                 with_memory_result = await db.execute(with_memory_stmt)
                 decisions_with_memory: int = with_memory_result.scalar() or 0
 
-                coverage_pct = (
-                    round(decisions_with_memory / total_decisions * 100, 1)
-                    if total_decisions > 0
-                    else 0.0
-                )
+                coverage_pct = round(decisions_with_memory / total_decisions * 100, 1) if total_decisions > 0 else 0.0
 
                 # Build journal content.
                 if total_decisions == 0:
@@ -732,9 +724,7 @@ async def _run_settle_agent_decisions() -> dict[str, Any]:
 
     # Order statuses that indicate the order is done — no further changes
     # expected regardless of whether trades were generated.
-    settled_statuses: frozenset[str] = frozenset(
-        {"filled", "cancelled", "rejected", "expired"}
-    )
+    settled_statuses: frozenset[str] = frozenset({"filled", "cancelled", "rejected", "expired"})
 
     task_start = time.monotonic()
     session_factory = get_session_factory()
@@ -747,11 +737,7 @@ async def _run_settle_agent_decisions() -> dict[str, Any]:
     # ── Step 1: load all active agent IDs ────────────────────────────────────
     try:
         async with session_factory() as db:
-            stmt = (
-                select(Agent.id)
-                .where(Agent.status != "archived")
-                .order_by(Agent.created_at.asc())
-            )
+            stmt = select(Agent.id).where(Agent.status != "archived").order_by(Agent.created_at.asc())
             result = await db.execute(stmt)
             agent_ids: list[UUID] = list(result.scalars().all())
     except Exception:
@@ -820,15 +806,9 @@ async def _run_settle_agent_decisions() -> dict[str, Any]:
                     # realized_pnl is NULL for opening buys (no closed position)
                     # and non-NULL for sells that close a position.
                     realized_pnl_values: list[Decimal] = [
-                        Decimal(str(t.realized_pnl))
-                        for t in trades
-                        if t.realized_pnl is not None
+                        Decimal(str(t.realized_pnl)) for t in trades if t.realized_pnl is not None
                     ]
-                    outcome_pnl = (
-                        sum(realized_pnl_values, Decimal("0"))
-                        if realized_pnl_values
-                        else Decimal("0")
-                    )
+                    outcome_pnl = sum(realized_pnl_values, Decimal("0")) if realized_pnl_values else Decimal("0")
 
                     await decision_repo.update_outcome(
                         decision.id,

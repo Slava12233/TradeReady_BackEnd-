@@ -268,9 +268,7 @@ class TestCountByAccount:
 
 
 class TestSumDailyPnl:
-    async def test_sum_daily_realized_pnl_returns_decimal(
-        self, repo: TradeRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_sum_daily_realized_pnl_returns_decimal(self, repo: TradeRepository, mock_session: AsyncMock) -> None:
         """sum_daily_realized_pnl returns Decimal sum."""
         mock_result = MagicMock()
         mock_result.scalar_one.return_value = Decimal("150.50")

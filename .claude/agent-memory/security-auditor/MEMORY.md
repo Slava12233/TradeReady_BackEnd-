@@ -8,6 +8,7 @@
 | `agent/strategies/` (rl, evolutionary, regime, risk, ensemble) | 2026-03-20 | 0 CRITICAL; 3 HIGH deferred; overall CONDITIONAL PASS |
 | Phase 3 logging: `src/api/middleware/audit.py`, `agent/logging_writer.py`, `src/api/middleware/logging.py`, `sdk/agentexchange/async_client.py`, `agent/tools/rest_tools.py` | 2026-03-21 | 0 CRITICAL; 1 HIGH (unvalidated X-Trace-Id); 3 MEDIUM; 3 LOW; CONDITIONAL PASS |
 | R2-01 through R2-08 fix verification (all HIGH recommendations) | 2026-03-23 | 0 CRITICAL; 1 HIGH (R2-04 partial — enforcement.py still routes to agent_feedback not agent_audit_log); 1 MEDIUM (pgAdmin default password); 2 LOW; CONDITIONAL PASS |
+| V.0.0.2 deployment changes: `src/config.py`, `src/main.py`, `.github/workflows/deploy.yml`, `.github/workflows/test.yml`, `.env.example`, `src/mcp/tools.py`, `src/api/routes/battles.py`, `src/api/routes/agents.py`, `src/tasks/agent_analytics.py` | 2026-03-30 | 0 CRITICAL; 1 HIGH (no wildcard CORS guard); 2 MEDIUM; 2 LOW; CONDITIONAL PASS |
 
 ## Areas NOT Yet Audited (as of 2026-03-21)
 
@@ -51,6 +52,15 @@
 ## R2-04 Remaining Gap (as of 2026-03-23)
 
 `enforcement.py._persist_audit_entries()` still writes to `AgentFeedback` (not `AgentAuditLog`). The `AgentAuditLogRepository` exists but is not wired. Allow events are silently dropped via `continue` on line 438 regardless of the `audit_allow_events` constructor flag. Fix requires: import `AgentAuditLog` + `AgentAuditLogRepository`, map `AuditEntry.result` → `outcome`, persist both outcomes, honor `self._audit_allow_events`.
+
+## CORS Configuration Pattern (verified 2026-03-30)
+
+- `cors_origins` field in `Settings` is a plain `str` (comma-separated); no `@field_validator` prevents wildcard `*`
+- `src/main.py` splits on commas and passes list to `CORSMiddleware(allow_origins=_origins, allow_credentials=True)`
+- **If `CORS_ORIGINS=*` is set in env, browsers will reject credentialed responses** (RFC violation) — but the server will still send the `*` origin, which is wrong. No server-side guard exists.
+- `.env.example` shows only localhost values; production must explicitly set `CORS_ORIGINS` to the real frontend domain.
+- `pg_dump` in `deploy.yml` runs inside the container via `docker compose exec -T timescaledb pg_dump -U agentexchange` — no password passed on the command line; relies on PostgreSQL local trust auth (running as the postgres user inside the container). This is standard and correct: no credential exposure in logs.
+- `ResourceNotFoundError` does NOT exist in `src/utils/exceptions.py`; replacing it with `HTTPException` was the correct fix. However, the `HTTPException` error format (`{"detail": "..."}`) differs from the platform standard format (`{"error": {"code": ..., "message": ...}}`).
 
 ## Passed Checks (stable — no need to re-audit unless code changes)
 

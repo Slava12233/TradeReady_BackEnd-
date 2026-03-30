@@ -148,10 +148,10 @@ class TrainingRunRepository:
             run = await self.get_run(run_id)
             if run is None:
                 return None
-            run.status = "completed"  # type: ignore[assignment]
+            run.status = "completed"
             run.completed_at = utc_now()
-            run.aggregate_stats = aggregate_stats  # type: ignore[assignment]
-            run.learning_curve = learning_curve  # type: ignore[assignment]
+            run.aggregate_stats = aggregate_stats
+            run.learning_curve = learning_curve
             await self._session.flush()
             await self._session.refresh(run)
             logger.info("training.run_completed", run_id=str(run_id))

@@ -32,7 +32,7 @@ class SymbolMapper:
         self._platform_to_ccxt: dict[str, str] = {}
         self._ccxt_to_platform: dict[str, str] = {}
 
-    def load_markets(self, markets: dict) -> None:
+    def load_markets(self, markets: dict) -> None:  # type: ignore[type-arg]
         """Build lookup tables from CCXT's ``exchange.markets`` dict.
 
         Args:

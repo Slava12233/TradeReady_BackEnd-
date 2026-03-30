@@ -556,9 +556,7 @@ class TestSettleAgentDecisionsErrorPaths:
             call_count += 1
             return bad_decision_repo if call_count == 1 else good_decision_repo
 
-        combined_factory = MagicMock(
-            side_effect=[outer_ctx, bad_inner_ctx, good_inner_ctx]
-        )
+        combined_factory = MagicMock(side_effect=[outer_ctx, bad_inner_ctx, good_inner_ctx])
 
         with (
             patch("src.database.session.get_session_factory", return_value=combined_factory),

@@ -138,11 +138,7 @@ class AgentLearningRepository:
             DatabaseError: On any SQLAlchemy / database error.
         """
         try:
-            stmt = (
-                update(AgentLearning)
-                .where(AgentLearning.id == learning_id)
-                .values(last_accessed_at=func.now())
-            )
+            stmt = update(AgentLearning).where(AgentLearning.id == learning_id).values(last_accessed_at=func.now())
             await self._session.execute(stmt)
         except SQLAlchemyError as exc:
             await self._session.rollback()
@@ -243,9 +239,7 @@ class AgentLearningRepository:
                 .offset(offset)
             )
             if exclude_expired:
-                stmt = stmt.where(
-                    (AgentLearning.expires_at.is_(None)) | (AgentLearning.expires_at > func.now())
-                )
+                stmt = stmt.where((AgentLearning.expires_at.is_(None)) | (AgentLearning.expires_at > func.now()))
             result = await self._session.execute(stmt)
             return result.scalars().all()
         except SQLAlchemyError as exc:
@@ -307,9 +301,7 @@ class AgentLearningRepository:
             if memory_type is not None:
                 stmt = stmt.where(AgentLearning.memory_type == memory_type)
             if exclude_expired:
-                stmt = stmt.where(
-                    (AgentLearning.expires_at.is_(None)) | (AgentLearning.expires_at > func.now())
-                )
+                stmt = stmt.where((AgentLearning.expires_at.is_(None)) | (AgentLearning.expires_at > func.now()))
             result = await self._session.execute(stmt)
             candidates = result.scalars().all()
 

@@ -363,8 +363,9 @@ def _build_agent_client(agent_service=None, account=None):
         patch("src.api.websocket.handlers.start_redis_bridge", new_callable=AsyncMock),
         patch("src.api.websocket.handlers.stop_redis_bridge", new_callable=AsyncMock),
         patch("src.api.websocket.manager.ConnectionManager.disconnect_all", new_callable=AsyncMock),
-        patch("src.api.middleware.auth._authenticate_request", new_callable=AsyncMock,
-              return_value=(mock_account, None)),
+        patch(
+            "src.api.middleware.auth._authenticate_request", new_callable=AsyncMock, return_value=(mock_account, None)
+        ),
     ]
     for p in patchers:
         p.start()
@@ -662,8 +663,9 @@ def _build_backtest_client(backtest_engine=None):
         patch("src.api.websocket.handlers.start_redis_bridge", new_callable=AsyncMock),
         patch("src.api.websocket.handlers.stop_redis_bridge", new_callable=AsyncMock),
         patch("src.api.websocket.manager.ConnectionManager.disconnect_all", new_callable=AsyncMock),
-        patch("src.api.middleware.auth._authenticate_request", new_callable=AsyncMock,
-              return_value=(mock_account, None)),
+        patch(
+            "src.api.middleware.auth._authenticate_request", new_callable=AsyncMock, return_value=(mock_account, None)
+        ),
     ]
     for p in patchers:
         p.start()
@@ -713,8 +715,9 @@ def _build_battle_client(battle_service=None, account=None):
         patch("src.api.websocket.handlers.start_redis_bridge", new_callable=AsyncMock),
         patch("src.api.websocket.handlers.stop_redis_bridge", new_callable=AsyncMock),
         patch("src.api.websocket.manager.ConnectionManager.disconnect_all", new_callable=AsyncMock),
-        patch("src.api.middleware.auth._authenticate_request", new_callable=AsyncMock,
-              return_value=(mock_account, None)),
+        patch(
+            "src.api.middleware.auth._authenticate_request", new_callable=AsyncMock, return_value=(mock_account, None)
+        ),
     ]
     for p in patchers:
         p.start()
@@ -817,21 +820,26 @@ class TestPhase1_AccountRegistration:
         from src.accounts.service import AccountCredentials
 
         mock_svc = AsyncMock()
-        mock_svc.register = AsyncMock(return_value=AccountCredentials(
-            account_id=ACCOUNT_ID,
-            api_key="ak_live_e2e_test_account",
-            api_secret="sk_live_e2e_test_secret_SAVE_THIS",
-            display_name=TEST_DISPLAY_NAME,
-            starting_balance=Decimal("10000.00"),
-        ))
+        mock_svc.register = AsyncMock(
+            return_value=AccountCredentials(
+                account_id=ACCOUNT_ID,
+                api_key="ak_live_e2e_test_account",
+                api_secret="sk_live_e2e_test_secret_SAVE_THIS",
+                display_name=TEST_DISPLAY_NAME,
+                starting_balance=Decimal("10000.00"),
+            )
+        )
 
         client = _build_auth_client(account_service=mock_svc)
-        resp = client.post("/api/v1/auth/register", json={
-            "display_name": TEST_DISPLAY_NAME,
-            "email": TEST_EMAIL,
-            "password": TEST_PASSWORD,
-            "starting_balance": "10000.00",
-        })
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={
+                "display_name": TEST_DISPLAY_NAME,
+                "email": TEST_EMAIL,
+                "password": TEST_PASSWORD,
+                "starting_balance": "10000.00",
+            },
+        )
 
         assert resp.status_code == 201, f"Register failed: {resp.text}"
         data = resp.json()
@@ -846,10 +854,13 @@ class TestPhase1_AccountRegistration:
 
         client = _build_auth_client(account_service=mock_svc)
         with patch("src.api.routes.auth.verify_api_secret", return_value=True):
-            resp = client.post("/api/v1/auth/login", json={
-                "api_key": "ak_live_e2e_test_account",
-                "api_secret": "sk_live_e2e_test_secret_SAVE_THIS",
-            })
+            resp = client.post(
+                "/api/v1/auth/login",
+                json={
+                    "api_key": "ak_live_e2e_test_account",
+                    "api_secret": "sk_live_e2e_test_secret_SAVE_THIS",
+                },
+            )
 
         assert resp.status_code == 200, f"Login failed: {resp.text}"
         data = resp.json()
@@ -862,10 +873,13 @@ class TestPhase1_AccountRegistration:
         mock_svc.authenticate_with_password = AsyncMock(return_value=_make_account_mock())
 
         client = _build_auth_client(account_service=mock_svc)
-        resp = client.post("/api/v1/auth/user-login", json={
-            "email": TEST_EMAIL,
-            "password": TEST_PASSWORD,
-        })
+        resp = client.post(
+            "/api/v1/auth/user-login",
+            json={
+                "email": TEST_EMAIL,
+                "password": TEST_PASSWORD,
+            },
+        )
 
         assert resp.status_code == 200, f"Login failed: {resp.text}"
         data = resp.json()
@@ -883,9 +897,11 @@ class TestPhase1_AccountRegistration:
     def test_05_get_initial_balance(self) -> None:
         """Verify initial USDT balance endpoint."""
         mock_bm = AsyncMock()
-        mock_bm.get_all_balances = AsyncMock(return_value=[
-            MagicMock(asset="USDT", available=Decimal("10000"), locked=Decimal("0")),
-        ])
+        mock_bm.get_all_balances = AsyncMock(
+            return_value=[
+                MagicMock(asset="USDT", available=Decimal("10000"), locked=Decimal("0")),
+            ]
+        )
 
         mock_portfolio = MagicMock()
         mock_portfolio.total_equity = Decimal("10000")
@@ -910,54 +926,92 @@ class TestPhase2_AgentCreation:
         svc = AsyncMock()
         agents = [_make_agent_mock(aid, name) for aid, name in zip(AGENT_IDS, AGENT_NAMES, strict=False)]
         svc.list_agents = AsyncMock(return_value=agents)
-        svc.get_agent_overview = AsyncMock(return_value=[
-            {"id": str(a.id), "display_name": a.display_name, "status": "active",
-             "current_equity": "10000.00", "roi_pct": "0.00", "win_rate": "0.00"}
-            for a in agents
-        ])
+        svc.get_agent_overview = AsyncMock(
+            return_value=[
+                {
+                    "id": str(a.id),
+                    "display_name": a.display_name,
+                    "status": "active",
+                    "current_equity": "10000.00",
+                    "roi_pct": "0.00",
+                    "win_rate": "0.00",
+                }
+                for a in agents
+            ]
+        )
         return svc
 
     def test_01_create_alpha(self) -> None:
         svc = self._agent_service()
-        svc.create_agent = AsyncMock(return_value=AgentCredentials(
-            agent_id=AGENT_ALPHA_ID, api_key="ak_live_alpha",
-            display_name="AlphaBot", starting_balance=Decimal("10000"),
-        ))
+        svc.create_agent = AsyncMock(
+            return_value=AgentCredentials(
+                agent_id=AGENT_ALPHA_ID,
+                api_key="ak_live_alpha",
+                display_name="AlphaBot",
+                starting_balance=Decimal("10000"),
+            )
+        )
         client = _build_agent_client(agent_service=svc)
-        resp = client.post("/api/v1/agents", json={
-            "display_name": "AlphaBot", "starting_balance": "10000",
-            "llm_model": "claude-opus-4", "framework": "custom",
-            "strategy_tags": ["momentum"], "color": "#FF5733",
-        })
+        resp = client.post(
+            "/api/v1/agents",
+            json={
+                "display_name": "AlphaBot",
+                "starting_balance": "10000",
+                "llm_model": "claude-opus-4",
+                "framework": "custom",
+                "strategy_tags": ["momentum"],
+                "color": "#FF5733",
+            },
+        )
         assert resp.status_code == 201, f"Create AlphaBot failed: {resp.text}"
         assert resp.json()["display_name"] == "AlphaBot"
 
     def test_02_create_beta(self) -> None:
         svc = self._agent_service()
-        svc.create_agent = AsyncMock(return_value=AgentCredentials(
-            agent_id=AGENT_BETA_ID, api_key="ak_live_beta",
-            display_name="BetaBot", starting_balance=Decimal("10000"),
-        ))
+        svc.create_agent = AsyncMock(
+            return_value=AgentCredentials(
+                agent_id=AGENT_BETA_ID,
+                api_key="ak_live_beta",
+                display_name="BetaBot",
+                starting_balance=Decimal("10000"),
+            )
+        )
         client = _build_agent_client(agent_service=svc)
-        resp = client.post("/api/v1/agents", json={
-            "display_name": "BetaBot", "starting_balance": "10000",
-            "llm_model": "gpt-4o", "framework": "langchain",
-            "strategy_tags": ["mean-reversion"], "color": "#33FF57",
-        })
+        resp = client.post(
+            "/api/v1/agents",
+            json={
+                "display_name": "BetaBot",
+                "starting_balance": "10000",
+                "llm_model": "gpt-4o",
+                "framework": "langchain",
+                "strategy_tags": ["mean-reversion"],
+                "color": "#33FF57",
+            },
+        )
         assert resp.status_code == 201, f"Create BetaBot failed: {resp.text}"
 
     def test_03_create_gamma(self) -> None:
         svc = self._agent_service()
-        svc.create_agent = AsyncMock(return_value=AgentCredentials(
-            agent_id=AGENT_GAMMA_ID, api_key="ak_live_gamma",
-            display_name="GammaBot", starting_balance=Decimal("10000"),
-        ))
+        svc.create_agent = AsyncMock(
+            return_value=AgentCredentials(
+                agent_id=AGENT_GAMMA_ID,
+                api_key="ak_live_gamma",
+                display_name="GammaBot",
+                starting_balance=Decimal("10000"),
+            )
+        )
         client = _build_agent_client(agent_service=svc)
-        resp = client.post("/api/v1/agents", json={
-            "display_name": "GammaBot", "starting_balance": "10000",
-            "llm_model": "claude-sonnet-4", "framework": "custom",
-            "strategy_tags": ["scalping"], "color": "#3357FF",
-        })
+        resp = client.post(
+            "/api/v1/agents",
+            json={
+                "display_name": "GammaBot",
+                "starting_balance": "10000",
+                "llm_model": "claude-sonnet-4",
+                "framework": "custom",
+                "strategy_tags": ["scalping"],
+                "color": "#3357FF",
+            },
+        )
         assert resp.status_code == 201, f"Create GammaBot failed: {resp.text}"
 
     def test_04_list_agents(self) -> None:
@@ -998,19 +1052,34 @@ class TestPhase3_Trading:
     """Each agent places multiple trades across symbols."""
 
     ALPHA_TRADES = [
-        ("BTCUSDT", "buy", "0.05"), ("ETHUSDT", "buy", "1.5"), ("SOLUSDT", "buy", "20"),
-        ("BTCUSDT", "buy", "0.02"), ("XRPUSDT", "buy", "5000"), ("DOGEUSDT", "buy", "50000"),
-        ("ETHUSDT", "sell", "0.5"), ("BTCUSDT", "sell", "0.03"), ("SOLUSDT", "buy", "10"),
+        ("BTCUSDT", "buy", "0.05"),
+        ("ETHUSDT", "buy", "1.5"),
+        ("SOLUSDT", "buy", "20"),
+        ("BTCUSDT", "buy", "0.02"),
+        ("XRPUSDT", "buy", "5000"),
+        ("DOGEUSDT", "buy", "50000"),
+        ("ETHUSDT", "sell", "0.5"),
+        ("BTCUSDT", "sell", "0.03"),
+        ("SOLUSDT", "buy", "10"),
         ("XRPUSDT", "sell", "2000"),
     ]
     BETA_TRADES = [
-        ("ETHUSDT", "buy", "3.0"), ("BTCUSDT", "buy", "0.08"), ("DOGEUSDT", "buy", "100000"),
-        ("SOLUSDT", "buy", "50"), ("ETHUSDT", "sell", "1.0"), ("BTCUSDT", "sell", "0.03"),
-        ("XRPUSDT", "buy", "10000"), ("DOGEUSDT", "sell", "50000"),
+        ("ETHUSDT", "buy", "3.0"),
+        ("BTCUSDT", "buy", "0.08"),
+        ("DOGEUSDT", "buy", "100000"),
+        ("SOLUSDT", "buy", "50"),
+        ("ETHUSDT", "sell", "1.0"),
+        ("BTCUSDT", "sell", "0.03"),
+        ("XRPUSDT", "buy", "10000"),
+        ("DOGEUSDT", "sell", "50000"),
     ]
     GAMMA_TRADES = [
-        ("BTCUSDT", "buy", "0.1"), ("SOLUSDT", "buy", "100"), ("ETHUSDT", "buy", "5.0"),
-        ("XRPUSDT", "buy", "20000"), ("BTCUSDT", "sell", "0.05"), ("SOLUSDT", "sell", "50"),
+        ("BTCUSDT", "buy", "0.1"),
+        ("SOLUSDT", "buy", "100"),
+        ("ETHUSDT", "buy", "5.0"),
+        ("XRPUSDT", "buy", "20000"),
+        ("BTCUSDT", "sell", "0.05"),
+        ("SOLUSDT", "sell", "50"),
         ("ETHUSDT", "sell", "2.0"),
     ]
 
@@ -1040,9 +1109,16 @@ class TestPhase3_Trading:
         """AlphaBot places 10 trades."""
         client = self._trading_client(self.ALPHA_TRADES)
         for i, (symbol, side, qty) in enumerate(self.ALPHA_TRADES):
-            resp = _authed_post(client, "/api/v1/trade/order", json={
-                "symbol": symbol, "side": side, "type": "market", "quantity": qty,
-            })
+            resp = _authed_post(
+                client,
+                "/api/v1/trade/order",
+                json={
+                    "symbol": symbol,
+                    "side": side,
+                    "type": "market",
+                    "quantity": qty,
+                },
+            )
             assert resp.status_code == 201, f"AlphaBot trade {i + 1} failed: {resp.text}"
             assert resp.json()["status"] == "filled"
 
@@ -1050,27 +1126,48 @@ class TestPhase3_Trading:
         """BetaBot places 8 trades."""
         client = self._trading_client(self.BETA_TRADES)
         for i, (symbol, side, qty) in enumerate(self.BETA_TRADES):
-            resp = _authed_post(client, "/api/v1/trade/order", json={
-                "symbol": symbol, "side": side, "type": "market", "quantity": qty,
-            })
+            resp = _authed_post(
+                client,
+                "/api/v1/trade/order",
+                json={
+                    "symbol": symbol,
+                    "side": side,
+                    "type": "market",
+                    "quantity": qty,
+                },
+            )
             assert resp.status_code == 201, f"BetaBot trade {i + 1} failed: {resp.text}"
 
     def test_03_gamma_7_trades(self) -> None:
         """GammaBot places 7 trades."""
         client = self._trading_client(self.GAMMA_TRADES)
         for i, (symbol, side, qty) in enumerate(self.GAMMA_TRADES):
-            resp = _authed_post(client, "/api/v1/trade/order", json={
-                "symbol": symbol, "side": side, "type": "market", "quantity": qty,
-            })
+            resp = _authed_post(
+                client,
+                "/api/v1/trade/order",
+                json={
+                    "symbol": symbol,
+                    "side": side,
+                    "type": "market",
+                    "quantity": qty,
+                },
+            )
             assert resp.status_code == 201, f"GammaBot trade {i + 1} failed: {resp.text}"
 
     def test_04_limit_order(self) -> None:
         """Place a limit buy order (pending)."""
         engine = AsyncMock()
-        engine.place_order = AsyncMock(return_value=OrderResult(
-            order_id=uuid4(), status="pending", executed_price=None,
-            executed_quantity=None, slippage_pct=None, fee=None, timestamp=_NOW,
-        ))
+        engine.place_order = AsyncMock(
+            return_value=OrderResult(
+                order_id=uuid4(),
+                status="pending",
+                executed_price=None,
+                executed_quantity=None,
+                slippage_pct=None,
+                fee=None,
+                timestamp=_NOW,
+            )
+        )
         risk_result = MagicMock()
         risk_result.approved = True
         risk_result.rejection_reason = None
@@ -1078,19 +1175,28 @@ class TestPhase3_Trading:
         risk_mgr.validate_order = AsyncMock(return_value=risk_result)
 
         client = _build_trading_client(order_engine=engine, risk_manager=risk_mgr)
-        resp = _authed_post(client, "/api/v1/trade/order", json={
-            "symbol": "BTCUSDT", "side": "buy", "type": "limit",
-            "quantity": "0.1", "price": "60000.00",
-        })
+        resp = _authed_post(
+            client,
+            "/api/v1/trade/order",
+            json={
+                "symbol": "BTCUSDT",
+                "side": "buy",
+                "type": "limit",
+                "quantity": "0.1",
+                "price": "60000.00",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["status"] == "pending"
 
     def test_05_open_orders(self) -> None:
         """List open orders."""
         order_repo = AsyncMock()
-        order_repo.list_open_by_account = AsyncMock(return_value=[
-            _make_order_mock(order_type="limit", status="pending"),
-        ])
+        order_repo.list_open_by_account = AsyncMock(
+            return_value=[
+                _make_order_mock(order_type="limit", status="pending"),
+            ]
+        )
         client = _build_trading_client(order_repo=order_repo)
         resp = _authed_get(client, "/api/v1/trade/orders/open")
         assert resp.status_code == 200
@@ -1098,10 +1204,11 @@ class TestPhase3_Trading:
     def test_06_trade_history(self) -> None:
         """Get trade history."""
         trade_repo = AsyncMock()
-        trade_repo.list_by_account = AsyncMock(return_value=[
-            _make_trade_mock(symbol=s, side=sd, quantity=Decimal(q))
-            for s, sd, q in self.ALPHA_TRADES[:3]
-        ])
+        trade_repo.list_by_account = AsyncMock(
+            return_value=[
+                _make_trade_mock(symbol=s, side=sd, quantity=Decimal(q)) for s, sd, q in self.ALPHA_TRADES[:3]
+            ]
+        )
         client = _build_trading_client(trade_repo=trade_repo)
         resp = _authed_get(client, "/api/v1/trade/history")
         assert resp.status_code == 200
@@ -1111,9 +1218,12 @@ class TestPhase3_Trading:
         engine = AsyncMock()
         engine.cancel_order = AsyncMock(return_value=None)
         order_repo = AsyncMock()
-        order_repo.get_by_id = AsyncMock(return_value=_make_order_mock(
-            order_type="limit", status="pending",
-        ))
+        order_repo.get_by_id = AsyncMock(
+            return_value=_make_order_mock(
+                order_type="limit",
+                status="pending",
+            )
+        )
         order_repo.list_by_account = AsyncMock(return_value=[])
         order_repo.list_open_by_account = AsyncMock(return_value=[])
         client = _build_trading_client(order_engine=engine, order_repo=order_repo)
@@ -1131,11 +1241,13 @@ class TestPhase4_Portfolio:
 
     def _portfolio_client(self):
         bm = AsyncMock()
-        bm.get_all_balances = AsyncMock(return_value=[
-            MagicMock(asset="USDT", available=Decimal("5000"), locked=Decimal("500")),
-            MagicMock(asset="BTC", available=Decimal("0.07"), locked=Decimal("0")),
-            MagicMock(asset="ETH", available=Decimal("2.5"), locked=Decimal("0")),
-        ])
+        bm.get_all_balances = AsyncMock(
+            return_value=[
+                MagicMock(asset="USDT", available=Decimal("5000"), locked=Decimal("500")),
+                MagicMock(asset="BTC", available=Decimal("0.07"), locked=Decimal("0")),
+                MagicMock(asset="ETH", available=Decimal("2.5"), locked=Decimal("0")),
+            ]
+        )
 
         ps = MagicMock()
         ps.total_equity = Decimal("12458.30")
@@ -1148,20 +1260,30 @@ class TestPhase4_Portfolio:
         ps.roi_pct = Decimal("11.19")
         ps.starting_balance = Decimal("10000")
         ps.positions = [
-            MagicMock(symbol="BTCUSDT", asset="BTC", quantity=Decimal("0.07"),
-                      avg_entry_price=Decimal("65000"), current_price=Decimal("65520.30"),
-                      market_value=Decimal("4586.42"), unrealized_pnl=Decimal("36.42"),
-                      unrealized_pnl_pct=Decimal("0.80"), opened_at=_NOW),
+            MagicMock(
+                symbol="BTCUSDT",
+                asset="BTC",
+                quantity=Decimal("0.07"),
+                avg_entry_price=Decimal("65000"),
+                current_price=Decimal("65520.30"),
+                market_value=Decimal("4586.42"),
+                unrealized_pnl=Decimal("36.42"),
+                unrealized_pnl_pct=Decimal("0.80"),
+                opened_at=_NOW,
+            ),
         ]
 
         tracker = AsyncMock()
         tracker.get_portfolio = AsyncMock(return_value=ps)
         tracker.get_total_equity = AsyncMock(return_value=Decimal("12458.30"))
         tracker.get_positions = AsyncMock(return_value=ps.positions)
-        tracker.get_pnl = AsyncMock(return_value=MagicMock(
-            realized_pnl=Decimal("458.30"), unrealized_pnl=Decimal("660.65"),
-            total_pnl=Decimal("1118.95"),
-        ))
+        tracker.get_pnl = AsyncMock(
+            return_value=MagicMock(
+                realized_pnl=Decimal("458.30"),
+                unrealized_pnl=Decimal("660.65"),
+                total_pnl=Decimal("1118.95"),
+            )
+        )
 
         trade_repo = AsyncMock()
         trade_repo.count_by_account = AsyncMock(return_value=25)
@@ -1252,18 +1374,30 @@ class TestPhase5_Backtesting:
         engine.execute_order = AsyncMock(return_value=order_result)
 
         # Results endpoint reads from DB, not engine — but let's keep for safety
-        engine.get_results = AsyncMock(return_value={
-            "session_id": "bt_test", "status": "completed",
-            "config": {}, "summary": {"total_trades": 25, "roi_pct": "25.00",
-                                       "final_equity": "12500.00", "winning_trades": 16, "losing_trades": 9},
-            "metrics": {"sharpe_ratio": "1.85", "win_rate": "64.00"},
-        })
-        engine.get_equity_curve = AsyncMock(return_value={
-            "interval": 3600, "snapshots": [
-                {"timestamp": "2025-01-01T00:00:00Z", "equity": "10000.00"},
-                {"timestamp": "2025-12-31T00:00:00Z", "equity": "12500.00"},
-            ],
-        })
+        engine.get_results = AsyncMock(
+            return_value={
+                "session_id": "bt_test",
+                "status": "completed",
+                "config": {},
+                "summary": {
+                    "total_trades": 25,
+                    "roi_pct": "25.00",
+                    "final_equity": "12500.00",
+                    "winning_trades": 16,
+                    "losing_trades": 9,
+                },
+                "metrics": {"sharpe_ratio": "1.85", "win_rate": "64.00"},
+            }
+        )
+        engine.get_equity_curve = AsyncMock(
+            return_value={
+                "interval": 3600,
+                "snapshots": [
+                    {"timestamp": "2025-01-01T00:00:00Z", "equity": "10000.00"},
+                    {"timestamp": "2025-12-31T00:00:00Z", "equity": "12500.00"},
+                ],
+            }
+        )
 
         # cancel (not cancel_session)
         cancel_result = MagicMock()
@@ -1312,11 +1446,18 @@ class TestPhase5_Backtesting:
         mock_replayer.get_available_pairs = AsyncMock(return_value=pairs)
 
         with patch("src.api.routes.backtest.DataReplayer", return_value=mock_replayer):
-            resp = client.post("/api/v1/backtest/create", json={
-                "start_time": "2025-01-01T00:00:00Z", "end_time": "2025-12-31T23:59:59Z",
-                "starting_balance": "10000", "candle_interval": 60,
-                "pairs": pairs, "strategy_label": strategy_label, "agent_id": str(agent_id),
-            })
+            resp = client.post(
+                "/api/v1/backtest/create",
+                json={
+                    "start_time": "2025-01-01T00:00:00Z",
+                    "end_time": "2025-12-31T23:59:59Z",
+                    "starting_balance": "10000",
+                    "candle_interval": 60,
+                    "pairs": pairs,
+                    "strategy_label": strategy_label,
+                    "agent_id": str(agent_id),
+                },
+            )
         assert resp.status_code == 200, f"Create {strategy_label} failed: {resp.text}"
         sid = resp.json()["session_id"]
 
@@ -1349,9 +1490,15 @@ class TestPhase5_Backtesting:
         resp = client.get(f"/api/v1/backtest/{sid}/market/price/ETHUSDT")
         assert resp.status_code == 200
 
-        resp = client.post(f"/api/v1/backtest/{sid}/trade/order", json={
-            "symbol": "ETHUSDT", "side": "buy", "type": "market", "quantity": "2.0",
-        })
+        resp = client.post(
+            f"/api/v1/backtest/{sid}/trade/order",
+            json={
+                "symbol": "ETHUSDT",
+                "side": "buy",
+                "type": "market",
+                "quantity": "2.0",
+            },
+        )
         assert resp.status_code == 200
 
     def test_04_beta_arbitrage(self) -> None:
@@ -1436,35 +1583,66 @@ class TestPhase6_Battles:
 
         svc.stop_battle = AsyncMock(return_value=_make_battle_mock(bid, "completed", participants))
         # Route calls get_live_snapshot — must return dicts (passed directly to Pydantic)
-        svc.get_live_snapshot = AsyncMock(return_value=[
-            {"agent_id": str(aid), "display_name": name, "current_equity": "10500",
-             "pnl": "500", "roi_pct": "5.0", "total_trades": 10}
-            for aid, name in zip(AGENT_IDS, AGENT_NAMES, strict=False)
-        ])
+        svc.get_live_snapshot = AsyncMock(
+            return_value=[
+                {
+                    "agent_id": str(aid),
+                    "display_name": name,
+                    "current_equity": "10500",
+                    "pnl": "500",
+                    "roi_pct": "5.0",
+                    "total_trades": 10,
+                }
+                for aid, name in zip(AGENT_IDS, AGENT_NAMES, strict=False)
+            ]
+        )
         # get_results returns a dict matching BattleResultsResponse fields
-        svc.get_results = AsyncMock(return_value={
-            "battle_id": bid, "name": "E2E Agent Championship",
-            "ranking_metric": "roi_pct", "started_at": _NOW, "ended_at": _NOW,
-            "participants": [
-                {"agent_id": str(AGENT_IDS[2 - i]), "display_name": AGENT_NAMES[2 - i],
-                 "final_equity": str(10000 + (3 - i) * 100), "roi_pct": str(3 - i),
-                 "rank": i + 1, "total_trades": 10 - i}
-                for i in range(3)
-            ],
-        })
+        svc.get_results = AsyncMock(
+            return_value={
+                "battle_id": bid,
+                "name": "E2E Agent Championship",
+                "ranking_metric": "roi_pct",
+                "started_at": _NOW,
+                "ended_at": _NOW,
+                "participants": [
+                    {
+                        "agent_id": str(AGENT_IDS[2 - i]),
+                        "display_name": AGENT_NAMES[2 - i],
+                        "final_equity": str(10000 + (3 - i) * 100),
+                        "roi_pct": str(3 - i),
+                        "rank": i + 1,
+                        "total_trades": 10 - i,
+                    }
+                    for i in range(3)
+                ],
+            }
+        )
         # get_replay_data returns list of snapshot objects with attrs
-        svc.get_replay_data = AsyncMock(return_value=[
-            MagicMock(agent_id=AGENT_IDS[0], timestamp=_NOW, equity=Decimal("10500"),
-                      unrealized_pnl=Decimal("200"), realized_pnl=Decimal("300")),
-        ])
+        svc.get_replay_data = AsyncMock(
+            return_value=[
+                MagicMock(
+                    agent_id=AGENT_IDS[0],
+                    timestamp=_NOW,
+                    equity=Decimal("10500"),
+                    unrealized_pnl=Decimal("200"),
+                    realized_pnl=Decimal("300"),
+                ),
+            ]
+        )
         # get_historical_prices returns (prices_dict, virtual_time) tuple
         svc.get_historical_prices = AsyncMock(return_value=(PRICES, _NOW))
-        svc.place_historical_order = AsyncMock(return_value=MagicMock(
-            order_id=uuid4(), status="filled", executed_price=Decimal("65520.30"),
-        ))
-        svc.get_presets = AsyncMock(return_value=[
-            {"id": "5m_quickfire", "name": "5-Minute Quickfire", "duration_minutes": 5},
-        ])
+        svc.place_historical_order = AsyncMock(
+            return_value=MagicMock(
+                order_id=uuid4(),
+                status="filled",
+                executed_price=Decimal("65520.30"),
+            )
+        )
+        svc.get_presets = AsyncMock(
+            return_value=[
+                {"id": "5m_quickfire", "name": "5-Minute Quickfire", "duration_minutes": 5},
+            ]
+        )
         svc.battle_id = bid
         return svc
 
@@ -1477,11 +1655,16 @@ class TestPhase6_Battles:
     def test_02_create(self) -> None:
         svc = self._battle_service()
         client = _build_battle_client(svc)
-        resp = client.post("/api/v1/battles", json={
-            "name": "E2E Championship", "preset": "5m_quickfire",
-            "config": {"duration_minutes": 60, "starting_balance": "10000"},
-            "ranking_metric": "roi_pct", "battle_mode": "historical",
-        })
+        resp = client.post(
+            "/api/v1/battles",
+            json={
+                "name": "E2E Championship",
+                "preset": "5m_quickfire",
+                "config": {"duration_minutes": 60, "starting_balance": "10000"},
+                "ranking_metric": "roi_pct",
+                "battle_mode": "historical",
+            },
+        )
         assert resp.status_code == 201
 
     def test_03_add_participants(self) -> None:
@@ -1519,10 +1702,16 @@ class TestPhase6_Battles:
     def test_08_battle_order(self) -> None:
         svc = self._battle_service()
         client = _build_battle_client(svc)
-        resp = client.post(f"/api/v1/battles/{svc.battle_id}/trade/order", json={
-            "agent_id": str(AGENT_ALPHA_ID), "symbol": "BTCUSDT",
-            "side": "buy", "type": "market", "quantity": "0.05",
-        })
+        resp = client.post(
+            f"/api/v1/battles/{svc.battle_id}/trade/order",
+            json={
+                "agent_id": str(AGENT_ALPHA_ID),
+                "symbol": "BTCUSDT",
+                "side": "buy",
+                "type": "market",
+                "quantity": "0.05",
+            },
+        )
         assert resp.status_code == 200
 
     def test_09_battle_prices(self) -> None:
@@ -1639,9 +1828,15 @@ class TestPhase8_Management:
 
     def test_01_update_risk_profile(self) -> None:
         client = _build_account_client()
-        resp = _authed_put(client, "/api/v1/account/risk-profile", json={
-            "max_position_size_pct": 30, "daily_loss_limit_pct": 15, "max_open_orders": 100,
-        })
+        resp = _authed_put(
+            client,
+            "/api/v1/account/risk-profile",
+            json={
+                "max_position_size_pct": 30,
+                "daily_loss_limit_pct": 15,
+                "max_open_orders": 100,
+            },
+        )
         assert resp.status_code == 200, f"Risk profile failed: {resp.text}"
 
     def test_02_regenerate_key(self) -> None:
@@ -1653,10 +1848,14 @@ class TestPhase8_Management:
 
     def test_03_clone_agent(self) -> None:
         svc = AsyncMock()
-        svc.clone_agent = AsyncMock(return_value=AgentCredentials(
-            agent_id=uuid4(), api_key="ak_live_clone",
-            display_name="AlphaBot Clone", starting_balance=Decimal("10000"),
-        ))
+        svc.clone_agent = AsyncMock(
+            return_value=AgentCredentials(
+                agent_id=uuid4(),
+                api_key="ak_live_clone",
+                display_name="AlphaBot Clone",
+                starting_balance=Decimal("10000"),
+            )
+        )
         client = _build_agent_client(agent_service=svc)
         resp = client.post(f"/api/v1/agents/{AGENT_ALPHA_ID}/clone", json={"display_name": "AlphaBot Clone"})
         assert resp.status_code == 201

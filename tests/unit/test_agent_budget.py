@@ -141,9 +141,7 @@ class TestCheckBudgetDenials:
 
     async def _setup_limits_cache(self, limits: _BudgetLimits) -> None:
         """Configure mock_redis to return limits JSON on get()."""
-        self.mock_redis.get.side_effect = lambda key: (
-            limits.to_json().encode() if "limits" in key else None
-        )
+        self.mock_redis.get.side_effect = lambda key: (limits.to_json().encode() if "limits" in key else None)
 
     async def test_denied_position_size_exceeded(self) -> None:
         """Trade value above max_position_size_usdt is denied with a clear reason."""
@@ -254,9 +252,7 @@ class TestRecordTrade:
 
         self.mock_pipe.incr.assert_called_once_with(_trades_key(self.agent_id))
         # budget.py uses format(trade_value, "f") → produces a decimal string like "250.00"
-        self.mock_pipe.incrbyfloat.assert_called_once_with(
-            _exposure_key(self.agent_id), format(Decimal("250.00"), "f")
-        )
+        self.mock_pipe.incrbyfloat.assert_called_once_with(_exposure_key(self.agent_id), format(Decimal("250.00"), "f"))
 
     async def test_record_trade_redis_error_is_logged_not_raised(self) -> None:
         """RedisError in record_trade is caught and does not raise."""
@@ -294,9 +290,7 @@ class TestRecordLoss:
             await self.manager.record_loss(self.agent_id, Decimal("45.00"))
 
         # budget.py uses format(loss_amount, "f") → decimal string
-        self.mock_pipe.incrbyfloat.assert_called_once_with(
-            _loss_key(self.agent_id), format(Decimal("45.00"), "f")
-        )
+        self.mock_pipe.incrbyfloat.assert_called_once_with(_loss_key(self.agent_id), format(Decimal("45.00"), "f"))
 
     async def test_record_loss_zero_or_negative_is_skipped(self) -> None:
         """record_loss silently skips non-positive loss amounts."""
@@ -324,9 +318,7 @@ class TestGetBudgetStatus:
     async def test_returns_budget_status_instance(self) -> None:
         """get_budget_status returns a BudgetStatus Pydantic model."""
         limits = _make_limits(max_trades=10, max_exposure="5000.00", max_loss="500.00")
-        self.mock_redis.get.side_effect = lambda key: (
-            limits.to_json().encode() if "limits" in key else None
-        )
+        self.mock_redis.get.side_effect = lambda key: (limits.to_json().encode() if "limits" in key else None)
         self.mock_redis.mget.return_value = ["3", "1500.00", "75.00"]
 
         status = await self.manager.get_budget_status(self.agent_id)
@@ -339,9 +331,7 @@ class TestGetBudgetStatus:
     async def test_utilisation_percentages_are_correct(self) -> None:
         """Utilisation fractions are computed correctly from counters and limits."""
         limits = _make_limits(max_trades=10, max_exposure="1000.00", max_loss="500.00")
-        self.mock_redis.get.side_effect = lambda key: (
-            limits.to_json().encode() if "limits" in key else None
-        )
+        self.mock_redis.get.side_effect = lambda key: (limits.to_json().encode() if "limits" in key else None)
         self.mock_redis.mget.return_value = ["5", "500.00", "250.00"]
 
         status = await self.manager.get_budget_status(self.agent_id)
@@ -353,9 +343,7 @@ class TestGetBudgetStatus:
     async def test_utilisation_clamped_to_one_when_over_limit(self) -> None:
         """Utilisation fraction is clamped to 1.0 when counters exceed limits."""
         limits = _make_limits(max_trades=5, max_exposure="100.00", max_loss="50.00")
-        self.mock_redis.get.side_effect = lambda key: (
-            limits.to_json().encode() if "limits" in key else None
-        )
+        self.mock_redis.get.side_effect = lambda key: (limits.to_json().encode() if "limits" in key else None)
         # All counters exceed their limits
         self.mock_redis.mget.return_value = ["10", "999.00", "999.00"]
 
@@ -454,7 +442,6 @@ class TestBudgetManagerRedisFailureFallback:
         mock_redis.get.side_effect = RedisError("unavailable")
         # Redis throws on mget (counter read)
         mock_redis.mget.side_effect = RedisError("unavailable")
-
 
         mock_budget_row = MagicMock()
         mock_budget_row.trades_today = 2

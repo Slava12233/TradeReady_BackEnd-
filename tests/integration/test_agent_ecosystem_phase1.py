@@ -486,9 +486,7 @@ class TestMemoryRoundTrip:
 class TestContextAssembly:
     """ContextBuilder.build() assembles all sections correctly."""
 
-    async def test_build_always_includes_system_section(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_build_always_includes_system_section(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """build() always includes the system prompt as the first message."""
         config = _make_agent_config(monkeypatch)
 
@@ -515,9 +513,7 @@ class TestContextAssembly:
         assert result[0]["role"] == "system"
         assert "TradeReady" in result[0]["content"]
 
-    async def test_build_includes_permissions_section(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_build_includes_permissions_section(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """build() includes the permissions and budget section from config."""
         config = _make_agent_config(monkeypatch)
 
@@ -541,9 +537,7 @@ class TestContextAssembly:
         contents = [m["content"] for m in result]
         assert any("Permissions" in c for c in contents), "Expected a Permissions section in the context"
 
-    async def test_build_includes_learnings_when_memory_store_provided(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_build_includes_learnings_when_memory_store_provided(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """build() includes recent learnings when a MemoryStore is provided."""
         config = _make_agent_config(monkeypatch)
 
@@ -573,9 +567,7 @@ class TestContextAssembly:
         assert any("Learnings" in c for c in contents), "Expected a Learnings section in the context"
         assert any("Always check regime" in c for c in contents)
 
-    async def test_build_includes_portfolio_data_when_available(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_build_includes_portfolio_data_when_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """build() includes portfolio section when the SDK returns valid data."""
         config = _make_agent_config(monkeypatch)
 
@@ -607,9 +599,7 @@ class TestContextAssembly:
         assert any("Portfolio State" in c for c in contents)
         assert any("USDT" in c for c in contents)
 
-    async def test_build_includes_conversation_messages_from_session(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_build_includes_conversation_messages_from_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """build() appends the session's conversation messages at the end."""
         config = _make_agent_config(monkeypatch)
 
@@ -622,9 +612,7 @@ class TestContextAssembly:
         # Session returns one user message.
         session = AsyncMock()
         session.session_id = uuid4()
-        session.get_context.return_value = [
-            {"role": "user", "content": "What is the current BTC trend?"}
-        ]
+        session.get_context.return_value = [{"role": "user", "content": "What is the current BTC trend?"}]
 
         with (
             patch.object(builder, "_fetch_portfolio_section", new=AsyncMock(return_value="")),
@@ -638,9 +626,7 @@ class TestContextAssembly:
         assert len(user_messages) >= 1
         assert user_messages[-1]["content"] == "What is the current BTC trend?"
 
-    async def test_build_degrades_gracefully_when_portfolio_unavailable(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_build_degrades_gracefully_when_portfolio_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """build() succeeds even when the portfolio SDK call raises internally.
 
         The ``_fetch_portfolio_section`` method itself catches all exceptions and
@@ -702,9 +688,7 @@ class TestToolExecution:
         t.executed_at = datetime.now(UTC)
         return t
 
-    async def test_reflect_on_trade_creates_journal_and_learning_records(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_reflect_on_trade_creates_journal_and_learning_records(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """reflect_on_trade() returns a structured reflection dict from trade history.
 
         The DB persistence path is intentionally short-circuited by causing
@@ -739,8 +723,10 @@ class TestToolExecution:
         with (
             patch("agentexchange.async_client.AsyncAgentExchangeClient", return_value=sdk_client),
             patch("src.database.session.get_session_factory", side_effect=Exception("DB unavailable")),
-            patch("src.database.repositories.agent_observation_repo.AgentObservationRepository",
-                  side_effect=Exception("DB unavailable")),
+            patch(
+                "src.database.repositories.agent_observation_repo.AgentObservationRepository",
+                side_effect=Exception("DB unavailable"),
+            ),
         ):
             from agent.tools.agent_tools import get_agent_tools  # noqa: PLC0415
 
@@ -759,9 +745,7 @@ class TestToolExecution:
         assert "learnings" in result
         assert len(result["learnings"]) >= 1
 
-    async def test_reflect_on_trade_returns_error_when_trade_not_found(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_reflect_on_trade_returns_error_when_trade_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """reflect_on_trade() returns an error dict when the trade ID is unknown."""
         config = _make_agent_config(monkeypatch)
         agent_id = str(uuid4())
@@ -784,9 +768,7 @@ class TestToolExecution:
         assert "error" in result
         assert "not found" in result["error"].lower()
 
-    async def test_journal_entry_persists_with_auto_tags(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_journal_entry_persists_with_auto_tags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry() saves to the DB and auto-tags content keywords."""
         config = _make_agent_config(monkeypatch)
         agent_id = str(uuid4())
@@ -830,9 +812,7 @@ class TestToolExecution:
         tags = result.get("tags", [])
         assert "risk" in tags or "exit_timing" in tags, f"Expected risk/exit_timing tags, got: {tags}"
 
-    async def test_journal_entry_degrades_gracefully_when_db_unavailable(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_journal_entry_degrades_gracefully_when_db_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """journal_entry() still returns a result even when the DB write fails."""
         config = _make_agent_config(monkeypatch)
         agent_id = str(uuid4())

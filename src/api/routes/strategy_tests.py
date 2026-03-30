@@ -191,8 +191,8 @@ async def compare_versions(
     # Get latest test results for each version (ownership checked inside)
     test_runs = await service.list_test_runs(account.id, strategy_id, limit=100)
 
-    v1_results: dict | None = None
-    v2_results: dict | None = None
+    v1_results: dict | None = None  # type: ignore[type-arg]
+    v2_results: dict | None = None  # type: ignore[type-arg]
 
     for tr in test_runs:
         if tr.version == v1 and tr.status == "completed" and tr.results:

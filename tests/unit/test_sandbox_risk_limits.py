@@ -211,20 +211,33 @@ def test_daily_loss_resets_next_day(prices: dict[str, Decimal]) -> None:
 
     # Buy and sell at loss on day 1
     sandbox.place_order(
-        symbol="BTCUSDT", side="buy", order_type="market",
-        quantity=Decimal("0.1"), price=None, current_prices=prices, virtual_time=day1,
+        symbol="BTCUSDT",
+        side="buy",
+        order_type="market",
+        quantity=Decimal("0.1"),
+        price=None,
+        current_prices=prices,
+        virtual_time=day1,
     )
     loss_prices = {"BTCUSDT": Decimal("43000"), "ETHUSDT": Decimal("3000")}
     sandbox.place_order(
-        symbol="BTCUSDT", side="sell", order_type="market",
-        quantity=Decimal("0.1"), price=None, current_prices=loss_prices,
+        symbol="BTCUSDT",
+        side="sell",
+        order_type="market",
+        quantity=Decimal("0.1"),
+        price=None,
+        current_prices=loss_prices,
         virtual_time=datetime(2026, 1, 15, 11, 0, tzinfo=UTC),
     )
 
     # Day 1 order should be rejected
     r_day1 = sandbox.place_order(
-        symbol="ETHUSDT", side="buy", order_type="market",
-        quantity=Decimal("1"), price=None, current_prices=loss_prices,
+        symbol="ETHUSDT",
+        side="buy",
+        order_type="market",
+        quantity=Decimal("1"),
+        price=None,
+        current_prices=loss_prices,
         virtual_time=datetime(2026, 1, 15, 12, 0, tzinfo=UTC),
     )
     assert r_day1.status == "rejected"
@@ -232,8 +245,12 @@ def test_daily_loss_resets_next_day(prices: dict[str, Decimal]) -> None:
     # Day 2 order should pass (new day, loss counter resets)
     day2 = datetime(2026, 1, 16, 10, 0, tzinfo=UTC)
     r_day2 = sandbox.place_order(
-        symbol="ETHUSDT", side="buy", order_type="market",
-        quantity=Decimal("1"), price=None, current_prices=loss_prices,
+        symbol="ETHUSDT",
+        side="buy",
+        order_type="market",
+        quantity=Decimal("1"),
+        price=None,
+        current_prices=loss_prices,
         virtual_time=day2,
     )
     assert r_day2.status == "filled"

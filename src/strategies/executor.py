@@ -56,12 +56,15 @@ class StrategyExecutor:
             if price_str is None:
                 continue
             price = float(str(price_str))
-            self._indicators.update(symbol, {
-                "close": price,
-                "high": price,
-                "low": price,
-                "volume": 0,
-            })
+            self._indicators.update(
+                symbol,
+                {
+                    "close": price,
+                    "high": price,
+                    "low": price,
+                    "volume": 0,
+                },
+            )
 
         # Check exits first (priority: stop_loss → take_profit → trailing_stop → max_hold → indicators)
         for pos in positions:
@@ -85,12 +88,14 @@ class StrategyExecutor:
             if self._should_enter(symbol):
                 qty = self._calculate_quantity(symbol, prices, portfolio)
                 if qty > Decimal("0"):
-                    orders.append({
-                        "symbol": symbol,
-                        "side": "buy",
-                        "type": "market",
-                        "quantity": qty,
-                    })
+                    orders.append(
+                        {
+                            "symbol": symbol,
+                            "side": "buy",
+                            "type": "market",
+                            "quantity": qty,
+                        }
+                    )
                     self._entry_candles[symbol] = self._step_count
                     price_str = prices.get(symbol)
                     if price_str is not None:
@@ -105,10 +110,7 @@ class StrategyExecutor:
         active_conditions = {k: v for k, v in self._entry_conditions.items() if v is not None}
         if not active_conditions:
             return False
-        return all(
-            self._evaluate_entry_condition(key, value, indicators)
-            for key, value in active_conditions.items()
-        )
+        return all(self._evaluate_entry_condition(key, value, indicators) for key, value in active_conditions.items())
 
     def _check_exits(
         self,
@@ -173,12 +175,14 @@ class StrategyExecutor:
             should_exit = self._should_exit_indicators(indicators)
 
         if should_exit:
-            orders.append({
-                "symbol": symbol,
-                "side": "sell",
-                "type": "market",
-                "quantity": quantity,
-            })
+            orders.append(
+                {
+                    "symbol": symbol,
+                    "side": "sell",
+                    "type": "market",
+                    "quantity": quantity,
+                }
+            )
             self._peak_prices.pop(symbol, None)
             self._entry_candles.pop(symbol, None)
 

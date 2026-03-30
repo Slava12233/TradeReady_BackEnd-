@@ -99,9 +99,7 @@ class TestResolveAccountFromApiKeyAgentFound:
         agent_repo = AsyncMock()
         agent_repo.get_by_api_key = AsyncMock(return_value=agent)
 
-        result = await _resolve_account_from_api_key(
-            agent.api_key, account_repo, agent_repo
-        )
+        result = await _resolve_account_from_api_key(agent.api_key, account_repo, agent_repo)
 
         assert result == (account, agent)
         agent_repo.get_by_api_key.assert_awaited_once_with(agent.api_key)
@@ -127,9 +125,7 @@ class TestResolveAccountFromApiKeyLegacyFallback:
         agent_repo = AsyncMock()
         agent_repo.get_by_api_key = AsyncMock(side_effect=AgentNotFoundError())
 
-        result = await _resolve_account_from_api_key(
-            account.api_key, account_repo, agent_repo
-        )
+        result = await _resolve_account_from_api_key(account.api_key, account_repo, agent_repo)
 
         assert result == (account, None)
         agent_repo.get_by_api_key.assert_awaited_once_with(account.api_key)
@@ -142,9 +138,7 @@ class TestResolveAccountFromApiKeyLegacyFallback:
         account_repo = AsyncMock()
         account_repo.get_by_api_key = AsyncMock(return_value=account)
 
-        result = await _resolve_account_from_api_key(
-            account.api_key, account_repo, agent_repo=None
-        )
+        result = await _resolve_account_from_api_key(account.api_key, account_repo, agent_repo=None)
 
         assert result == (account, None)
         account_repo.get_by_api_key.assert_awaited_once_with(account.api_key)
@@ -152,17 +146,13 @@ class TestResolveAccountFromApiKeyLegacyFallback:
     async def test_raises_auth_error_when_neither_found(self):
         """Neither agent nor account matches → AuthenticationError."""
         account_repo = AsyncMock()
-        account_repo.get_by_api_key = AsyncMock(
-            side_effect=AccountNotFoundError("No account found.")
-        )
+        account_repo.get_by_api_key = AsyncMock(side_effect=AccountNotFoundError("No account found."))
 
         agent_repo = AsyncMock()
         agent_repo.get_by_api_key = AsyncMock(side_effect=AgentNotFoundError())
 
         with pytest.raises(AuthenticationError, match="Invalid API key"):
-            await _resolve_account_from_api_key(
-                "ak_live_bogus", account_repo, agent_repo
-            )
+            await _resolve_account_from_api_key("ak_live_bogus", account_repo, agent_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -184,9 +174,7 @@ class TestResolveAccountFromApiKeyArchivedAgent:
         agent_repo.get_by_api_key = AsyncMock(return_value=agent)
 
         with pytest.raises(AuthenticationError, match="archived"):
-            await _resolve_account_from_api_key(
-                agent.api_key, account_repo, agent_repo
-            )
+            await _resolve_account_from_api_key(agent.api_key, account_repo, agent_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +196,7 @@ class TestResolveAccountFromApiKeySuspendedAccount:
         agent_repo.get_by_api_key = AsyncMock(return_value=agent)
 
         with pytest.raises(AccountSuspendedError):
-            await _resolve_account_from_api_key(
-                agent.api_key, account_repo, agent_repo
-            )
+            await _resolve_account_from_api_key(agent.api_key, account_repo, agent_repo)
 
     async def test_suspended_account_legacy_raises(self):
         """Legacy path: account key found but account is suspended."""
@@ -223,9 +209,7 @@ class TestResolveAccountFromApiKeySuspendedAccount:
         agent_repo.get_by_api_key = AsyncMock(side_effect=AgentNotFoundError())
 
         with pytest.raises(AccountSuspendedError):
-            await _resolve_account_from_api_key(
-                account.api_key, account_repo, agent_repo
-            )
+            await _resolve_account_from_api_key(account.api_key, account_repo, agent_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -240,17 +224,13 @@ class TestResolveAccountFromApiKeyOrphanAgent:
         agent = _make_agent()
 
         account_repo = AsyncMock()
-        account_repo.get_by_id = AsyncMock(
-            side_effect=AccountNotFoundError("Account not found.")
-        )
+        account_repo.get_by_id = AsyncMock(side_effect=AccountNotFoundError("Account not found."))
 
         agent_repo = AsyncMock()
         agent_repo.get_by_api_key = AsyncMock(return_value=agent)
 
         with pytest.raises(AuthenticationError, match="owning account"):
-            await _resolve_account_from_api_key(
-                agent.api_key, account_repo, agent_repo
-            )
+            await _resolve_account_from_api_key(agent.api_key, account_repo, agent_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +329,7 @@ class TestGetCurrentAgentFromHeader:
         mock_session_factory = MagicMock(return_value=mock_session)
 
         mock_agent_repo_instance = AsyncMock()
-        mock_agent_repo_instance.get_by_id = AsyncMock(
-            side_effect=AgentNotFoundError(agent_id=bogus_id)
-        )
+        mock_agent_repo_instance.get_by_id = AsyncMock(side_effect=AgentNotFoundError(agent_id=bogus_id))
 
         mock_get_session_factory = MagicMock(return_value=mock_session_factory)
 

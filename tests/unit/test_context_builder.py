@@ -235,9 +235,7 @@ class TestStrategySection:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {"name": "SMA Crossover", "status": "deployed", "current_version": 2}
-        ]
+        mock_response.json.return_value = [{"name": "SMA Crossover", "status": "deployed", "current_version": 2}]
 
         mock_client = AsyncMock()
         mock_client.get.return_value = mock_response

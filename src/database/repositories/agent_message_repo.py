@@ -194,11 +194,7 @@ class AgentMessageRepository:
             DatabaseError: On any SQLAlchemy / database error.
         """
         try:
-            stmt = (
-                select(func.count())
-                .select_from(AgentMessage)
-                .where(AgentMessage.session_id == session_id)
-            )
+            stmt = select(func.count()).select_from(AgentMessage).where(AgentMessage.session_id == session_id)
             result = await self._session.execute(stmt)
             return result.scalar_one()
         except SQLAlchemyError as exc:

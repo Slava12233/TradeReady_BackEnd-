@@ -93,9 +93,7 @@ async def _initialize_engine(engine, mock_db):
     with patch("src.battles.historical_engine.DataReplayer") as mock_replayer_cls:
         mock_replayer = mock_replayer_cls.return_value
         mock_replayer.preload_range = AsyncMock(return_value=100)
-        mock_replayer.load_prices = AsyncMock(
-            return_value={"BTCUSDT": Decimal("50000"), "ETHUSDT": Decimal("3000")}
-        )
+        mock_replayer.load_prices = AsyncMock(return_value={"BTCUSDT": Decimal("50000"), "ETHUSDT": Decimal("3000")})
         await engine.initialize(mock_db)
         # Keep the mock replayer accessible for step calls
         engine._replayer = mock_replayer
@@ -360,10 +358,12 @@ class TestComplete:
         mock_session_instance = MagicMock()
         mock_session_instance.id = uuid4()
 
-        with patch("src.database.models.BacktestSession", return_value=mock_session_instance), \
-             patch("src.database.models.BacktestTrade", side_effect=lambda **kw: MagicMock()), \
-             patch("src.database.models.BacktestSnapshot", side_effect=lambda **kw: MagicMock()), \
-             patch("src.database.models.BattleSnapshot", side_effect=lambda **kw: MagicMock()):
+        with (
+            patch("src.database.models.BacktestSession", return_value=mock_session_instance),
+            patch("src.database.models.BacktestTrade", side_effect=lambda **kw: MagicMock()),
+            patch("src.database.models.BacktestSnapshot", side_effect=lambda **kw: MagicMock()),
+            patch("src.database.models.BattleSnapshot", side_effect=lambda **kw: MagicMock()),
+        ):
             results = await engine.complete(mock_db)
 
         assert len(results) == len(agent_ids)
@@ -380,10 +380,12 @@ class TestComplete:
         mock_session_instance = MagicMock()
         mock_session_instance.id = uuid4()
 
-        with patch("src.database.models.BacktestSession", return_value=mock_session_instance), \
-             patch("src.database.models.BacktestTrade", side_effect=lambda **kw: MagicMock()), \
-             patch("src.database.models.BacktestSnapshot", side_effect=lambda **kw: MagicMock()), \
-             patch("src.database.models.BattleSnapshot", side_effect=lambda **kw: MagicMock()):
+        with (
+            patch("src.database.models.BacktestSession", return_value=mock_session_instance),
+            patch("src.database.models.BacktestTrade", side_effect=lambda **kw: MagicMock()),
+            patch("src.database.models.BacktestSnapshot", side_effect=lambda **kw: MagicMock()),
+            patch("src.database.models.BattleSnapshot", side_effect=lambda **kw: MagicMock()),
+        ):
             await engine.complete(mock_db)
 
         # db.add should be called (sessions, snapshots, battle snapshots)

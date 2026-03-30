@@ -319,8 +319,7 @@ def parse_interval(interval: str | int) -> int:
 
         supported = list(_INTERVAL_LABEL_SECONDS)
         raise InputValidationError(
-            f"Unrecognised interval {interval!r}. "
-            f"Use one of {supported} or a positive integer number of seconds.",
+            f"Unrecognised interval {interval!r}. Use one of {supported} or a positive integer number of seconds.",
             field="interval",
         ) from exc
 

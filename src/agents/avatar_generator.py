@@ -58,16 +58,12 @@ def generate_avatar(agent_id: UUID, size: int = 80) -> str:
                 # Draw on left side
                 x = col * cell_size
                 y = row * cell_size
-                rects.append(
-                    f'<rect x="{x}" y="{y}" width="{cell_size}" '
-                    f'height="{cell_size}" fill="{fg_color}"/>'
-                )
+                rects.append(f'<rect x="{x}" y="{y}" width="{cell_size}" height="{cell_size}" fill="{fg_color}"/>')
                 # Mirror to right side (except center column)
                 if col < 2:
                     mirror_x = (4 - col) * cell_size
                     rects.append(
-                        f'<rect x="{mirror_x}" y="{y}" width="{cell_size}" '
-                        f'height="{cell_size}" fill="{fg_color}"/>'
+                        f'<rect x="{mirror_x}" y="{y}" width="{cell_size}" height="{cell_size}" fill="{fg_color}"/>'
                     )
 
     rects_str = "".join(rects)

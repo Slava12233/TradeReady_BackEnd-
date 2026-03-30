@@ -284,7 +284,8 @@ class StrategyService:
         test_run = await self._repo.get_latest_results(strategy_id)
         if test_run is None:
             raise StrategyNotFoundError(
-                message="No completed test results found.", strategy_id=strategy_id,
+                message="No completed test results found.",
+                strategy_id=strategy_id,
             )
         return test_run
 

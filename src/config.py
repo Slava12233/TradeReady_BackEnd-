@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # ── CORS ──────────────────────────────────────────────────────────────────
     cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
-        description="Comma-separated list of allowed CORS origins.",
+        description="Comma-separated list of allowed CORS origins. Wildcard '*' is forbidden.",
     )
 
     # ── Authentication ────────────────────────────────────────────────────────
@@ -115,6 +115,15 @@ class Settings(BaseSettings):
         """Ensure the JWT secret is long enough to be secure."""
         if len(value) < 32:
             raise ValueError("jwt_secret must be at least 32 characters long")
+        return value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _cors_no_wildcard(cls, value: str) -> str:
+        """Reject wildcard '*' in CORS origins — incompatible with allow_credentials=True."""
+        origins = [o.strip() for o in value.split(",") if o.strip()]
+        if "*" in origins:
+            raise ValueError("CORS_ORIGINS cannot contain '*' when allow_credentials=True")
         return value
 
     @field_validator("database_url")

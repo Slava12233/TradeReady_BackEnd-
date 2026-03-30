@@ -101,9 +101,7 @@ class TestCreate:
 
 
 class TestGetById:
-    async def test_get_by_id_returns_learning(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_returns_learning(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """get_by_id returns the learning when it exists."""
         learning = _make_agent_learning()
         mock_result = MagicMock()
@@ -114,9 +112,7 @@ class TestGetById:
 
         assert result is learning
 
-    async def test_get_by_id_not_found_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_not_found_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises AgentLearningNotFoundError when missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -127,9 +123,7 @@ class TestGetById:
 
         assert exc_info.value.learning_id is not None
 
-    async def test_get_by_id_db_error_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_db_error_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("timeout")
 
@@ -152,9 +146,7 @@ class TestReinforce:
         assert result is learning
         mock_session.execute.assert_awaited_once()
 
-    async def test_reinforce_not_found_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_reinforce_not_found_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """reinforce raises AgentLearningNotFoundError when row is missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -163,9 +155,7 @@ class TestReinforce:
         with pytest.raises(AgentLearningNotFoundError):
             await repo.reinforce(uuid4())
 
-    async def test_reinforce_db_error_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_reinforce_db_error_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """reinforce raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -176,9 +166,7 @@ class TestReinforce:
 
 
 class TestTouch:
-    async def test_touch_executes_update(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_touch_executes_update(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """touch executes an UPDATE statement without raising."""
         mock_result = MagicMock()
         mock_session.execute.return_value = mock_result
@@ -187,9 +175,7 @@ class TestTouch:
 
         mock_session.execute.assert_awaited_once()
 
-    async def test_touch_db_error_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_touch_db_error_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """touch raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -214,9 +200,7 @@ class TestDelete:
         mock_session.delete.assert_awaited_once_with(learning)
         mock_session.flush.assert_awaited_once()
 
-    async def test_delete_not_found_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_not_found_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """delete raises AgentLearningNotFoundError when learning is missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -256,9 +240,7 @@ class TestSearchByType:
 
         assert result == []
 
-    async def test_search_by_type_db_error_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_search_by_type_db_error_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """search_by_type raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -272,9 +254,7 @@ class TestSearch:
     ) -> None:
         """search returns results that match the keyword in content."""
         agent_id = uuid4()
-        learning = _make_agent_learning(
-            agent_id=agent_id, content="Buy BTC on dip when RSI < 30"
-        )
+        learning = _make_agent_learning(agent_id=agent_id, content="Buy BTC on dip when RSI < 30")
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [learning]
         mock_session.execute.return_value = mock_result
@@ -359,9 +339,7 @@ class TestSearch:
         assert result[0].content == "ETH signal fresh"
         assert result[1].content == "ETH signal stale"
 
-    async def test_search_thirty_day_boost(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_search_thirty_day_boost(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """search gives +2 boost to learnings accessed within 30 days."""
         agent_id = uuid4()
         now = datetime.now(tz=UTC)
@@ -389,9 +367,7 @@ class TestSearch:
         # medium score = 1 + 2 = 3, cold score = 2 + 0 = 2 → medium first
         assert result[0].content == "SOL breakout"
 
-    async def test_search_db_error_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_search_db_error_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """search raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -400,9 +376,7 @@ class TestSearch:
 
 
 class TestPruneExpired:
-    async def test_prune_expired_returns_count(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_prune_expired_returns_count(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """prune_expired returns the number of deleted rows."""
         learning_id = uuid4()
         mock_result = MagicMock()
@@ -426,9 +400,7 @@ class TestPruneExpired:
 
         assert count == 0
 
-    async def test_prune_expired_db_error_raises(
-        self, repo: AgentLearningRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_prune_expired_db_error_raises(self, repo: AgentLearningRepository, mock_session: AsyncMock) -> None:
         """prune_expired raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 

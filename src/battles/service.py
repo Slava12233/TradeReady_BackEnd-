@@ -81,9 +81,7 @@ class BattleService:
         from ``battle._pending_notifications`` if we decide to buffer.
         For now we simply log, and the route handlers broadcast directly.
         """
-        payload = BattleChannel.serialize_status(
-            str(battle_id), event, data or {}
-        )
+        payload = BattleChannel.serialize_status(str(battle_id), event, data or {})
         logger.info(
             "battle.notification",
             battle_id=str(battle_id),
@@ -167,9 +165,7 @@ class BattleService:
         offset: int = 0,
     ) -> Sequence[Battle]:
         """List battles for an account."""
-        return await self._battle_repo.list_battles(
-            account_id, status=status, limit=limit, offset=offset
-        )
+        return await self._battle_repo.list_battles(account_id, status=status, limit=limit, offset=offset)
 
     async def update_battle(
         self,
@@ -290,9 +286,7 @@ class BattleService:
             await self._start_live_battle(battle, participants, starting_balance)
 
         now = datetime.now(UTC)
-        result = await self._battle_repo.update_status(
-            battle_id, "active", started_at=now
-        )
+        result = await self._battle_repo.update_status(battle_id, "active", started_at=now)
         self._emit_notification(
             battle_id,
             NOTIFY_BATTLE_STARTED,
@@ -311,12 +305,8 @@ class BattleService:
 
         for participant in participants:
             agent = await self._agent_repo.get_by_id(participant.agent_id)
-            snapshot = await self._wallet_manager.snapshot_wallet(
-                participant.agent_id, agent.account_id
-            )
-            await self._battle_repo.update_participant(
-                battle.id, participant.agent_id, snapshot_balance=snapshot
-            )
+            snapshot = await self._wallet_manager.snapshot_wallet(participant.agent_id, agent.account_id)
+            await self._battle_repo.update_participant(battle.id, participant.agent_id, snapshot_balance=snapshot)
 
             if wallet_mode == "fresh":
                 await self._wallet_manager.provision_fresh_wallet(
@@ -379,9 +369,7 @@ class BattleService:
                 current_status=participant.status,
             )
 
-        result = await self._battle_repo.update_participant(
-            battle_id, agent_id, status="paused"
-        )
+        result = await self._battle_repo.update_participant(battle_id, agent_id, status="paused")
         self._emit_notification(
             battle_id,
             NOTIFY_AGENT_PAUSED,
@@ -412,9 +400,7 @@ class BattleService:
                 current_status=participant.status,
             )
 
-        result = await self._battle_repo.update_participant(
-            battle_id, agent_id, status="active"
-        )
+        result = await self._battle_repo.update_participant(battle_id, agent_id, status="active")
         self._emit_notification(
             battle_id,
             NOTIFY_AGENT_RESUMED,
@@ -441,9 +427,7 @@ class BattleService:
             await self._stop_live_battle(battle, participants)
 
         now = datetime.now(UTC)
-        result = await self._battle_repo.update_status(
-            battle_id, "completed", ended_at=now
-        )
+        result = await self._battle_repo.update_status(battle_id, "completed", ended_at=now)
 
         # Determine winner from updated participants
         updated_participants = await self._battle_repo.get_participants(battle_id)
@@ -478,9 +462,7 @@ class BattleService:
             final_equity = await self._wallet_manager.get_agent_equity(participant.agent_id)
             start_balance = participant.snapshot_balance or Decimal(str(agent.starting_balance))
 
-            snapshots = await self._battle_repo.get_snapshots(
-                battle.id, agent_id=participant.agent_id
-            )
+            snapshots = await self._battle_repo.get_snapshots(battle.id, agent_id=participant.agent_id)
             trades = await self._trade_repo.list_by_agent(participant.agent_id)
 
             metrics = self._ranking.compute_participant_metrics(
@@ -567,9 +549,7 @@ class BattleService:
                         )
 
         now = datetime.now(UTC)
-        result = await self._battle_repo.update_status(
-            battle_id, "cancelled", ended_at=now
-        )
+        result = await self._battle_repo.update_status(battle_id, "cancelled", ended_at=now)
         self._emit_notification(
             battle_id,
             NOTIFY_BATTLE_CANCELLED,
@@ -624,9 +604,7 @@ class BattleService:
             price=price,
         )
 
-    async def get_historical_prices(
-        self, battle_id: UUID
-    ) -> tuple[dict[str, Decimal], datetime]:
+    async def get_historical_prices(self, battle_id: UUID) -> tuple[dict[str, Decimal], datetime]:
         """Get current prices at virtual time for a historical battle."""
         from src.battles.historical_engine import get_engine  # noqa: PLC0415
 
@@ -686,9 +664,7 @@ class BattleService:
         else:
             # Live battle — derive time range from started_at / ended_at
             if not source.started_at or not source.ended_at:
-                raise BattleInvalidStateError(
-                    "Source battle has no start/end timestamps for replay."
-                )
+                raise BattleInvalidStateError("Source battle has no start/end timestamps for replay.")
             replay_backtest_config = {
                 "start_time": source.started_at.isoformat(),
                 "end_time": source.ended_at.isoformat(),
@@ -738,14 +714,16 @@ class BattleService:
             pnl = equity - start
             pnl_pct = (pnl / start * 100) if start > 0 else Decimal("0")
 
-            results.append({
-                "agent_id": str(participant.agent_id),
-                "display_name": agent.display_name,
-                "equity": str(equity),
-                "pnl": str(pnl),
-                "pnl_pct": str(round(pnl_pct, 2)),
-                "status": participant.status,
-            })
+            results.append(
+                {
+                    "agent_id": str(participant.agent_id),
+                    "display_name": agent.display_name,
+                    "equity": str(equity),
+                    "pnl": str(pnl),
+                    "pnl_pct": str(round(pnl_pct, 2)),
+                    "status": participant.status,
+                }
+            )
 
         return results
 
@@ -789,8 +767,6 @@ class BattleService:
         *,
         limit: int = 10000,
         offset: int = 0,
-    ) -> Sequence:
+    ) -> Sequence:  # type: ignore[type-arg]
         """Get time-series snapshots for replay."""
-        return await self._battle_repo.get_snapshots(
-            battle_id, limit=limit, offset=offset
-        )
+        return await self._battle_repo.get_snapshots(battle_id, limit=limit, offset=offset)

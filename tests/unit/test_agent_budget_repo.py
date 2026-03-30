@@ -67,9 +67,7 @@ def _make_agent_budget(
 
 
 class TestUpsert:
-    async def test_upsert_creates_new_budget(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_upsert_creates_new_budget(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """upsert inserts a new budget row and returns it."""
         budget = _make_agent_budget()
         mock_result = MagicMock()
@@ -82,9 +80,7 @@ class TestUpsert:
         mock_session.execute.assert_awaited_once()
         mock_session.flush.assert_awaited_once()
 
-    async def test_upsert_updates_existing_budget(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_upsert_updates_existing_budget(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """upsert overwrites limit fields on conflict without touching counters."""
         budget = _make_agent_budget(max_trades_per_day=20)
         mock_result = MagicMock()
@@ -122,9 +118,7 @@ class TestUpsert:
 
 
 class TestGetByAgent:
-    async def test_get_by_agent_returns_budget(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_agent_returns_budget(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """get_by_agent returns the budget for the agent."""
         agent_id = uuid4()
         budget = _make_agent_budget(agent_id=agent_id)
@@ -137,9 +131,7 @@ class TestGetByAgent:
         assert result is budget
         assert result.agent_id == agent_id
 
-    async def test_get_by_agent_not_found_raises(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_agent_not_found_raises(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """get_by_agent raises AgentBudgetNotFoundError when no record exists."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -150,9 +142,7 @@ class TestGetByAgent:
 
         assert exc_info.value.agent_id is not None
 
-    async def test_get_by_agent_db_error_raises(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_agent_db_error_raises(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """get_by_agent raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("timeout")
 
@@ -283,9 +273,7 @@ class TestIncrementExposureToday:
 
 
 class TestIncrementLossToday:
-    async def test_increment_loss_today_adds_loss(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_increment_loss_today_adds_loss(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """increment_loss_today atomically adds realised loss in USDT."""
         agent_id = uuid4()
         budget = _make_agent_budget(agent_id=agent_id, loss_today="50.00000000")
@@ -345,9 +333,7 @@ class TestResetDaily:
         assert result.loss_today == Decimal("0.00000000")
         mock_session.flush.assert_awaited_once()
 
-    async def test_reset_daily_not_found_raises(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_reset_daily_not_found_raises(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """reset_daily raises AgentBudgetNotFoundError when no budget row exists."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -356,9 +342,7 @@ class TestResetDaily:
         with pytest.raises(AgentBudgetNotFoundError):
             await repo.reset_daily(uuid4())
 
-    async def test_reset_daily_db_error_raises(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_reset_daily_db_error_raises(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """reset_daily raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -369,9 +353,7 @@ class TestResetDaily:
 
 
 class TestDelete:
-    async def test_delete_removes_existing_budget(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_removes_existing_budget(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """delete selects then deletes the row and flushes."""
         agent_id = uuid4()
         budget = _make_agent_budget(agent_id=agent_id)
@@ -384,9 +366,7 @@ class TestDelete:
         mock_session.delete.assert_awaited_once_with(budget)
         mock_session.flush.assert_awaited_once()
 
-    async def test_delete_not_found_raises(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_not_found_raises(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """delete raises AgentBudgetNotFoundError when no budget exists."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -395,9 +375,7 @@ class TestDelete:
         with pytest.raises(AgentBudgetNotFoundError):
             await repo.delete(uuid4())
 
-    async def test_delete_db_error_raises(
-        self, repo: AgentBudgetRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_db_error_raises(self, repo: AgentBudgetRepository, mock_session: AsyncMock) -> None:
         """delete raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 

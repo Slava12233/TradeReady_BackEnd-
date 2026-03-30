@@ -150,7 +150,7 @@ class CCXTAdapter(ExchangeAdapter):
         )
         return markets
 
-    async def fetch_ticker(self, symbol: str) -> dict:
+    async def fetch_ticker(self, symbol: str) -> dict:  # type: ignore[type-arg]
         """Fetch 24-hour rolling stats for a single symbol."""
         self._ensure_initialized()
 
@@ -162,12 +162,8 @@ class CCXTAdapter(ExchangeAdapter):
             "high": Decimal(str(raw.get("high", 0))) if raw.get("high") is not None else Decimal("0"),
             "low": Decimal(str(raw.get("low", 0))) if raw.get("low") is not None else Decimal("0"),
             "close": Decimal(str(raw.get("close", 0))) if raw.get("close") is not None else Decimal("0"),
-            "volume": Decimal(str(raw.get("baseVolume", 0)))
-            if raw.get("baseVolume") is not None
-            else Decimal("0"),
-            "change_pct": Decimal(str(raw.get("percentage", 0)))
-            if raw.get("percentage") is not None
-            else Decimal("0"),
+            "volume": Decimal(str(raw.get("baseVolume", 0))) if raw.get("baseVolume") is not None else Decimal("0"),
+            "change_pct": Decimal(str(raw.get("percentage", 0))) if raw.get("percentage") is not None else Decimal("0"),
             "last_update": datetime.fromtimestamp(raw["timestamp"] / 1000, tz=UTC)
             if raw.get("timestamp")
             else datetime.now(tz=UTC),
@@ -211,7 +207,7 @@ class CCXTAdapter(ExchangeAdapter):
 
         return candles
 
-    async def fetch_order_book(self, symbol: str, limit: int = 20) -> dict:
+    async def fetch_order_book(self, symbol: str, limit: int = 20) -> dict:  # type: ignore[type-arg]
         """Fetch current order book depth."""
         self._ensure_initialized()
 
@@ -318,7 +314,7 @@ class CCXTAdapter(ExchangeAdapter):
         side: str,
         amount: Decimal,
         price: Decimal | None = None,
-    ) -> dict:
+    ) -> dict:  # type: ignore[type-arg]
         """Place an order on the exchange."""
         self._ensure_initialized()
 
@@ -330,15 +326,15 @@ class CCXTAdapter(ExchangeAdapter):
             float(amount),
             float(price) if price is not None else None,
         )
-        return result
+        return result  # type: ignore[no-any-return]
 
-    async def cancel_order(self, order_id: str, symbol: str) -> dict:
+    async def cancel_order(self, order_id: str, symbol: str) -> dict:  # type: ignore[type-arg]
         """Cancel an open order."""
         self._ensure_initialized()
 
         ccxt_symbol = self._mapper.to_ccxt(symbol)
         result = await self._rest_exchange.cancel_order(order_id, ccxt_symbol)
-        return result
+        return result  # type: ignore[no-any-return]
 
     async def fetch_balance(self) -> dict[str, Decimal]:
         """Fetch account balances."""

@@ -102,9 +102,7 @@ class TestCreate:
 
 
 class TestGetById:
-    async def test_get_by_id_returns_decision(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_returns_decision(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """get_by_id returns the decision when it exists."""
         decision = _make_agent_decision()
         mock_result = MagicMock()
@@ -115,9 +113,7 @@ class TestGetById:
 
         assert result is decision
 
-    async def test_get_by_id_not_found_raises(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_not_found_raises(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises AgentDecisionNotFoundError when missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -128,9 +124,7 @@ class TestGetById:
 
         assert exc_info.value.decision_id is not None
 
-    async def test_get_by_id_db_error_raises(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_db_error_raises(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("timeout")
 
@@ -175,9 +169,7 @@ class TestUpdateOutcome:
                 outcome_recorded_at=datetime.now(tz=UTC),
             )
 
-    async def test_update_outcome_negative_pnl(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_update_outcome_negative_pnl(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """update_outcome accepts negative PnL (losing trade)."""
         decision = _make_agent_decision()
         decision.outcome_pnl = Decimal("-250.00")
@@ -193,9 +185,7 @@ class TestUpdateOutcome:
 
         assert result.outcome_pnl == Decimal("-250.00")
 
-    async def test_update_outcome_db_error_raises(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_update_outcome_db_error_raises(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """update_outcome raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -224,9 +214,7 @@ class TestDelete:
         mock_session.delete.assert_awaited_once_with(decision)
         mock_session.flush.assert_awaited_once()
 
-    async def test_delete_not_found_raises(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_not_found_raises(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """delete raises AgentDecisionNotFoundError when decision is missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -292,9 +280,7 @@ class TestListByAgent:
 
         mock_session.execute.assert_awaited_once()
 
-    async def test_list_by_agent_db_error_raises(
-        self, repo: AgentDecisionRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_list_by_agent_db_error_raises(self, repo: AgentDecisionRepository, mock_session: AsyncMock) -> None:
         """list_by_agent raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 

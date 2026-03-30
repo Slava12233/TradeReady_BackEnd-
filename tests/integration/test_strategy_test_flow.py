@@ -201,13 +201,23 @@ def test_compare_versions():
     tr1 = MagicMock()
     tr1.version = 1
     tr1.status = "completed"
-    tr1.results = {"avg_roi_pct": 3.0, "avg_sharpe": 0.8, "avg_max_drawdown_pct": 5.0,
-                   "total_trades": 100, "episodes_completed": 10}
+    tr1.results = {
+        "avg_roi_pct": 3.0,
+        "avg_sharpe": 0.8,
+        "avg_max_drawdown_pct": 5.0,
+        "total_trades": 100,
+        "episodes_completed": 10,
+    }
     tr2 = MagicMock()
     tr2.version = 2
     tr2.status = "completed"
-    tr2.results = {"avg_roi_pct": 7.0, "avg_sharpe": 1.2, "avg_max_drawdown_pct": 4.0,
-                   "total_trades": 80, "episodes_completed": 10}
+    tr2.results = {
+        "avg_roi_pct": 7.0,
+        "avg_sharpe": 1.2,
+        "avg_max_drawdown_pct": 4.0,
+        "total_trades": 80,
+        "episodes_completed": 10,
+    }
 
     svc.list_test_runs.return_value = [tr1, tr2]
 

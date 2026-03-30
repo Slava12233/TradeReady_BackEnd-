@@ -159,6 +159,7 @@ def _build_client(mock_account=None, metrics_svc=None, snapshot_svc=None):
     # This patch must remain active for the lifetime of the TestClient.
     auth_patcher = None
     if mock_account is not None:
+
         async def _fake_authenticate(_request):
             return mock_account, None
 
@@ -204,12 +205,14 @@ def _build_client(mock_account=None, metrics_svc=None, snapshot_svc=None):
         app.dependency_overrides[get_current_agent] = lambda: None
 
         if metrics_svc is not None:
+
             async def _override_metrics():
                 return metrics_svc
 
             app.dependency_overrides[get_performance_metrics] = _override_metrics
 
         if snapshot_svc is not None:
+
             async def _override_snapshot():
                 return snapshot_svc
 
@@ -271,7 +274,9 @@ class TestPerformance:
 
             # Verify the service was called with the correct period
             metrics_svc.calculate.assert_called_once_with(
-                account.id, period="7d", agent_id=None,
+                account.id,
+                period="7d",
+                agent_id=None,
             )
         finally:
             cleanup()

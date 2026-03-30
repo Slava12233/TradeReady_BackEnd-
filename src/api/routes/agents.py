@@ -504,11 +504,7 @@ async def get_agent_skill_md(
     content = content.replace("http://localhost:8000/api/v1", f"{base_url}/api/v1")
 
     # Add agent header
-    agent_header = (
-        f"# Agent: {agent.display_name}\n"
-        f"# Agent ID: {agent.id}\n"
-        f"# API Key: {api_key_preview}\n\n"
-    )
+    agent_header = f"# Agent: {agent.display_name}\n# Agent ID: {agent.id}\n# API Key: {api_key_preview}\n\n"
     content = agent_header + content
 
     return PlainTextResponse(content, media_type="text/markdown")
@@ -664,19 +660,14 @@ async def get_decision_trace(
     pnl_str: str | None = None
 
     if decision_orm is not None and decision_orm.order_id is not None:
-        order_row = await decision_repo._session.execute(
-            select(Order).where(Order.id == decision_orm.order_id)
-        )
+        order_row = await decision_repo._session.execute(select(Order).where(Order.id == decision_orm.order_id))
         order_orm = order_row.scalars().first()
         if order_orm is not None:
             order_summary = _order_to_summary(order_orm)
 
             # Fetch the most recent trade fill for this order (there is typically one).
             trade_row = await decision_repo._session.execute(
-                select(Trade)
-                .where(Trade.order_id == decision_orm.order_id)
-                .order_by(Trade.created_at.desc())
-                .limit(1)
+                select(Trade).where(Trade.order_id == decision_orm.order_id).order_by(Trade.created_at.desc()).limit(1)
             )
             trade_orm = trade_row.scalars().first()
             if trade_orm is not None:
@@ -930,7 +921,7 @@ async def update_feedback(
 
     from src.database.models import AgentFeedback  # noqa: PLC0415
     from src.database.session import get_session_factory  # noqa: PLC0415
-    from src.utils.exceptions import PermissionDeniedError, ResourceNotFoundError  # noqa: PLC0415
+    from src.utils.exceptions import PermissionDeniedError, TradingPlatformError  # noqa: PLC0415
 
     # Ownership check — agent must belong to authenticated account.
     agent = await agent_service.get_agent(agent_id)
@@ -951,8 +942,10 @@ async def update_feedback(
         )
         feedback = result.scalars().first()
         if feedback is None:
-            raise ResourceNotFoundError(
-                f"Feedback {feedback_id} not found for agent {agent_id}."
+            raise TradingPlatformError(
+                message=f"Feedback {feedback_id} not found.",
+                code="FEEDBACK_NOT_FOUND",
+                http_status=404,
             )
 
         # Build update payload.
@@ -962,17 +955,11 @@ async def update_feedback(
         if resolved_at_value is not None:
             update_values["resolved_at"] = resolved_at_value
 
-        await session.execute(
-            sa_update(AgentFeedback)
-            .where(AgentFeedback.id == feedback_id)
-            .values(**update_values)
-        )
+        await session.execute(sa_update(AgentFeedback).where(AgentFeedback.id == feedback_id).values(**update_values))
         await session.commit()
 
         # Re-fetch to return the current persisted state.
-        refreshed = await session.execute(
-            select(AgentFeedback).where(AgentFeedback.id == feedback_id)
-        )
+        refreshed = await session.execute(select(AgentFeedback).where(AgentFeedback.id == feedback_id))
         updated_feedback = refreshed.scalars().first()
 
     logger.info(

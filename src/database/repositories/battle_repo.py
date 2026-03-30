@@ -99,7 +99,7 @@ class BattleRepository:
         """Update a battle's status and optional extra fields."""
         try:
             battle = await self.get_battle(battle_id)
-            battle.status = status  # type: ignore[assignment]
+            battle.status = status
             for key, value in extra_fields.items():
                 setattr(battle, key, value)
             await self._session.flush()
@@ -224,9 +224,7 @@ class BattleRepository:
             logger.exception("battle.get_participant.db_error", error=str(exc))
             raise DatabaseError("Failed to get participant.") from exc
 
-    async def update_participant(
-        self, battle_id: UUID, agent_id: UUID, **fields: object
-    ) -> BattleParticipant:
+    async def update_participant(self, battle_id: UUID, agent_id: UUID, **fields: object) -> BattleParticipant:
         """Update fields on a participant."""
         try:
             participant = await self.get_participant(battle_id, agent_id)
@@ -296,11 +294,7 @@ class BattleRepository:
     async def count_snapshots(self, battle_id: UUID) -> int:
         """Count total snapshots for a battle."""
         try:
-            stmt = (
-                select(func.count())
-                .select_from(BattleSnapshot)
-                .where(BattleSnapshot.battle_id == battle_id)
-            )
+            stmt = select(func.count()).select_from(BattleSnapshot).where(BattleSnapshot.battle_id == battle_id)
             result = await self._session.execute(stmt)
             return result.scalar_one()
         except SQLAlchemyError as exc:

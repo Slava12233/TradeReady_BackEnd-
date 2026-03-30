@@ -123,33 +123,82 @@ class TestToolDefinitions:
 
     EXPECTED_TOOL_NAMES = {
         # Market data (7)
-        "get_price", "get_all_prices", "get_candles", "get_pairs",
-        "get_ticker", "get_orderbook", "get_recent_trades",
+        "get_price",
+        "get_all_prices",
+        "get_candles",
+        "get_pairs",
+        "get_ticker",
+        "get_orderbook",
+        "get_recent_trades",
         # Account (5)
-        "get_balance", "get_positions", "get_portfolio", "get_account_info",
+        "get_balance",
+        "get_positions",
+        "get_portfolio",
+        "get_account_info",
         "reset_account",
         # Trading (7)
-        "place_order", "cancel_order", "get_order_status", "get_trade_history",
-        "get_open_orders", "cancel_all_orders", "list_orders",
+        "place_order",
+        "cancel_order",
+        "get_order_status",
+        "get_trade_history",
+        "get_open_orders",
+        "cancel_all_orders",
+        "list_orders",
         # Analytics (4)
-        "get_performance", "get_pnl", "get_portfolio_history", "get_leaderboard",
+        "get_performance",
+        "get_pnl",
+        "get_portfolio_history",
+        "get_leaderboard",
         # Backtesting (8)
-        "get_data_range", "create_backtest", "start_backtest", "step_backtest",
-        "step_backtest_batch", "backtest_trade", "get_backtest_results", "list_backtests",
+        "get_data_range",
+        "create_backtest",
+        "start_backtest",
+        "step_backtest",
+        "step_backtest_batch",
+        "backtest_trade",
+        "get_backtest_results",
+        "list_backtests",
         # Agent management (6)
-        "list_agents", "create_agent", "get_agent", "reset_agent",
-        "update_agent_risk", "get_agent_skill",
+        "list_agents",
+        "create_agent",
+        "get_agent",
+        "reset_agent",
+        "update_agent_risk",
+        "get_agent_skill",
         # Battles (6)
-        "create_battle", "list_battles", "start_battle", "get_battle_live",
-        "get_battle_results", "get_battle_replay",
+        "create_battle",
+        "list_battles",
+        "start_battle",
+        "get_battle_live",
+        "get_battle_results",
+        "get_battle_replay",
+        # Strategy management (7)
+        "create_strategy",
+        "get_strategies",
+        "get_strategy",
+        "create_strategy_version",
+        "get_strategy_versions",
+        "deploy_strategy",
+        "undeploy_strategy",
+        # Strategy testing (4)
+        "run_strategy_test",
+        "get_test_status",
+        "get_test_results",
+        "compare_versions",
+        # Strategy recommendations (1)
+        "get_strategy_recommendations",
+        # Training observation (3)
+        "get_training_runs",
+        "get_training_run_detail",
+        "compare_training_runs",
     }
 
     def test_tool_count_constant_matches(self) -> None:
-        assert TOOL_COUNT == 43
+        assert TOOL_COUNT == 58
         assert len(_TOOL_DEFINITIONS) == TOOL_COUNT
 
     def test_forty_three_tools_defined(self) -> None:
-        assert len(_TOOL_DEFINITIONS) == 43
+        assert len(_TOOL_DEFINITIONS) == 58
 
     def test_all_expected_tool_names_present(self) -> None:
         actual = {t.name for t in _TOOL_DEFINITIONS}
@@ -261,7 +310,7 @@ class TestRegisterTools:
 
         assert captured_handler is not None
         result = await captured_handler()
-        assert len(result) == 43
+        assert len(result) == 58
         names = {t.name for t in result}
         assert "get_price" in names
         assert "create_backtest" in names
@@ -1164,8 +1213,14 @@ class TestDispatchBacktesting:
         client.request = AsyncMock(return_value=_make_response(200, {}))
         await _dispatch(
             "backtest_trade",
-            {"session_id": "bt-123", "symbol": "BTCUSDT", "side": "buy", "type": "limit",
-             "quantity": 0.1, "price": 60000},
+            {
+                "session_id": "bt-123",
+                "symbol": "BTCUSDT",
+                "side": "buy",
+                "type": "limit",
+                "quantity": 0.1,
+                "price": 60000,
+            },
             client,
         )
         body = client.request.call_args[1]["json"]

@@ -5,8 +5,9 @@ from __future__ import annotations
 from src.strategies.test_aggregator import TestAggregator
 
 
-def _make_episode(roi: float = 5.0, sharpe: float = 1.0, drawdown: float = 3.0,
-                  trades: int = 10, win_rate: float = 0.6) -> dict:
+def _make_episode(
+    roi: float = 5.0, sharpe: float = 1.0, drawdown: float = 3.0, trades: int = 10, win_rate: float = 0.6
+) -> dict:
     return {
         "roi_pct": roi,
         "sharpe_ratio": sharpe,

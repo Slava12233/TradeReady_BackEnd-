@@ -213,10 +213,7 @@ class AgentJournalRepository:
             from sqlalchemy.dialects.postgresql import JSONB  # noqa: PLC0415
 
             # Build an OR clause: tags @> '["tag1"]' OR tags @> '["tag2"]' ...
-            tag_filters = [
-                AgentJournal.tags.op("@>")(cast([tag], JSONB))
-                for tag in tags
-            ]
+            tag_filters = [AgentJournal.tags.op("@>")(cast([tag], JSONB)) for tag in tags]
             stmt = (
                 select(AgentJournal)
                 .where(

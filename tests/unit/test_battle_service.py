@@ -74,9 +74,7 @@ class TestUpdateBattle:
         service._battle_repo.get_battle.return_value = sample_battle
         service._battle_repo.update_battle.return_value = sample_battle
 
-        await service.update_battle(
-            sample_battle.id, sample_battle.account_id, name="New Name"
-        )
+        await service.update_battle(sample_battle.id, sample_battle.account_id, name="New Name")
         service._battle_repo.update_battle.assert_called_once()
 
     async def test_update_active_battle_fails(self, service, sample_battle):
@@ -84,9 +82,7 @@ class TestUpdateBattle:
         service._battle_repo.get_battle.return_value = sample_battle
 
         with pytest.raises(BattleInvalidStateError, match="draft"):
-            await service.update_battle(
-                sample_battle.id, sample_battle.account_id, name="X"
-            )
+            await service.update_battle(sample_battle.id, sample_battle.account_id, name="X")
 
     async def test_update_wrong_account_fails(self, service, sample_battle):
         service._battle_repo.get_battle.return_value = sample_battle
@@ -106,9 +102,7 @@ class TestParticipantManagement:
         service._agent_repo.get_by_id.return_value = agent
         service._battle_repo.add_participant.return_value = MagicMock()
 
-        await service.add_participant(
-            sample_battle.id, uuid4(), sample_battle.account_id
-        )
+        await service.add_participant(sample_battle.id, uuid4(), sample_battle.account_id)
         service._battle_repo.add_participant.assert_called_once()
 
     async def test_add_participant_active_battle_fails(self, service, sample_battle):
@@ -116,17 +110,13 @@ class TestParticipantManagement:
         service._battle_repo.get_battle.return_value = sample_battle
 
         with pytest.raises(BattleInvalidStateError):
-            await service.add_participant(
-                sample_battle.id, uuid4(), sample_battle.account_id
-            )
+            await service.add_participant(sample_battle.id, uuid4(), sample_battle.account_id)
 
     async def test_remove_participant(self, service, sample_battle):
         sample_battle.status = "draft"
         service._battle_repo.get_battle.return_value = sample_battle
 
-        await service.remove_participant(
-            sample_battle.id, uuid4(), sample_battle.account_id
-        )
+        await service.remove_participant(sample_battle.id, uuid4(), sample_battle.account_id)
         service._battle_repo.remove_participant.assert_called_once()
 
 
@@ -172,9 +162,7 @@ class TestPauseResume:
         service._battle_repo.get_participant.return_value = participant
         service._battle_repo.update_participant.return_value = participant
 
-        await service.pause_agent(
-            sample_battle.id, uuid4(), sample_battle.account_id
-        )
+        await service.pause_agent(sample_battle.id, uuid4(), sample_battle.account_id)
         service._battle_repo.update_participant.assert_called_once()
 
     async def test_pause_in_draft_fails(self, service, sample_battle):
@@ -182,9 +170,7 @@ class TestPauseResume:
         service._battle_repo.get_battle.return_value = sample_battle
 
         with pytest.raises(BattleInvalidStateError, match="active"):
-            await service.pause_agent(
-                sample_battle.id, uuid4(), sample_battle.account_id
-            )
+            await service.pause_agent(sample_battle.id, uuid4(), sample_battle.account_id)
 
     async def test_resume_paused_agent(self, service, sample_battle):
         sample_battle.status = "active"
@@ -195,9 +181,7 @@ class TestPauseResume:
         service._battle_repo.get_participant.return_value = participant
         service._battle_repo.update_participant.return_value = participant
 
-        await service.resume_agent(
-            sample_battle.id, uuid4(), sample_battle.account_id
-        )
+        await service.resume_agent(sample_battle.id, uuid4(), sample_battle.account_id)
         service._battle_repo.update_participant.assert_called_once()
 
     async def test_resume_active_agent_fails(self, service, sample_battle):
@@ -209,9 +193,7 @@ class TestPauseResume:
         service._battle_repo.get_participant.return_value = participant
 
         with pytest.raises(BattleInvalidStateError, match="not paused"):
-            await service.resume_agent(
-                sample_battle.id, uuid4(), sample_battle.account_id
-            )
+            await service.resume_agent(sample_battle.id, uuid4(), sample_battle.account_id)
 
 
 class TestStopBattle:

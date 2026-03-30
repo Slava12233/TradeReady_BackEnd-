@@ -107,6 +107,7 @@ def _emit_retrain_metrics(
     except Exception as exc:  # noqa: BLE001
         logger.debug("agent.task.retrain.metrics_emit_failed", error=str(exc))
 
+
 # ---------------------------------------------------------------------------
 # Task 1: run_retraining_cycle  (master — all overdue components)
 # ---------------------------------------------------------------------------

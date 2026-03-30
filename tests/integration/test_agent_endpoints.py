@@ -507,10 +507,20 @@ class TestGetAgent:
         assert resp.status_code == 200
         body = resp.json()
         expected_keys = {
-            "id", "account_id", "display_name", "api_key_preview",
-            "starting_balance", "llm_model", "framework", "strategy_tags",
-            "risk_profile", "avatar_url", "color", "status",
-            "created_at", "updated_at",
+            "id",
+            "account_id",
+            "display_name",
+            "api_key_preview",
+            "starting_balance",
+            "llm_model",
+            "framework",
+            "strategy_tags",
+            "risk_profile",
+            "avatar_url",
+            "color",
+            "status",
+            "created_at",
+            "updated_at",
         }
         assert expected_keys.issubset(set(body.keys()))
 

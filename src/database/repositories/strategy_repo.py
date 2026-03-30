@@ -231,7 +231,7 @@ class StrategyRepository:
             ver = await self.get_version(strategy_id, version)
             if ver is None:
                 return None
-            ver.status = status  # type: ignore[assignment]
+            ver.status = status
             await self._session.flush()
             await self._session.refresh(ver)
             return ver
@@ -249,7 +249,7 @@ class StrategyRepository:
         from src.utils.helpers import utc_now  # noqa: PLC0415
 
         strategy = await self.get_by_id(strategy_id)
-        strategy.status = "deployed"  # type: ignore[assignment]
+        strategy.status = "deployed"
         strategy.current_version = version
         strategy.deployed_at = utc_now()
         strategy.updated_at = utc_now()
@@ -263,7 +263,7 @@ class StrategyRepository:
         from src.utils.helpers import utc_now  # noqa: PLC0415
 
         strategy = await self.get_by_id(strategy_id)
-        strategy.status = "validated"  # type: ignore[assignment]
+        strategy.status = "validated"
         strategy.deployed_at = None
         strategy.updated_at = utc_now()
         await self._session.flush()
@@ -385,9 +385,9 @@ class StrategyRepository:
             test_run = await self.get_test_run(test_run_id)
             if test_run is None:
                 return None
-            test_run.results = results  # type: ignore[assignment]
-            test_run.recommendations = recommendations  # type: ignore[assignment]
-            test_run.status = "completed"  # type: ignore[assignment]
+            test_run.results = results
+            test_run.recommendations = recommendations
+            test_run.status = "completed"
             test_run.completed_at = utc_now()
             await self._session.flush()
             await self._session.refresh(test_run)
@@ -400,11 +400,7 @@ class StrategyRepository:
     async def update_test_run_status(self, test_run_id: UUID, status: str) -> None:
         """Update the status of a test run."""
         try:
-            stmt = (
-                update(StrategyTestRun)
-                .where(StrategyTestRun.id == test_run_id)
-                .values(status=status)
-            )
+            stmt = update(StrategyTestRun).where(StrategyTestRun.id == test_run_id).values(status=status)
             await self._session.execute(stmt)
             await self._session.flush()
         except SQLAlchemyError as exc:

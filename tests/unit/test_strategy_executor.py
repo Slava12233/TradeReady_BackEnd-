@@ -7,11 +7,9 @@ trailing stop tracking, max positions limit.
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import MagicMock
 
 from src.strategies.executor import StrategyExecutor
 from src.strategies.indicators import IndicatorEngine
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,8 +47,9 @@ def _make_executor(definition: dict | None = None, data_points: int = 30) -> Str
     # Feed enough data for indicators to work
     for i in range(data_points):
         for pair in defn.get("pairs", ["BTCUSDT"]):
-            engine.update(pair, {"close": 50000 + i * 10, "high": 50010 + i * 10,
-                                  "low": 49990 + i * 10, "volume": 1000})
+            engine.update(
+                pair, {"close": 50000 + i * 10, "high": 50010 + i * 10, "low": 49990 + i * 10, "volume": 1000}
+            )
     return StrategyExecutor(defn, engine)
 
 
@@ -203,8 +202,10 @@ def test_exit_rsi_above():
     engine = IndicatorEngine()
     # Create strong uptrend for high RSI
     for i in range(30):
-        engine.update("BTCUSDT", {"close": 50000 + i * 500, "high": 50000 + i * 500 + 100,
-                                   "low": 50000 + i * 500 - 100, "volume": 1000})
+        engine.update(
+            "BTCUSDT",
+            {"close": 50000 + i * 500, "high": 50000 + i * 500 + 100, "low": 50000 + i * 500 - 100, "volume": 1000},
+        )
     executor = StrategyExecutor(defn, engine)
     indicators = engine.compute("BTCUSDT")
     result = executor._should_exit_indicators(indicators)

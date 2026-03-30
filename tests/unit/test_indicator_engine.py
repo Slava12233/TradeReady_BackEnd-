@@ -10,7 +10,6 @@ import numpy as np
 
 from src.strategies.indicators import IndicatorEngine
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -170,8 +169,7 @@ def test_rsi_all_losses():
 
 def test_rsi_midrange():
     """RSI of alternating gains and losses is around 50."""
-    data = np.array([100, 102, 100, 102, 100, 102, 100, 102, 100, 102,
-                     100, 102, 100, 102, 100, 102], dtype=np.float64)
+    data = np.array([100, 102, 100, 102, 100, 102, 100, 102, 100, 102, 100, 102, 100, 102, 100, 102], dtype=np.float64)
     rsi = IndicatorEngine._rsi(data, 14)
     assert rsi is not None
     assert 40 < rsi < 60
@@ -288,11 +286,22 @@ def test_compute_returns_all_keys():
     _feed_prices(engine, "BTC", list(range(50, 110)))
     result = engine.compute("BTC")
     expected_keys = {
-        "rsi_14", "macd_line", "macd_signal", "macd_hist",
-        "sma_20", "sma_50", "ema_12", "ema_26",
-        "bb_upper", "bb_middle", "bb_lower",
-        "adx", "atr", "volume_ma_20",
-        "current_price", "current_volume",
+        "rsi_14",
+        "macd_line",
+        "macd_signal",
+        "macd_hist",
+        "sma_20",
+        "sma_50",
+        "ema_12",
+        "ema_26",
+        "bb_upper",
+        "bb_middle",
+        "bb_lower",
+        "adx",
+        "atr",
+        "volume_ma_20",
+        "current_price",
+        "current_volume",
     }
     assert set(result.keys()) == expected_keys
 

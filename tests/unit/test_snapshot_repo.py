@@ -60,9 +60,7 @@ def _make_snapshot(
 
 
 class TestCreate:
-    async def test_create_snapshot_inserts_and_flushes(
-        self, repo: SnapshotRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_create_snapshot_inserts_and_flushes(self, repo: SnapshotRepository, mock_session: AsyncMock) -> None:
         """create inserts snapshot, flushes, and refreshes."""
         snap = _make_snapshot()
 

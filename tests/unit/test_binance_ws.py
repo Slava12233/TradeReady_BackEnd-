@@ -22,18 +22,20 @@ def _make_trade_message(
     trade_id=123456,
 ) -> str:
     """Create a raw Binance combined-stream trade message."""
-    return json.dumps({
-        "stream": f"{symbol.lower()}@trade",
-        "data": {
-            "e": "trade",
-            "s": symbol,
-            "p": price,
-            "q": quantity,
-            "T": timestamp_ms,
-            "m": is_buyer_maker,
-            "t": trade_id,
-        },
-    })
+    return json.dumps(
+        {
+            "stream": f"{symbol.lower()}@trade",
+            "data": {
+                "e": "trade",
+                "s": symbol,
+                "p": price,
+                "q": quantity,
+                "T": timestamp_ms,
+                "m": is_buyer_maker,
+                "t": trade_id,
+            },
+        }
+    )
 
 
 class TestParseMessage:

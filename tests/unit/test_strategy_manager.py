@@ -316,9 +316,7 @@ class TestStrategyManagerConstruction:
 class TestRecordStrategyResult:
     async def test_first_record_appended_to_window(self) -> None:
         manager = StrategyManager()
-        await manager.record_strategy_result(
-            "agent-1", "rl", _make_signal(), outcome_pnl=Decimal("42")
-        )
+        await manager.record_strategy_result("agent-1", "rl", _make_signal(), outcome_pnl=Decimal("42"))
         window = manager._windows["agent-1"]["rl"]
         assert len(window) == 1
         assert window[0].outcome_pnl == Decimal("42")
@@ -326,16 +324,12 @@ class TestRecordStrategyResult:
     async def test_window_capped_at_window_size(self) -> None:
         manager = StrategyManager(window_size=5)
         for i in range(8):
-            await manager.record_strategy_result(
-                "agent-1", "rl", _make_signal(), outcome_pnl=Decimal(str(i))
-            )
+            await manager.record_strategy_result("agent-1", "rl", _make_signal(), outcome_pnl=Decimal(str(i)))
         assert len(manager._windows["agent-1"]["rl"]) == 5
 
     async def test_open_position_stored_with_none_pnl(self) -> None:
         manager = StrategyManager()
-        await manager.record_strategy_result(
-            "agent-1", "regime", _make_signal(), outcome_pnl=None
-        )
+        await manager.record_strategy_result("agent-1", "regime", _make_signal(), outcome_pnl=None)
         assert manager._windows["agent-1"]["regime"][0].outcome_pnl is None
 
     async def test_multiple_strategies_tracked_independently(self) -> None:
@@ -505,19 +499,14 @@ class TestDetectDegradation:
         for pnl in pnls:
             await manager.record_strategy_result("a1", "rl", _make_signal(), pnl)
         alerts = await manager.detect_degradation("a1")
-        disable_alerts = [
-            a for a in alerts
-            if a.metric == "consecutive_losses" and a.severity == "disable"
-        ]
+        disable_alerts = [a for a in alerts if a.metric == "consecutive_losses" and a.severity == "disable"]
         assert len(disable_alerts) == 1
 
     async def test_healthy_strategy_no_alerts(self) -> None:
         manager = StrategyManager(min_trades_for_degradation=5)
         # All profitable, increasing — high Sharpe, 100% win rate, no drawdown
         for i in range(15):
-            await manager.record_strategy_result(
-                "a1", "rl", _make_signal(), Decimal(str(10 + i))
-            )
+            await manager.record_strategy_result("a1", "rl", _make_signal(), Decimal(str(10 + i)))
         assert await manager.detect_degradation("a1") == []
 
     async def test_alert_fields_fully_populated(self) -> None:
@@ -552,9 +541,7 @@ class TestSuggestAdjustments:
     async def test_healthy_strategy_no_suggestions(self) -> None:
         manager = StrategyManager(min_trades_for_degradation=5)
         for i in range(15):
-            await manager.record_strategy_result(
-                "a1", "healthy", _make_signal(), Decimal(str(20 + i))
-            )
+            await manager.record_strategy_result("a1", "healthy", _make_signal(), Decimal(str(20 + i)))
         assert await manager.suggest_adjustments("a1", "healthy") == []
 
     async def test_low_win_rate_suggests_position_size_reduction(self) -> None:
@@ -664,14 +651,10 @@ class TestCompareStrategies:
         manager = StrategyManager()
         # "good": consistent gains → high Sharpe
         for i in range(15):
-            await manager.record_strategy_result(
-                "a1", "good", _make_signal(), Decimal(str(10 + i * 0.5))
-            )
+            await manager.record_strategy_result("a1", "good", _make_signal(), Decimal(str(10 + i * 0.5)))
         # "bad": consistent losses → negative Sharpe
         for i in range(15):
-            await manager.record_strategy_result(
-                "a1", "bad", _make_signal(), Decimal(str(-(10 + i * 0.5)))
-            )
+            await manager.record_strategy_result("a1", "bad", _make_signal(), Decimal(str(-(10 + i * 0.5))))
         comparison = await manager.compare_strategies("a1")
         assert comparison.ranking[0] == "good"
         assert comparison.ranking[-1] == "bad"
@@ -705,6 +688,7 @@ class TestCompareStrategies:
 class TestBuildComparisonRecommendation:
     def _make_perf(self, name: str, sharpe: float, win_rate: float) -> object:
         from agent.models.ecosystem import StrategyPerformance  # noqa: PLC0415
+
         return StrategyPerformance(
             strategy_name=name,
             period="weekly",
@@ -761,16 +745,12 @@ class TestIntegrationWorkflow:
 
         # Healthy strategy: 15 profitable trades
         for i in range(15):
-            await manager.record_strategy_result(
-                "agent-xyz", "good", _make_signal("buy"), Decimal(str(5 + i))
-            )
+            await manager.record_strategy_result("agent-xyz", "good", _make_signal("buy"), Decimal(str(5 + i)))
 
         # Degraded strategy: 1 win + 11 consecutive losses
         await manager.record_strategy_result("agent-xyz", "bad", _make_signal("hold"), None)
         for _ in range(11):
-            await manager.record_strategy_result(
-                "agent-xyz", "bad", _make_signal("buy"), Decimal("-3")
-            )
+            await manager.record_strategy_result("agent-xyz", "bad", _make_signal("buy"), Decimal("-3"))
 
         # get_performance returns both
         perfs = await manager.get_performance("agent-xyz")

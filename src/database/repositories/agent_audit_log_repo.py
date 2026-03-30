@@ -109,9 +109,7 @@ class AgentAuditLogRepository:
         except IntegrityError as exc:
             await self._session.rollback()
             logger.exception("agent_audit_log.bulk_create.integrity_error", error=str(exc))
-            raise DatabaseError(
-                f"Integrity error during bulk create of audit log entries: {exc}"
-            ) from exc
+            raise DatabaseError(f"Integrity error during bulk create of audit log entries: {exc}") from exc
         except SQLAlchemyError as exc:
             await self._session.rollback()
             logger.exception("agent_audit_log.bulk_create.db_error", error=str(exc))

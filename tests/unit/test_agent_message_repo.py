@@ -91,9 +91,7 @@ class TestCreate:
 
         mock_session.rollback.assert_awaited_once()
 
-    async def test_create_with_different_roles(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_create_with_different_roles(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """create accepts all valid message roles."""
         for role in ("user", "assistant", "system", "tool"):
             message = _make_agent_message(role=role)
@@ -104,9 +102,7 @@ class TestCreate:
 
 
 class TestGetById:
-    async def test_get_by_id_returns_message(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_returns_message(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """get_by_id returns the message when it exists."""
         message = _make_agent_message()
         mock_result = MagicMock()
@@ -117,9 +113,7 @@ class TestGetById:
 
         assert result is message
 
-    async def test_get_by_id_not_found_raises(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_not_found_raises(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises AgentMessageNotFoundError when missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -130,9 +124,7 @@ class TestGetById:
 
         assert exc_info.value.message_id is not None
 
-    async def test_get_by_id_db_error_raises(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_get_by_id_db_error_raises(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """get_by_id raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("timeout")
 
@@ -141,9 +133,7 @@ class TestGetById:
 
 
 class TestDelete:
-    async def test_delete_removes_existing_message(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_removes_existing_message(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """delete selects then deletes the row and flushes."""
         message = _make_agent_message()
         mock_result = MagicMock()
@@ -155,9 +145,7 @@ class TestDelete:
         mock_session.delete.assert_awaited_once_with(message)
         mock_session.flush.assert_awaited_once()
 
-    async def test_delete_not_found_raises(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_not_found_raises(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """delete raises AgentMessageNotFoundError when message is missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None
@@ -166,9 +154,7 @@ class TestDelete:
         with pytest.raises(AgentMessageNotFoundError):
             await repo.delete(uuid4())
 
-    async def test_delete_db_error_raises(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_delete_db_error_raises(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """delete raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 
@@ -209,9 +195,7 @@ class TestListBySession:
 
         assert result == []
 
-    async def test_list_by_session_pagination(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_list_by_session_pagination(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """list_by_session forwards limit and offset to the query."""
         session_id = uuid4()
         mock_result = MagicMock()
@@ -226,9 +210,7 @@ class TestListBySession:
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
         assert "session_id" in compiled
 
-    async def test_list_by_session_db_error_raises(
-        self, repo: AgentMessageRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_list_by_session_db_error_raises(self, repo: AgentMessageRepository, mock_session: AsyncMock) -> None:
         """list_by_session raises DatabaseError on SQLAlchemy error."""
         mock_session.execute.side_effect = SQLAlchemyError("db error")
 

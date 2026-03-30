@@ -159,9 +159,7 @@ async def list_battles(
     offset: int = Query(default=0, ge=0),
 ) -> BattleListResponse:
     """List battles for the authenticated account."""
-    battles = await battle_service.list_battles(
-        account.id, status=battle_status, limit=limit, offset=offset
-    )
+    battles = await battle_service.list_battles(account.id, status=battle_status, limit=limit, offset=offset)
     return BattleListResponse(
         battles=[_battle_to_response(b) for b in battles],
         total=len(battles),
@@ -182,7 +180,7 @@ async def list_battles(
 async def get_presets() -> list[BattlePresetResponse]:
     """Return all available battle preset configurations."""
     presets = list_presets()
-    return [BattlePresetResponse(**p) for p in presets]
+    return [BattlePresetResponse(**p) for p in presets]  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -272,9 +270,7 @@ async def add_participant(
     battle_service: BattleServiceDep,
 ) -> BattleParticipantResponse:
     """Add an agent to a battle."""
-    participant = await battle_service.add_participant(
-        battle_id, body.agent_id, account.id
-    )
+    participant = await battle_service.add_participant(battle_id, body.agent_id, account.id)
     return _participant_to_response(participant)
 
 
@@ -442,7 +438,7 @@ async def get_results(
         raise PermissionDeniedError("You do not own this battle.")
 
     results = await battle_service.get_results(battle_id)
-    return BattleResultsResponse(**results)
+    return BattleResultsResponse(**results)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -470,9 +466,7 @@ async def get_replay(
 
         raise PermissionDeniedError("You do not own this battle.")
 
-    snapshots = await battle_service.get_replay_data(
-        battle_id, limit=limit, offset=offset
-    )
+    snapshots = await battle_service.get_replay_data(battle_id, limit=limit, offset=offset)
     return BattleReplayResponse(
         battle_id=battle_id,
         snapshots=[
@@ -514,19 +508,19 @@ async def step_historical_battle(
 
         raise PermissionDeniedError("You do not own this battle.")
     if getattr(battle, "battle_mode", "live") != "historical":
-        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+        from src.utils.exceptions import BattleInvalidStateError  # noqa: PLC0415
 
         raise BattleInvalidStateError("Step is only available for historical battles.")
 
     result = await battle_service.step_historical(battle_id)
     return HistoricalStepResponse(
         battle_id=battle_id,
-        virtual_time=result.virtual_time,
-        step=result.step,
-        total_steps=result.total_steps,
-        progress_pct=str(result.progress_pct),
-        is_complete=result.is_complete,
-        prices={k: str(v) for k, v in result.prices.items()},
+        virtual_time=result.virtual_time,  # type: ignore[attr-defined]
+        step=result.step,  # type: ignore[attr-defined]
+        total_steps=result.total_steps,  # type: ignore[attr-defined]
+        progress_pct=str(result.progress_pct),  # type: ignore[attr-defined]
+        is_complete=result.is_complete,  # type: ignore[attr-defined]
+        prices={k: str(v) for k, v in result.prices.items()},  # type: ignore[attr-defined]
         participants=[
             {
                 "agent_id": s.agent_id,
@@ -534,7 +528,7 @@ async def step_historical_battle(
                 "pnl": str(s.pnl),
                 "trade_count": s.trade_count,
             }
-            for s in result.agent_states.values()
+            for s in result.agent_states.values()  # type: ignore[attr-defined]
         ],
     )
 
@@ -563,19 +557,19 @@ async def step_batch_historical_battle(
 
         raise PermissionDeniedError("You do not own this battle.")
     if getattr(battle, "battle_mode", "live") != "historical":
-        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+        from src.utils.exceptions import BattleInvalidStateError  # noqa: PLC0415
 
         raise BattleInvalidStateError("Step is only available for historical battles.")
 
     result = await battle_service.step_historical_batch(battle_id, body.steps)
     return HistoricalStepResponse(
         battle_id=battle_id,
-        virtual_time=result.virtual_time,
-        step=result.step,
-        total_steps=result.total_steps,
-        progress_pct=str(result.progress_pct),
-        is_complete=result.is_complete,
-        prices={k: str(v) for k, v in result.prices.items()},
+        virtual_time=result.virtual_time,  # type: ignore[attr-defined]
+        step=result.step,  # type: ignore[attr-defined]
+        total_steps=result.total_steps,  # type: ignore[attr-defined]
+        progress_pct=str(result.progress_pct),  # type: ignore[attr-defined]
+        is_complete=result.is_complete,  # type: ignore[attr-defined]
+        prices={k: str(v) for k, v in result.prices.items()},  # type: ignore[attr-defined]
         participants=[
             {
                 "agent_id": s.agent_id,
@@ -583,7 +577,7 @@ async def step_batch_historical_battle(
                 "pnl": str(s.pnl),
                 "trade_count": s.trade_count,
             }
-            for s in result.agent_states.values()
+            for s in result.agent_states.values()  # type: ignore[attr-defined]
         ],
     )
 
@@ -611,7 +605,7 @@ async def place_historical_order(
 
         raise PermissionDeniedError("You do not own this battle.")
     if getattr(battle, "battle_mode", "live") != "historical":
-        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+        from src.utils.exceptions import BattleInvalidStateError  # noqa: PLC0415
 
         raise BattleInvalidStateError("Order placement is only available for historical battles.")
 
@@ -625,11 +619,11 @@ async def place_historical_order(
         price=Decimal(body.price) if body.price else None,
     )
     return {
-        "order_id": result.order_id,
-        "status": result.status,
-        "executed_price": str(result.executed_price) if result.executed_price else None,
-        "executed_qty": str(result.executed_qty) if result.executed_qty else None,
-        "fee": str(result.fee) if result.fee else None,
+        "order_id": result.order_id,  # type: ignore[attr-defined]
+        "status": result.status,  # type: ignore[attr-defined]
+        "executed_price": str(result.executed_price) if result.executed_price else None,  # type: ignore[attr-defined]
+        "executed_qty": str(result.executed_qty) if result.executed_qty else None,  # type: ignore[attr-defined]
+        "fee": str(result.fee) if result.fee else None,  # type: ignore[attr-defined]
     }
 
 
@@ -656,7 +650,7 @@ async def get_historical_prices(
 
         raise PermissionDeniedError("You do not own this battle.")
     if getattr(battle, "battle_mode", "live") != "historical":
-        from src.battles.service import BattleInvalidStateError  # noqa: PLC0415
+        from src.utils.exceptions import BattleInvalidStateError  # noqa: PLC0415
 
         raise BattleInvalidStateError("Market prices are only available for historical battles.")
 

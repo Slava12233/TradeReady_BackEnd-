@@ -260,10 +260,20 @@ class IndicatorEngine:
     def _empty_result() -> dict[str, float | None]:
         """Return a result dict with all values set to None."""
         return {
-            "rsi_14": None, "macd_line": None, "macd_signal": None,
-            "macd_hist": None, "sma_20": None, "sma_50": None,
-            "ema_12": None, "ema_26": None, "bb_upper": None,
-            "bb_middle": None, "bb_lower": None, "adx": None,
-            "atr": None, "volume_ma_20": None,
-            "current_price": None, "current_volume": None,
+            "rsi_14": None,
+            "macd_line": None,
+            "macd_signal": None,
+            "macd_hist": None,
+            "sma_20": None,
+            "sma_50": None,
+            "ema_12": None,
+            "ema_26": None,
+            "bb_upper": None,
+            "bb_middle": None,
+            "bb_lower": None,
+            "adx": None,
+            "atr": None,
+            "volume_ma_20": None,
+            "current_price": None,
+            "current_volume": None,
         }

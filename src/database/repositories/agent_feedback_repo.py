@@ -119,10 +119,7 @@ class AgentFeedbackRepository:
             if resolved_at is not None:
                 values["resolved_at"] = resolved_at
             stmt = (
-                update(AgentFeedback)
-                .where(AgentFeedback.id == feedback_id)
-                .values(**values)
-                .returning(AgentFeedback)
+                update(AgentFeedback).where(AgentFeedback.id == feedback_id).values(**values).returning(AgentFeedback)
             )
             result = await self._session.execute(stmt)
             row = result.scalars().first()

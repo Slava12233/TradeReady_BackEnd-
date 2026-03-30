@@ -113,9 +113,16 @@ class TestABTest:
         test = self._build()
         d = test.to_dict()
         for key in (
-            "id", "agent_id", "strategy_name",
-            "variant_a", "variant_b", "min_trades",
-            "status", "winner", "started_at", "completed_at",
+            "id",
+            "agent_id",
+            "strategy_name",
+            "variant_a",
+            "variant_b",
+            "min_trades",
+            "status",
+            "winner",
+            "started_at",
+            "completed_at",
             "round_robin_counter",
         ):
             assert key in d
@@ -156,8 +163,10 @@ class TestCreateTest:
     async def test_creates_record_deques_for_both_variants(self) -> None:
         runner = ABTestRunner()
         test = await runner.create_test(
-            "agent-1", "rsi",
-            {"rsi": 30}, {"rsi": 25},
+            "agent-1",
+            "rsi",
+            {"rsi": 30},
+            {"rsi": 25},
         )
         assert "a" in runner._records[test.id]
         assert "b" in runner._records[test.id]
@@ -498,12 +507,10 @@ class TestRunSignificanceTest:
 
     def test_clearly_different_distributions(self) -> None:
         # A: consistently +50, B: consistently -50 → very significant
-        pnls_a = [50.0] * 30
-        pnls_b = [-50.0] * 30
-        # std dev = 0 → t-stat cannot be computed, returns 1.0 p-value
-        # Use a range of values instead
-        pnls_a = [50.0 + i * 0.1 for i in range(30)]
-        pnls_b = [-50.0 - i * 0.1 for i in range(30)]
+        # Use Decimal values as required by the function's type signature.
+        # Add slight variation to avoid zero std dev (t-stat undefined with std=0).
+        pnls_a = [Decimal("50.0") + Decimal(str(i)) * Decimal("0.1") for i in range(30)]
+        pnls_b = [Decimal("-50.0") - Decimal(str(i)) * Decimal("0.1") for i in range(30)]
         p, sig, winner = _run_significance_test(pnls_a, pnls_b, min_trades=20)
         if sig:
             assert winner == "a"  # higher mean
@@ -537,9 +544,7 @@ class TestComputeVariantPerformance:
         assert perf.consecutive_losses == 0
 
     def test_all_profitable_high_win_rate(self) -> None:
-        records = _make_records_deque(
-            [Decimal("10"), Decimal("15"), Decimal("8"), Decimal("12")]
-        )
+        records = _make_records_deque([Decimal("10"), Decimal("15"), Decimal("8"), Decimal("12")])
         perf = _compute_variant_performance(records, strategy_name="test_a")
         assert perf.win_rate == 1.0
         assert perf.total_pnl == Decimal("45")
@@ -613,8 +618,10 @@ class TestExceptions:
 
     def test_duplicate_ab_test_error_is_ab_test_error(self) -> None:
         from agent.trading.ab_testing import ABTestError  # noqa: PLC0415
+
         assert issubclass(DuplicateABTestError, ABTestError)
 
     def test_insufficient_data_error_is_ab_test_error(self) -> None:
         from agent.trading.ab_testing import ABTestError  # noqa: PLC0415
+
         assert issubclass(InsufficientDataError, ABTestError)

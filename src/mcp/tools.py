@@ -964,7 +964,9 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
     # ==================================================================
     types.Tool(
         name="create_strategy",
-        description="Create a new trading strategy with a definition of pairs, entry/exit conditions, and position sizing.",
+        description=(
+            "Create a new trading strategy with a definition of pairs, entry/exit conditions, and position sizing."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -972,7 +974,10 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
                 "description": {"type": "string", "description": "Strategy description"},
                 "definition": {
                     "type": "object",
-                    "description": "Strategy definition JSON with pairs, timeframe, entry_conditions, exit_conditions, position_size_pct, max_positions",
+                    "description": (
+                        "Strategy definition JSON with pairs, timeframe, entry_conditions,"
+                        " exit_conditions, position_size_pct, max_positions"
+                    ),
                 },
             },
             "required": ["name", "definition"],
@@ -997,7 +1002,10 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
     ),
     types.Tool(
         name="get_strategy",
-        description="Get detailed information about a specific strategy, including its current version definition and latest test results.",
+        description=(
+            "Get detailed information about a specific strategy, including its current version"
+            " definition and latest test results."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -1032,7 +1040,9 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
     ),
     types.Tool(
         name="deploy_strategy",
-        description="Deploy a specific version of a strategy for live trading. The version must be tested/validated first.",
+        description=(
+            "Deploy a specific version of a strategy for live trading. The version must be tested/validated first."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -1076,7 +1086,11 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
                         "end": {"type": "string", "description": "End date (ISO 8601)"},
                     },
                 },
-                "episode_duration_days": {"type": "integer", "description": "Days per episode (default 30)", "default": 30},
+                "episode_duration_days": {
+                    "type": "integer",
+                    "description": "Days per episode (default 30)",
+                    "default": 30,
+                },
             },
             "required": ["strategy_id", "version"],
         },
@@ -1154,7 +1168,9 @@ _TOOL_DEFINITIONS: list[types.Tool] = [
     ),
     types.Tool(
         name="get_training_run_detail",
-        description="Get full detail of a training run including learning curve data, aggregate stats, and episode list.",
+        description=(
+            "Get full detail of a training run including learning curve data, aggregate stats, and episode list."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -1298,7 +1314,7 @@ def register_tools(server: Server, http_client: httpx.AsyncClient) -> None:
             ``base_url`` and ``X-API-Key`` / ``Authorization`` headers.
     """
 
-    @server.list_tools()  # type: ignore[misc]
+    @server.list_tools()  # type: ignore[misc, no-untyped-call]
     async def list_tools() -> list[types.Tool]:
         """Return all available trading tools."""
         return _TOOL_DEFINITIONS
@@ -1560,9 +1576,7 @@ async def _dispatch(
         case "step_backtest_batch":
             session_id = args["session_id"]
             steps: int = int(args["steps"])
-            data = await _call_api(
-                client, "POST", f"/api/v1/backtest/{session_id}/step/batch", json={"steps": steps}
-            )
+            data = await _call_api(client, "POST", f"/api/v1/backtest/{session_id}/step/batch", json={"steps": steps})
             return _json_content(data)
 
         case "backtest_trade":
@@ -1576,9 +1590,7 @@ async def _dispatch(
                 body["type"] = args["type"]
             if "price" in args and args["price"] is not None:
                 body["price"] = str(args["price"])
-            data = await _call_api(
-                client, "POST", f"/api/v1/backtest/{session_id}/trade/order", json=body
-            )
+            data = await _call_api(client, "POST", f"/api/v1/backtest/{session_id}/trade/order", json=body)
             return _json_content(data)
 
         case "get_backtest_results":
@@ -1698,13 +1710,13 @@ async def _dispatch(
         # Strategy Management (7 tools)
         # ------------------------------------------------------------------
         case "create_strategy":
-            body: dict[str, Any] = {
+            strategy_body: dict[str, Any] = {
                 "name": args["name"],
                 "definition": args["definition"],
             }
             if args.get("description"):
-                body["description"] = args["description"]
-            data = await _call_api(client, "POST", "/api/v1/strategies", json=body)
+                strategy_body["description"] = args["description"]
+            data = await _call_api(client, "POST", "/api/v1/strategies", json=strategy_body)
             return _json_content(data)
 
         case "get_strategies":
@@ -1728,9 +1740,7 @@ async def _dispatch(
             body = {"definition": args["definition"]}
             if args.get("change_notes"):
                 body["change_notes"] = args["change_notes"]
-            data = await _call_api(
-                client, "POST", f"/api/v1/strategies/{strategy_id}/versions", json=body
-            )
+            data = await _call_api(client, "POST", f"/api/v1/strategies/{strategy_id}/versions", json=body)
             return _json_content(data)
 
         case "get_strategy_versions":
@@ -1741,7 +1751,9 @@ async def _dispatch(
         case "deploy_strategy":
             strategy_id = args["strategy_id"]
             data = await _call_api(
-                client, "POST", f"/api/v1/strategies/{strategy_id}/deploy",
+                client,
+                "POST",
+                f"/api/v1/strategies/{strategy_id}/deploy",
                 json={"version": int(args["version"])},
             )
             return _json_content(data)
@@ -1763,40 +1775,34 @@ async def _dispatch(
                 body["date_range"] = args["date_range"]
             if "episode_duration_days" in args:
                 body["episode_duration_days"] = int(args["episode_duration_days"])
-            data = await _call_api(
-                client, "POST", f"/api/v1/strategies/{strategy_id}/test", json=body
-            )
+            data = await _call_api(client, "POST", f"/api/v1/strategies/{strategy_id}/test", json=body)
             return _json_content(data)
 
         case "get_test_status":
             strategy_id = args["strategy_id"]
             test_id: str = args["test_id"]
-            data = await _call_api(
-                client, "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
-            )
+            data = await _call_api(client, "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}")
             return _json_content(data)
 
         case "get_test_results":
             strategy_id = args["strategy_id"]
             test_id = args["test_id"]
-            data = await _call_api(
-                client, "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}"
-            )
+            data = await _call_api(client, "GET", f"/api/v1/strategies/{strategy_id}/tests/{test_id}")
             return _json_content(data)
 
         case "compare_versions":
             strategy_id = args["strategy_id"]
             data = await _call_api(
-                client, "GET", f"/api/v1/strategies/{strategy_id}/compare-versions",
+                client,
+                "GET",
+                f"/api/v1/strategies/{strategy_id}/compare-versions",
                 params={"v1": int(args["v1"]), "v2": int(args["v2"])},
             )
             return _json_content(data)
 
         case "get_strategy_recommendations":
             strategy_id = args["strategy_id"]
-            data = await _call_api(
-                client, "GET", f"/api/v1/strategies/{strategy_id}/test-results"
-            )
+            data = await _call_api(client, "GET", f"/api/v1/strategies/{strategy_id}/test-results")
             recommendations = data.get("recommendations", [])
             return _json_content({"strategy_id": strategy_id, "recommendations": recommendations})
 
@@ -1823,6 +1829,7 @@ async def _dispatch(
             run_ids_str: str = args["run_ids"]
             # Validate each UUID to prevent query param injection
             import uuid as _uuid_mod
+
             for rid in run_ids_str.split(","):
                 rid = rid.strip()
                 if rid:
@@ -1831,7 +1838,9 @@ async def _dispatch(
                     except ValueError:
                         return _error_content(ValueError(f"Invalid UUID in run_ids: {rid!r}"))
             data = await _call_api(
-                client, "GET", "/api/v1/training/compare",
+                client,
+                "GET",
+                "/api/v1/training/compare",
                 params={"run_ids": run_ids_str},
             )
             return _json_content(data)

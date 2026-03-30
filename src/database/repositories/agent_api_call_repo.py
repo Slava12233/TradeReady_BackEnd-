@@ -305,9 +305,7 @@ class AgentApiCallRepository:
                 .order_by(func.count(AgentApiCall.id).desc())
             )
             by_endpoint_result = await self._session.execute(by_endpoint_stmt)
-            by_endpoint: dict[str, int] = {
-                row.endpoint: row.call_count for row in by_endpoint_result.all()
-            }
+            by_endpoint: dict[str, int] = {row.endpoint: row.call_count for row in by_endpoint_result.all()}
 
             return {
                 "total_calls": total_calls,

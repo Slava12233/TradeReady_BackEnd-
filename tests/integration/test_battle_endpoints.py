@@ -429,9 +429,7 @@ class TestListBattles:
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
-        mock_svc.list_battles.assert_awaited_once_with(
-            account.id, status="active", limit=50, offset=0
-        )
+        mock_svc.list_battles.assert_awaited_once_with(account.id, status="active", limit=50, offset=0)
 
 
 # ---------------------------------------------------------------------------
@@ -492,9 +490,7 @@ class TestGetBattle:
         account = _make_account()
         mock_svc = AsyncMock()
         battle_id = uuid4()
-        mock_svc.get_battle = AsyncMock(
-            side_effect=BattleNotFoundError(battle_id=battle_id)
-        )
+        mock_svc.get_battle = AsyncMock(side_effect=BattleNotFoundError(battle_id=battle_id))
 
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.get(f"/api/v1/battles/{battle_id}")
@@ -609,9 +605,7 @@ class TestParticipants:
         mock_svc = AsyncMock()
         battle_id = uuid4()
         agent_id = uuid4()
-        mock_svc.add_participant = AsyncMock(
-            side_effect=BattleInvalidStateError("Agent already in battle.")
-        )
+        mock_svc.add_participant = AsyncMock(side_effect=BattleInvalidStateError("Agent already in battle."))
 
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.post(
@@ -630,14 +624,10 @@ class TestParticipants:
         mock_svc.remove_participant = AsyncMock(return_value=None)
 
         client = _build_client(battle_service=mock_svc, mock_account=account)
-        resp = client.delete(
-            f"/api/v1/battles/{battle_id}/participants/{agent_id}"
-        )
+        resp = client.delete(f"/api/v1/battles/{battle_id}/participants/{agent_id}")
 
         assert resp.status_code == 204
-        mock_svc.remove_participant.assert_awaited_once_with(
-            battle_id, agent_id, account.id
-        )
+        mock_svc.remove_participant.assert_awaited_once_with(battle_id, agent_id, account.id)
 
 
 # ---------------------------------------------------------------------------
@@ -756,16 +746,18 @@ class TestBattleData:
         mock_svc = AsyncMock()
         battle = _make_battle(account.id, status="active")
         mock_svc.get_battle = AsyncMock(return_value=battle)
-        mock_svc.get_live_snapshot = AsyncMock(return_value=[
-            {
-                "agent_id": str(uuid4()),
-                "display_name": "Bot1",
-                "equity": "10100",
-                "pnl": "100",
-                "pnl_pct": "1.00",
-                "status": "active",
-            }
-        ])
+        mock_svc.get_live_snapshot = AsyncMock(
+            return_value=[
+                {
+                    "agent_id": str(uuid4()),
+                    "display_name": "Bot1",
+                    "equity": "10100",
+                    "pnl": "100",
+                    "pnl_pct": "1.00",
+                    "status": "active",
+                }
+            ]
+        )
 
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.get(f"/api/v1/battles/{battle.id}/live")
@@ -795,22 +787,24 @@ class TestBattleData:
         mock_svc = AsyncMock()
         battle = _make_battle(account.id, status="completed")
         mock_svc.get_battle = AsyncMock(return_value=battle)
-        mock_svc.get_results = AsyncMock(return_value={
-            "battle_id": str(battle.id),
-            "name": "Test Battle",
-            "ranking_metric": "roi",
-            "started_at": "2026-01-01T00:00:00+00:00",
-            "ended_at": "2026-01-02T00:00:00+00:00",
-            "participants": [
-                {
-                    "agent_id": str(uuid4()),
-                    "rank": 1,
-                    "final_equity": "10500",
-                    "snapshot_balance": "10000",
-                    "status": "stopped",
-                },
-            ],
-        })
+        mock_svc.get_results = AsyncMock(
+            return_value={
+                "battle_id": str(battle.id),
+                "name": "Test Battle",
+                "ranking_metric": "roi",
+                "started_at": "2026-01-01T00:00:00+00:00",
+                "ended_at": "2026-01-02T00:00:00+00:00",
+                "participants": [
+                    {
+                        "agent_id": str(uuid4()),
+                        "rank": 1,
+                        "final_equity": "10500",
+                        "snapshot_balance": "10000",
+                        "status": "stopped",
+                    },
+                ],
+            }
+        )
 
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.get(f"/api/v1/battles/{battle.id}/results")
@@ -960,9 +954,7 @@ class TestHistoricalBattle:
         battle = _make_battle(account.id, status="active", battle_mode="historical")
         mock_svc.get_battle = AsyncMock(return_value=battle)
         virtual_time = datetime(2026, 1, 2, tzinfo=UTC)
-        mock_svc.get_historical_prices = AsyncMock(
-            return_value=({"BTCUSDT": Decimal("50000")}, virtual_time)
-        )
+        mock_svc.get_historical_prices = AsyncMock(return_value=({"BTCUSDT": Decimal("50000")}, virtual_time))
 
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.get(f"/api/v1/battles/{battle.id}/market/prices")

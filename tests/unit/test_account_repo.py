@@ -207,9 +207,7 @@ class TestUpdateRiskProfile:
         assert account.risk_profile == profile
         mock_session.flush.assert_awaited_once()
 
-    async def test_update_risk_profile_not_found_raises(
-        self, repo: AccountRepository, mock_session: AsyncMock
-    ) -> None:
+    async def test_update_risk_profile_not_found_raises(self, repo: AccountRepository, mock_session: AsyncMock) -> None:
         """update_risk_profile raises AccountNotFoundError when row missing."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.first.return_value = None

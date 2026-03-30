@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from src.tasks.celery_app import app
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.battle_snapshots.capture_battle_snapshots",
     soft_time_limit=10,
     time_limit=15,
@@ -49,7 +49,7 @@ async def _capture_snapshots_async() -> int:
             await session.close()
 
 
-@app.task(
+@app.task(  # type: ignore[misc]
     name="src.tasks.battle_snapshots.check_battle_completion",
     soft_time_limit=30,
     time_limit=45,

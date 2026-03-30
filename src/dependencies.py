@@ -130,7 +130,7 @@ async def get_redis() -> AsyncGenerator[Redis[Any], None]:
         pass  # pool manages connection lifecycle; do not close here
 
 
-RedisDep: TypeAlias = Annotated[Redis, Depends(get_redis)]  # type: ignore[type-arg]
+RedisDep: TypeAlias = Annotated[Redis, Depends(get_redis)]
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ RedisDep: TypeAlias = Annotated[Redis, Depends(get_redis)]  # type: ignore[type-
 
 
 async def get_price_cache(
-    redis: RedisDep,
+    redis: RedisDep,  # type: ignore[type-arg]
 ) -> PriceCacheDep:
     """Return a ``PriceCache`` instance bound to the current Redis client.
 
@@ -441,7 +441,7 @@ except ImportError:
 
 
 async def get_risk_manager(
-    redis: RedisDep,
+    redis: RedisDep,  # type: ignore[type-arg]
     price_cache: PriceCacheDep,
     balance_manager: BalanceManagerDep,
     account_repo: AccountRepoDep,
@@ -506,8 +506,8 @@ except ImportError:
 
 
 async def get_circuit_breaker_redis(
-    redis: RedisDep,
-) -> CircuitBreakerRedisDep:
+    redis: RedisDep,  # type: ignore[type-arg]
+) -> CircuitBreakerRedisDep:  # type: ignore[type-arg]
     """Return (redis,) tuple for use in Celery tasks that call reset_all.
 
     Routes that need a fully configured CircuitBreaker for a specific account
@@ -522,7 +522,7 @@ async def get_circuit_breaker_redis(
     return redis
 
 
-CircuitBreakerRedisDep: TypeAlias = Annotated[Redis, Depends(get_circuit_breaker_redis)]  # type: ignore[type-arg]
+CircuitBreakerRedisDep: TypeAlias = Annotated[Redis, Depends(get_circuit_breaker_redis)]
 
 
 # ---------------------------------------------------------------------------
@@ -813,7 +813,6 @@ except ImportError:
     TestOrchestratorDep: TypeAlias = Any  # type: ignore[misc,no-redef]
 
 
-
 # Note: IndicatorEngine is constructed directly inside Celery tasks
 # (src/tasks/strategy_tasks.py), not injected via DI, because it
 # accumulates per-episode state that must not leak between requests.
@@ -926,8 +925,6 @@ try:
         AgentStrategySignalRepository as _AgentStrategySignalRepo,
     )
 
-    AgentStrategySignalRepoDep: TypeAlias = Annotated[
-        _AgentStrategySignalRepo, Depends(get_agent_strategy_signal_repo)
-    ]
+    AgentStrategySignalRepoDep: TypeAlias = Annotated[_AgentStrategySignalRepo, Depends(get_agent_strategy_signal_repo)]
 except ImportError:
     AgentStrategySignalRepoDep: TypeAlias = Any  # type: ignore[misc,no-redef]

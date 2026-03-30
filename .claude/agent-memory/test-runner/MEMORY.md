@@ -29,6 +29,23 @@ When testing `src/tasks/*.py` from `agent/tests/`, Celery is NOT installed. Use 
 **Why:** Celery is a platform-side dependency, not in agent's pyproject.toml. Tests must use stubs.
 **How to apply:** Any `agent/tests/` file testing `src/tasks/*.py` should copy this pattern.
 
+## CapabilityManager ADMIN-Check Pattern (2026-03-30)
+
+`grant_capability` and `revoke_capability` now require the grantor to have `ADMIN` role (added 2026-03-23, R2-01). Tests must:
+1. Mock `get_role` on the manager to return `AgentRole.ADMIN` for the grantor: `patch.object(self.manager, "get_role", new=AsyncMock(return_value=AgentRole.ADMIN))`
+2. For `revoke_capability`, pass an explicit `granted_by=revoker_id` (UUID string) — calling without `granted_by` now raises `PermissionDenied`
+3. Import `AgentRole` inside the test: `from agent.permissions.roles import AgentRole`
+
+## MCP Tool Count (last verified 2026-03-30)
+
+`TOOL_COUNT = 58` (not 43). 15 strategy/training tools were added to `src/mcp/tools.py`:
+- Strategy management (7): `create_strategy`, `get_strategies`, `get_strategy`, `create_strategy_version`, `get_strategy_versions`, `deploy_strategy`, `undeploy_strategy`
+- Strategy testing (4): `run_strategy_test`, `get_test_status`, `get_test_results`, `compare_versions`
+- Strategy recommendations (1): `get_strategy_recommendations`
+- Training observation (3): `get_training_runs`, `get_training_run_detail`, `compare_training_runs`
+
+`compare_training_runs` validates each run_id as a UUID. Use real UUIDs (e.g. `"550e8400-e29b-41d4-a716-446655440001"`) in tests, not short strings like `"run-1"`.
+
 ## Test Counts (last verified 2026-03-22)
 
 - Unit tests: 72 files, 1203 tests (`tests/unit/`) — added `test_agent_api_call_repo.py` (9 tests), `test_agent_strategy_signal_repo.py` (10 tests)

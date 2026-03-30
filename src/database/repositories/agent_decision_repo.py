@@ -327,12 +327,7 @@ class AgentDecisionRepository:
             elif pnl_outcome == "negative":
                 conditions.append(AgentDecision.outcome_pnl < 0)
 
-            stmt = (
-                select(AgentDecision)
-                .where(and_(*conditions))
-                .order_by(AgentDecision.created_at.desc())
-                .limit(limit)
-            )
+            stmt = select(AgentDecision).where(and_(*conditions)).order_by(AgentDecision.created_at.desc()).limit(limit)
             result = await self._session.execute(stmt)
             return result.scalars().all()
         except SQLAlchemyError as exc:

@@ -43,7 +43,7 @@ class ExchangeWebSocketClient:
     def __init__(
         self,
         exchange_id: str = "binance",
-        config: dict | None = None,
+        config: dict | None = None,  # type: ignore[type-arg]
         quote_asset: str = "USDT",
     ) -> None:
         self._adapter = CCXTAdapter(exchange_id, config)
