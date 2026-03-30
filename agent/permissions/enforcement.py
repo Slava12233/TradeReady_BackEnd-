@@ -250,11 +250,17 @@ class PermissionEnforcer:
         budget_mgr: BudgetManager,
         action_map: dict[str, Capability] | None = None,
         budget_actions: frozenset[str] | None = None,
+        audit_allow_events: bool = True,
     ) -> None:
         self._capability_mgr = capability_mgr
         self._budget_mgr = budget_mgr
         self._action_map: dict[str, Capability] = action_map if action_map is not None else ACTION_CAPABILITY_MAP
         self._budget_actions: frozenset[str] = budget_actions if budget_actions is not None else BUDGET_CHECKED_ACTIONS
+        # When True, "allow" events are persisted to the agent_audit_log table
+        # in addition to "deny" events.  Disable in high-throughput deployments
+        # where allow-event volume is prohibitive.  Deny events are always
+        # persisted regardless of this flag.
+        self._audit_allow_events: bool = audit_allow_events
 
         # Audit buffer — filled by _record_audit, flushed in batch.
         self._audit_buffer: list[AuditEntry] = []
@@ -383,22 +389,21 @@ class PermissionEnforcer:
             )
 
     async def _persist_audit_entries(self, entries: list[AuditEntry]) -> None:
-        """Persist a batch of audit entries to the ``agent_feedback`` table.
+        """Persist audit entries to the ``agent_audit_log`` table.
 
-        Each denied :class:`~agent.models.ecosystem.AuditEntry` is stored as a
-        ``feature_request`` / ``bug``-category :class:`~src.database.models.AgentFeedback`
-        row so that human operators can review repeated denials.  Allowed entries
-        are stored with ``category="performance_issue"`` (lowest-noise category) at
-        ``priority="low"``.
+        Both "allow" and "deny" outcomes are persisted for a complete audit
+        trail.  Allow-event persistence is gated by ``self._audit_allow_events``
+        (default ``True``).
 
         Args:
             entries: List of :class:`~agent.models.ecosystem.AuditEntry` objects to persist.
         """
+        from decimal import Decimal as _Decimal  # noqa: PLC0415
         from uuid import UUID  # noqa: PLC0415
 
-        from src.database.models import AgentFeedback  # noqa: PLC0415
-        from src.database.repositories.agent_feedback_repo import (  # noqa: PLC0415
-            AgentFeedbackRepository,
+        from src.database.models import AgentAuditLog  # noqa: PLC0415
+        from src.database.repositories.agent_audit_log_repo import (  # noqa: PLC0415
+            AgentAuditLogRepository,
         )
         from src.database.session import get_session_factory  # noqa: PLC0415
 
@@ -407,7 +412,8 @@ class PermissionEnforcer:
         try:
             session = factory()
             async with session.begin():
-                repo = AgentFeedbackRepository(session)
+                repo = AgentAuditLogRepository(session)
+                rows: list[AgentAuditLog] = []
                 for entry in entries:
                     try:
                         agent_uuid = UUID(entry.agent_id)
@@ -418,36 +424,29 @@ class PermissionEnforcer:
                         )
                         continue
 
-                    # Map audit entry result to feedback category / priority.
-                    # Only persist denied entries to reduce DB write volume.
-                    # Allowed entries are kept in the in-memory buffer only;
-                    # the buffer itself is the audit trail for recent actions.
-                    # Denied entries are persisted so operators can detect
-                    # repeated permission failures.
-                    if entry.result == "deny":
-                        category = "bug"
-                        priority = "low"
-                    else:
-                        # Allowed actions: skip DB persistence to reduce noise.
-                        # The in-memory audit buffer retains these for get_audit_log().
+                    # Skip allow events if persistence is disabled.
+                    if entry.result != "deny" and not self._audit_allow_events:
                         continue
 
-                    description = (
-                        f"[PERMISSION AUDIT] action={entry.action!r} "
-                        f"result={entry.result!r} "
-                        f"reason={entry.reason!r} "
-                        f"context={entry.context!r} "
-                        f"checked_at={entry.checked_at.isoformat()}"
-                    )
+                    # Extract trade_value from context if present.
+                    trade_value = None
+                    if entry.context and "trade_value" in entry.context:
+                        try:
+                            trade_value = _Decimal(str(entry.context["trade_value"]))
+                        except Exception:  # noqa: BLE001
+                            pass
 
-                    feedback_row = AgentFeedback(
+                    rows.append(AgentAuditLog(
                         agent_id=agent_uuid,
-                        description=description,
-                        category=category,
-                        priority=priority,
-                        status="new",
-                    )
-                    await repo.create(feedback_row)
+                        action=entry.action,
+                        outcome=entry.result,
+                        reason=entry.reason,
+                        trade_value=trade_value,
+                        metadata=entry.context,
+                    ))
+
+                if rows:
+                    await repo.bulk_create(rows)
 
         except Exception as exc:  # noqa: BLE001
             logger.exception(

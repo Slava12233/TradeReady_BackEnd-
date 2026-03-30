@@ -591,6 +591,67 @@ class RetrainOrchestrator:
         self._record_result(result)
         return result
 
+    async def trigger_drift_retrain(
+        self,
+        strategy_name: str,
+        redis_client: Any | None = None,  # noqa: ANN401  — async Redis client has no public type
+    ) -> RetrainResult | None:
+        """Enqueue an ensemble retrain triggered by concept drift detection.
+
+        Applies a per-strategy cooldown (minimum 1 hour between drift-triggered
+        retrains) tracked in Redis under key ``retrain:cooldown:{strategy_name}``
+        with a 3600-second TTL.  If the cooldown key is present the call is a
+        no-op and ``None`` is returned.
+
+        The retrain itself is delegated to :meth:`retrain_ensemble` because
+        drift — by definition — means the current ensemble weights no longer
+        reflect the live market distribution.  The full A/B gate still applies,
+        so a drift-triggered retrain only deploys when the new weights are
+        measurably better than the current ones.
+
+        Args:
+            strategy_name: Name of the drifting strategy (used as part of the
+                Redis cooldown key so each strategy has its own independent
+                cooldown budget).
+            redis_client: Optional async Redis client instance.  When ``None``
+                the cooldown check is skipped and retraining always proceeds.
+                Pass a client to enable the 1-hour cooldown guard.
+
+        Returns:
+            :class:`RetrainResult` when a retrain was triggered, or ``None``
+            when the call was suppressed by the cooldown.
+        """
+        cooldown_key = f"retrain:cooldown:{strategy_name}"
+        _COOLDOWN_TTL_SECONDS: int = 3600
+
+        if redis_client is not None:
+            try:
+                existing = await redis_client.get(cooldown_key)
+                if existing is not None:
+                    log.info(
+                        "agent.strategy.retrain.drift.cooldown_active",
+                        strategy_name=strategy_name,
+                        cooldown_key=cooldown_key,
+                    )
+                    return None
+                # Set the cooldown key before starting — prevents concurrent drift
+                # events on the same strategy from launching duplicate retrains.
+                await redis_client.setex(cooldown_key, _COOLDOWN_TTL_SECONDS, "1")
+            except Exception as exc:  # noqa: BLE001
+                # Redis failure must never block the retrain; proceed without cooldown.
+                log.warning(
+                    "agent.strategy.retrain.drift.redis_error",
+                    strategy_name=strategy_name,
+                    error=str(exc),
+                )
+
+        log.info(
+            "agent.strategy.retrain.drift.triggered",
+            strategy_name=strategy_name,
+            trigger="drift",
+        )
+        return await self.retrain_ensemble()
+
     # ── Internal retraining implementations ───────────────────────────────────
 
     async def _run_ensemble_retrain(self, triggered_at: str) -> RetrainResult:

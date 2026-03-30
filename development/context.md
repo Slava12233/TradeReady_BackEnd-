@@ -17,10 +17,10 @@ tags:
 
 ## Current State
 
-**Active work:** `/c-level-report` skill created 2026-03-23. All platform code complete. Ready for Docker deployment and training pipeline.
-**Last session:** 2026-03-23 — `/c-level-report` skill created (7th skill). Generates comprehensive C-level executive reports from 12 live data sources. Files: `SKILL.md`, `templates/report-template.md`, `examples/sample-report.md`, output directory `development/C-level_reports/`, 5-task board in `development/tasks/c-level-report-skill/`.
-**Next steps:** (1) Start Docker services: `docker compose up -d` then `docker compose --profile agent up agent`. (2) Run `scripts/e2e_provision_agents.py` to set up 5 trading agents. (3) Load historical candle data: `python scripts/backfill_history.py --daily --resume`. (4) Train RL/regime/evolutionary strategies once data is loaded. (5) Monitor via Grafana at `http://localhost:3000`. (6) Run `/c-level-report` for a live executive summary.
-**Blocked:** Nothing. All code is complete. Docker infrastructure is needed to run training pipelines.
+**Active work:** Strategy search system planning complete. Full A-Z implementation plan created (16 modules, 6 phases). Comprehensive research produced (strategy landscape, autoresearch integration, training loop analysis, cost modeling). Ready to begin Phase 1: Foundation modules (Feature Pipeline, Signal Interface, Deflated Sharpe).
+**Last session:** 2026-03-23 — Full strategy research cycle: (1) strategy-research-complete.md (senior report), (2) strategy-research-intern-guide.md (intern version), (3) training-loops-research-intern-guide.md (training loop costs and schedules), (4) implementation-plan-a-to-z.md (16-module build plan). Codebase audit revealed 14 of 16 planned modules are MISSING. Vision clarified: find ONE best strategy via automated search, not run 1000 agents.
+**Next steps:** (1) Build Module A: Unified Feature Pipeline (`agent/strategies/features/`). (2) Build Module B: Pluggable Signal Interface (`agent/strategies/signals/`). (3) Build Module C: Deflated Sharpe Ratio (`agent/strategies/validation/`). (4) Then Phase 2: Volume Spike, Momentum, Mean Reversion strategies.
+**Blocked:** Nothing. All infrastructure in place. Implementation plan ready.
 
 ---
 
@@ -52,7 +52,8 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 | **Exchange Abstraction (CCXT)** | Production | Adapter pattern, 110+ exchanges, symbol mapper, multi-exchange backfill |
 | **Agentic Layer** | Complete | 36 CLAUDE.md files, 16 sub-agents (categorized: 3 quality gates, 2 security, 5 infrastructure, 4 development, 2 research/planning) |
 | **Platform Testing Agent** | Complete | `agent/` package — Pydantic AI + OpenRouter, 4 workflows, 3 integration layers, 117 unit tests |
-| **Agent Strategy System** | Complete | `agent/strategies/` — 5 strategies (RL/evolutionary/regime/risk/ensemble), 578+ tests. Phase 1/2 upgrades: volume_ratio regime feature, composite RL reward, OOS evolutionary fitness, Kelly/Hybrid sizing, drawdown profiles, correlation-aware risk, strategy circuit breakers, 6 advanced order tools. RecoveryManager (3-state RECOVERING→SCALING_UP→FULL, Redis-backed, ATR normalization). Security review: 0 CRITICAL, 0 HIGH, 2 MEDIUM. PairSelector, WSManager, memory-driven learning loop, DriftDetector (Page-Hinkley test), RetrainOrchestrator (4 schedules), Walk-Forward Validation (WFE metric, overfit warning at WFE < 50%), Attribution-driven weights, StrategyCircuitBreaker. All 37/37 Trading Agent Master Plan tasks complete. ~1200+ new tests added 2026-03-22. |
+| **Agent Strategy System** | Complete | `agent/strategies/` — 5 strategies (RL/evolutionary/regime/risk/ensemble), 578+ tests. Phase 1/2 upgrades: volume_ratio regime feature, composite RL reward, OOS evolutionary fitness, Kelly/Hybrid sizing, drawdown profiles, correlation-aware risk, strategy circuit breakers, 6 advanced order tools. RecoveryManager (3-state RECOVERING→SCALING_UP→FULL, Redis-backed, ATR normalization). Security review: 0 CRITICAL, 0 HIGH (all 7 HIGH issues resolved 2026-03-23). PairSelector, WSManager, memory-driven learning loop, DriftDetector (Page-Hinkley test), RetrainOrchestrator (4 schedules), Walk-Forward Validation (WFE metric, overfit warning at WFE < 50%), Attribution-driven weights, StrategyCircuitBreaker. All 37/37 Trading Agent Master Plan tasks complete. ~1200+ new tests added 2026-03-22. |
+| **Continuous Retraining** | Complete | `agent/strategies/retrain.py` + `agent/tasks.py` — RetrainOrchestrator wired into Celery beat (4 schedules: ensemble weights 8h, regime 7d, genome 7d, PPO 30d). DriftDetector in live TradingLoop. Prometheus metrics for retrain events. Grafana dashboard panel. 29 integration tests. Regime classifier trained: 99.92% accuracy, WFE 97.46%, Sharpe 1.14 vs MACD 0.74. |
 | **Agent Dashboard** | Complete | 4 new analytics components (strategy-attribution-chart, equity-comparison-chart, signal-confidence-histogram, active-trade-monitor), 2 new hooks (use-agent-decisions, use-agent-equity-comparison). Strategy attribution and decision analysis wired. |
 | **Agent Ecosystem (Phase 1)** | Complete | DB migration 017, 10 models, 10 repos, conversation system, memory system, 5 agent tools, AgentServer, CLI REPL, 4 Celery tasks. 370+ tests. |
 | **Agent Ecosystem (Phase 2)** | Complete | Permissions system (roles/capabilities/budget/enforcement), 4 CRITICAL security fixes, trading intelligence (TradingLoop, SignalGenerator, TradeExecutor, PositionMonitor, TradingJournal, StrategyManager, ABTestRunner). 414+ tests. |
@@ -71,9 +72,9 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 - **Backend:** Python 3.12+, FastAPI, SQLAlchemy 2.0 + asyncpg, Pydantic v2
 - **Database:** TimescaleDB (PostgreSQL), Redis 7+
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm
-- **Tasks:** Celery + Redis broker (11 beat tasks)
+- **Tasks:** Celery + Redis broker (16 beat tasks, including 5 ML retraining on `ml_training` queue)
 - **Auth:** JWT (PyJWT) + API keys (bcrypt), dual auth flow
-- **Testing:** pytest (62+ unit files / 1000+ tests, 20+ integration files / 440+ tests) — STR-2 added 67 tests (91 total for strategies); STR-5 added 16 tests; STR-3 added 25+ gymnasium compliance tests; STR-4 added 15+ MCP tool tests
+- **Testing:** pytest — platform: 87 unit files / 981 tests + 26 integration files / 553 tests; agent: 51 files / 1984 tests; frontend: 207 vitest tests. Grand total: ~3,700+ test functions.
 - **Linting:** ruff + mypy (strict)
 - **Containers:** Docker + Docker Compose
 - **Monitoring:** Prometheus + Grafana + structlog
@@ -102,9 +103,9 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 
 Each account owns multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. All trading tables keyed by `agent_id`. Auth flow: API key tries agents table first, falls back to accounts. JWT uses `X-Agent-Id` header.
 
-### Database (19 migrations, current head: 019)
+### Database (20 migrations, current head: 020)
 
-Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable), `agent_api_calls`, `agent_strategy_signals`
+Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable), `agent_api_calls`, `agent_strategy_signals`, `agent_audit_log`
 
 Note: Migration 011 missing from directory — chain skips 010 → 012.
 
@@ -147,6 +148,86 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 ---
 
 ## Recent Activity
+
+### 2026-03-23 — Strategy Research & Implementation Planning
+
+**Changes:**
+
+Research Documents Created:
+- `development/strategy-research-complete.md` — Comprehensive A-Z research: current platform state (15 production systems), 5 existing strategies, autoresearch integration plan (Karpathy loop adapted for trading), 20+ new strategy candidates across 4 priority tiers, tools/libraries to add, data sources to integrate, search funnel architecture, overfitting prevention (Deflated Sharpe Ratio)
+- `development/strategy-research-intern-guide.md` — Same content rewritten for a senior middle school intern: every concept explained with analogies, full glossary of 30+ trading/ML terms
+- `development/training-loops-research-intern-guide.md` — Complete analysis of all 7 training loops: how they connect, exact schedules (ensemble 8h, regime 7d, genome 7d, PPO 30d, drift continuous), real costs ($0.35/month total for all training), time budgets, weekly/monthly play-by-play, what-can-go-wrong guide
+- `development/implementation-plan-a-to-z.md` — 16-module build plan across 6 phases (10 weeks): Module A (Feature Pipeline) through Module P (Order Flow). Each module specifies: files to create, interfaces, config, tests, time estimate, cost, dependencies
+
+Codebase Audit Results (14 of 16 planned modules MISSING):
+- MISSING: Autoresearch harness, cross-sectional momentum, pairs trading, volume spike detector, LLM sentiment signal, transformer prediction, Deflated Sharpe Ratio, funding rate arb, VectorBT, synthetic data, order flow analysis, external data connectors, modular strategy template, pluggable signal interface
+- PARTIAL: Walk-forward (3 of 5 strategies), feature engineering (3 separate implementations, no unified pipeline), signal aggregation (hardwired to 3 sources, not pluggable)
+- EXISTS: Mean reversion (config only in regime strategy_definitions.py)
+
+**Decisions:**
+- Vision clarified: goal is to find ONE best strategy via automated search, not run 1000 agents in parallel. Agents are test subjects during search, not permanent production runners.
+- Build order determined by dependency analysis: Foundation (A/B/C) → First Strategies (D/E/F) → Autoresearch (G/H) → Stat-Arb (I/J) → Data (K/L/M) → Advanced ML (N/O/P)
+- Autoresearch scoring: composite = Sharpe × (1 - max_drawdown/0.50), with hard rejects at DD>30%, Sharpe<0, trades<50
+- Start with free data sources only (Fear & Greed, CoinGecko, Binance depth); add paid sources only if strategy search shows they help
+
+**Learnings:**
+- All ML training loops combined cost ~$0.35/month in LLM API fees. $5/day LLM budget uses <1% for training.
+- PPO training on CPU takes 30-60 min for 500K timesteps — no GPU needed
+- Regime classifier retrains in ~30 seconds (XGBoost is incredibly fast for 8,760 samples)
+- Deflated Sharpe Ratio is CRITICAL before mass-testing: testing 1000 strategies produces expected best Sharpe of 3.72 by pure luck
+- Karpathy autoresearch yields ~12 experiments/hour, ~100 overnight — directly applicable to our strategy template
+
+---
+
+### 2026-03-23 — All 5 C-Level Recommendations Implemented (39 Tasks Complete)
+
+**Changes:**
+
+Phase 1 — Docker Infrastructure:
+- `.env` created from `.env.example`, all Docker Compose services started and healthy
+- Alembic migrations applied (head: 019), exchange pairs seeded, 5 agent accounts provisioned
+- Grafana dashboards imported and Prometheus scrape targets verified
+- Historical candle data backfill initiated (12+ months BTC/ETH/USDT pairs)
+
+Phase 2 — Security Hardening (all 7 HIGH issues resolved):
+- `agent/permissions/manager.py` — ADMIN role check added to `grant_capability()` and `set_role()`; privilege escalation vector closed (R2-01)
+- `agent/permissions/budget.py` — `ensure_future` tasks tracked and awaited; no more fire-and-forget async budget updates (R2-02)
+- `docker-compose.yml` — Redis `requirepass` enabled + Docker internal bind only; Redis no longer accessible externally (R2-03)
+- `agent/permissions/audit.py` — "allow" audit events now persisted to `agent_audit_log`; previously only denials were stored (R2-04)
+- `agent/strategies/rl/train.py` — SHA-256 checksum verified before every `PPO.load()` call; prevents loading tampered model files (R2-05)
+- `agent/strategies/evolutionary/evolve.py` — Checksum verification added before `joblib.load()` for genome serialization (R2-06)
+- CLI entrypoints — All remaining `--api-key` argument exposures removed from 3 CLI scripts; API keys passed via env var only (R2-07)
+- `agent/trading/loop.py`, `agent/server_handlers.py` — All `float(Decimal)` casts replaced with `Decimal`-safe arithmetic (R2-08)
+- `agent/tests/test_security_regression.py` — 20 regression tests covering all 7 security fixes (R2-10)
+
+Phase 3 — Regime Classifier Training:
+- Regime classifier trained on 12-month BTC 1h data: 99.92% test accuracy (R3-01, R3-02)
+- Regime switcher demo run: correct bull/bear/sideways/volatile transitions validated (R3-03)
+- Walk-forward validation: WFE 97.46% (well above 50% deployability threshold) (R3-04)
+- Backtest comparison: Regime strategy Sharpe 1.14 vs MACD 0.74 vs Buy-and-Hold 0.61 (R3-05, R3-06)
+
+Phase 4 — Continuous Retraining Pipeline:
+- `src/tasks/retrain_tasks.py` — Celery task wrapping `RetrainOrchestrator` with A/B gate on all deployments (R5-01)
+- `src/tasks/celery_app.py` — 4 new beat schedule entries: ensemble weights 8h, regime 7d, genome 7d, PPO 30d (R5-02)
+- `agent/trading/loop.py` — `DriftDetector` wired into live `TradingLoop._observe()` with retrain trigger (R5-03)
+- `src/monitoring/metrics.py` — 4 new Prometheus metrics for retrain events (retrain_triggered, retrain_completed, retrain_duration_seconds, retrain_ab_gate_result) (R5-04)
+- `monitoring/dashboards/retraining.json` — New Grafana dashboard panel for retraining event timeline (R5-05)
+- `agent/tests/test_retrain_integration.py` — 29 integration tests for retrain Celery tasks and drift-triggered retrain flow (R5-06)
+
+Quality Gate:
+- Full code review passed (QG-01): 0 blockers, 3 MEDIUM suggestions noted
+- Full test suite passed (QG-02): all existing tests green, 49 new tests added
+- Context and CLAUDE.md files updated (QG-03): 12 CLAUDE.md files synced (permissions, regime, strategies, rl, trading, tasks, database, monitoring, tests, agent, sdk, alembic)
+
+**Decisions:**
+- Redis `requirepass` approach over network ACLs — simpler to maintain in Docker Compose; network ACLs require custom redis.conf volume mounts and add operational complexity without meaningful security gain in this deployment topology
+- Checksum verification uses SHA-256 stored alongside model file (`.sha256` sidecar) — avoids DB dependency at load time; `.sha256` files committed to git for auditability
+
+**Learnings:**
+- Regime classifier achieved 99.92% accuracy on 12-month BTC data with 6 features (added `volume_ratio` was the key improvement over 5-feature baseline at ~87%)
+- WFE of 97.46% indicates very low overfitting; regime strategy generalizes well out-of-sample — the walk-forward validation confirmed the classifier is not curve-fitted to specific market periods
+
+---
 
 ### 2026-03-23 — `/c-level-report` Skill Created (7th Skill)
 

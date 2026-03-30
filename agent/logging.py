@@ -207,7 +207,9 @@ def configure_agent_logging(log_level: str = "INFO") -> None:
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
+            # add_logger_name requires a stdlib logger with a .name attribute;
+            # PrintLoggerFactory produces PrintLogger which lacks .name, so we
+            # skip this processor to avoid AttributeError on structlog >= 25.x.
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             add_correlation_context,
             structlog.processors.StackInfoRenderer(),

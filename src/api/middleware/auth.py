@@ -67,6 +67,7 @@ _PUBLIC_PATHS: frozenset[str] = frozenset(
         "/redoc",
         "/openapi.json",
         "/metrics",
+        "/metrics/",  # Starlette sub-app mount redirects /metrics → /metrics/
     }
 )
 
@@ -75,6 +76,7 @@ _PUBLIC_PATHS: frozenset[str] = frozenset(
 _PUBLIC_PREFIXES: tuple[str, ...] = (
     "/docs",
     "/redoc",
+    "/metrics",  # Prometheus scrape endpoint — must be unauthenticated
     "/api/v1/market/",
 )
 

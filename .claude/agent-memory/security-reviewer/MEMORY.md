@@ -13,16 +13,16 @@ All four were fixed directly in `agent/permissions/`. Status: RESOLVED.
 
 Not fixed; deferred by design — fix before promotion to shared/prod infra:
 
-- **HIGH-1** — `grant_capability` / `set_role` accept any UUID as `granted_by` with no privilege check on the grantor. Any caller with access to `CapabilityManager` can escalate any agent to ADMIN. Fix: check grantor role is ADMIN before mutating.
-- **HIGH-2** — `asyncio.ensure_future(_maybe_persist)` in `record_trade`/`record_loss` can be cancelled on shutdown, losing the last counter snapshot. Fix: track futures and `await gather()` in `close()`.
-- **HIGH-3** — Redis cache at `agent:permissions:{agent_id}` has no auth; write access allows temporary capability elevation for up to 300s (cache TTL). Fix: `requirepass` on Redis + bind to internal Docker network only.
+- **HIGH-1** — RESOLVED (2026-03-23, task R2-01). `grant_capability`, `set_role`, and `revoke_capability` now check `ROLE_HIERARCHY[grantor_role] >= ROLE_HIERARCHY[ADMIN]` before any mutation. Lazy import of `PermissionDenied` from `enforcement.py` avoids circular imports. Fail-closed: unknown grantors (account UUIDs not in agents table) get default `viewer` role → denied. `revoke_capability` takes `granted_by: str | None = None`; `None` raises immediately. Existing test `test_revoke_sets_capability_false_in_db` tests old insecure behavior and will fail — needs update.
+- **HIGH-2** — RESOLVED (2026-03-23, task R2-02). `asyncio.ensure_future` replaced with `asyncio.create_task` + tracking in `_pending_persists` set. `BudgetManager.close()` awaits all pending tasks via `asyncio.gather(return_exceptions=True)`. `AgentServer._shutdown()` calls `await self._budget_manager.close()`. `AgentServer` now holds a shared `_budget_manager` instance initialized in `_init_dependencies`.
+- **HIGH-3** — RESOLVED (2026-03-23, task R2-03). `--requirepass` added to Redis command in `docker-compose.yml`. Host port binding removed entirely (Memurai occupied 6379 locally; no host exposure is stronger than 127.0.0.1 binding). All 5 consumer services verified healthy. `REDIS_PASSWORD` in `.env`, `REDIS_URL` updated to `redis://:password@redis:6379/0`.
 - **HIGH-4** — "allow" audit events are not persisted to DB; only "deny" events are. Post-restart, no durable trail of authorized trades exists. Fix: create `agent_audit_log` table and persist both outcomes.
 
-## HIGH Issues Deferred (strategies review)
+## HIGH Issues Resolved (strategies review, 2026-03-23)
 
-- **HIGH-1** — `PPO.load()` uses pickle internally (SB3 `.zip` files). No checksum verification before loading. Impact: malicious model file = arbitrary code execution. Fix: SHA-256 manifest check before `PPO.load`.
-- **HIGH-2** — `joblib.load()` for regime classifier has same pickle risk. Fix: checksum verify + payload structure check after load.
-- **HIGH-3** — `--api-key` CLI argument in 8 strategy scripts exposes `ak_live_...` keys in process list (`ps aux`) and shell history. Fix: read from env var only; `pydantic-settings` already supports this.
+- **HIGH-1** — RESOLVED (task R2-05). All four `PPO.load()` call sites already had `verify_checksum()` before loading. Added `strict: bool = True` parameter to `verify_checksum()` in `agent/strategies/checksum.py` — missing sidecar now raises `SecurityError` in strict mode instead of logging a warning. Default is `strict=True`.
+- **HIGH-2** — RESOLVED (task R2-06). `agent/strategies/regime/classifier.py` already had checksum verification and full payload structure validation (checks for `model`, `label_encoder`, `label_decoder`, `feature_names`, `seed`, `backend` keys — more thorough than the task spec's `"classifier"` key check).
+- **HIGH-3** — RESOLVED (task R2-07). Confirmed zero `--api-key` argparse definitions in any Python source file (`grep -rn "add_argument.*--api" agent/ src/ scripts/ --include="*.py"` returns empty). `classifier.py` already reads from `os.environ.get("PLATFORM_API_KEY", "")`. Stale CLAUDE.md doc examples updated.
 
 ## Auth Patterns in This Project
 

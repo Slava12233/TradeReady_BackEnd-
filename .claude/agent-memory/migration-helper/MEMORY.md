@@ -1,6 +1,6 @@
 # migration-helper — Persistent Memory
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-23 -->
 
 ## Current State
 
@@ -72,6 +72,23 @@ alembic revision --autogenerate -m "description"
 # 3. Write upgrade() and downgrade()
 # 4. ruff check alembic/versions/017_*.py
 ```
+
+## Running Alembic Against Docker
+
+The `DATABASE_URL` uses `timescaledb` as the hostname (Docker service name), which only resolves inside the Docker network. Running `alembic` on the host machine will fail with `getaddrinfo failed`.
+
+**Correct approach:** Run Alembic inside the API container:
+```bash
+docker exec aitradingagent-api-1 bash -c "cd /app && alembic upgrade head"
+docker exec aitradingagent-api-1 bash -c "cd /app && alembic current"
+```
+
+**Watch out:** The Docker image is built at a point in time. New migration files added after the image was built will NOT be in the container. If `alembic upgrade head` shows no new migrations after adding files, copy them in first:
+```bash
+docker cp alembic/versions/017_*.py aitradingagent-api-1:/app/alembic/versions/
+```
+
+**Live database state as of 2026-03-23:** All 19 migrations applied, head at `019`.
 
 ## Critical Gotchas
 

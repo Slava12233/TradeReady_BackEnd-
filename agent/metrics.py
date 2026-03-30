@@ -154,6 +154,32 @@ agent_strategy_confidence = Histogram(
 )
 
 # ---------------------------------------------------------------------------
+# Retraining metrics
+# ---------------------------------------------------------------------------
+
+agent_retrain_runs_total = Counter(
+    "agent_retrain_runs_total",
+    "Total retraining job runs",
+    ["strategy", "trigger"],
+    registry=AGENT_REGISTRY,
+)
+
+agent_retrain_duration_seconds = Histogram(
+    "agent_retrain_duration_seconds",
+    "Retraining job wall-clock duration in seconds",
+    ["strategy"],
+    buckets=[60, 300, 600, 1200, 1800, 2700, 3600, 5400, 7200],
+    registry=AGENT_REGISTRY,
+)
+
+agent_retrain_deployed_total = Counter(
+    "agent_retrain_deployed_total",
+    "Total retraining jobs where the new model was deployed (passed A/B gate)",
+    ["strategy"],
+    registry=AGENT_REGISTRY,
+)
+
+# ---------------------------------------------------------------------------
 # Health metrics
 # ---------------------------------------------------------------------------
 

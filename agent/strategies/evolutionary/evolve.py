@@ -337,45 +337,38 @@ def _save_json(path: Path, data: Any) -> None:
     logger.info("agent.strategy.evolutionary.evolve.saved_file", path=str(path))
 
 
-# Module-level variable that tracks the platform strategy ID created for the
-# champion genome during the current evolution run.  Reset to None at the
-# start of each run via run_evolution() so multiple runs in the same process
-# do not share state.
-_champion_strategy_id: str | None = None
-
-
 async def _save_champion_strategy(
     rest_client: PlatformRESTClient,
     champion: StrategyGenome,
     generation: int,
     fitness: float,
+    *,
+    strategy_id: str | None = None,
 ) -> str | None:
     """Create a platform strategy version for the champion genome.
 
-    On the first call a new strategy is created.  On subsequent calls
-    a new version is appended to the same strategy.  The strategy ID is
-    stored in the module-level ``_champion_strategy_id`` variable so it
-    persists across calls within one evolution run and is reset between runs.
+    On the first call (``strategy_id=None``) a new strategy is created.
+    On subsequent calls a new version is appended to the same strategy.
+    The caller is responsible for threading the returned strategy ID back
+    into subsequent calls so no mutable module-level state is required.
 
     Args:
         rest_client: API-key authenticated REST client.
         champion: The best genome found so far.
         generation: Current generation index (0-based) for naming.
         fitness: Best fitness score, included in change notes.
+        strategy_id: The platform strategy ID from a previous call within
+            this run, or ``None`` to create a new strategy.
 
     Returns:
         The platform strategy ID string on success, ``None`` on failure.
     """
-    global _champion_strategy_id
-
     definition = champion.to_strategy_definition()
     name = f"evo-champion-gen{generation}"
     description = (
         f"Evolutionary champion — generation {generation}, "
         f"fitness {fitness:.4f}"
     )
-
-    strategy_id: str | None = _champion_strategy_id
 
     try:
         if strategy_id is None:
@@ -392,7 +385,6 @@ async def _save_champion_strategy(
                 )
                 return None
             strategy_id = str(result.get("strategy_id", ""))
-            _champion_strategy_id = strategy_id
             logger.info(
                 "agent.strategy.evolutionary.evolve.champion_strategy_created",
                 strategy_id=strategy_id,
@@ -529,10 +521,12 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
         per-generation stats (including OOS Sharpe), and final metadata.
         This dict is written to ``results/evolution_log.json`` by the caller.
     """
-    global _champion_strategy_id
-    # Reset the module-level strategy ID so each run starts fresh and cannot
-    # accidentally re-use a strategy ID from a previous run in the same process.
-    _champion_strategy_id = None
+    # Local variable tracks the platform strategy ID across generations
+    # within this run.  Using a local variable (rather than a module-level
+    # global) prevents cross-run state contamination when multiple runs
+    # execute within the same Python process (e.g. in tests or the CLI
+    # walk-forward loop).
+    _run_champion_strategy_id: str | None = None
 
     agent_cfg = AgentConfig()  # reads agent/.env
 
@@ -674,12 +668,18 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
                 convergence.update(stats.best, best_oos_sharpe)
 
                 # Step h: Save champion genome as a new strategy version.
-                await _save_champion_strategy(
+                # Thread the run-local strategy ID through each call so the
+                # same strategy accumulates new versions rather than spawning
+                # a fresh strategy every generation.
+                saved_id = await _save_champion_strategy(
                     rest_client=rest_client,
                     champion=champion_genome,
                     generation=gen_idx,
                     fitness=champion_fitness,
+                    strategy_id=_run_champion_strategy_id,
                 )
+                if saved_id is not None:
+                    _run_champion_strategy_id = saved_id
 
                 # Record generation entry for the evolution log.
                 gen_record: dict[str, Any] = {

@@ -407,12 +407,13 @@ class RiskMiddleware:
         # the pre-correlation size is used as a safe fallback.
         # ------------------------------------------------------------------
         try:
-            final_size = await self._check_correlation(
+            corr_size: Decimal = await self._check_correlation(
                 signal=signal,
                 positions=positions,
                 current_size=final_size,
                 equity=assessment.equity,
             )
+            final_size = float(corr_size)  # float() required: ExecutionDecision.final_size_pct is float
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "agent.strategy.risk.middleware.correlation_check_error",
@@ -571,7 +572,7 @@ class RiskMiddleware:
         positions: list[dict[str, Any]],
         current_size: float,
         equity: Decimal,
-    ) -> float:
+    ) -> Decimal:
         """Reduce position size when the proposed asset is highly correlated with open positions.
 
         Fetches 20-period hourly candles for the proposed symbol and for each
@@ -616,7 +617,7 @@ class RiskMiddleware:
             # adjusted < 0.08 when BTC/ETH r > 0.70
         """
         if not positions:
-            return current_size
+            return Decimal(str(current_size))
 
         # Collect distinct symbols from existing positions (excluding the
         # proposed symbol itself to avoid self-correlation).
@@ -629,7 +630,7 @@ class RiskMiddleware:
                 seen.add(sym)
 
         if not position_symbols:
-            return current_size
+            return Decimal(str(current_size))
 
         # ----------------------------------------------------------------
         # Fetch candles concurrently — one request per symbol + proposed.
@@ -665,7 +666,7 @@ class RiskMiddleware:
                 reason="proposed symbol candles unavailable",
                 symbol=proposed_sym,
             )
-            return current_size
+            return Decimal(str(current_size))
 
         proposed_returns = returns_by_symbol[proposed_sym]
 
@@ -694,7 +695,7 @@ class RiskMiddleware:
                 max_corr=f"{max_corr:.4f}",
                 threshold=_CORRELATION_THRESHOLD,
             )
-            return current_size
+            return Decimal(str(current_size))
 
         # ----------------------------------------------------------------
         # Apply proportional size reduction: size *= (1 - max_corr).
@@ -742,7 +743,7 @@ class RiskMiddleware:
                 reduced_size = capped
 
         # Clamp to [0, 1].
-        result = float(max(Decimal("0"), min(Decimal("1"), reduced_size)))
+        result: Decimal = max(Decimal("0"), min(Decimal("1"), reduced_size))
         return result
 
     @staticmethod

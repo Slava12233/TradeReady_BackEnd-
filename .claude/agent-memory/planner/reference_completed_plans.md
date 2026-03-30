@@ -21,3 +21,4 @@ type: reference
 | Plan | Tasks | Phases | Notes |
 |------|-------|--------|-------|
 | `obsidian-integration-plan.md` | 32 | 10 | Obsidian vault, frontmatter, wikilinks, templates. Non-code plan. |
+| `recommendations-plan.md` | 36 | 5 | 5 C-level recommendations: Docker infra, 7 HIGH security, regime training E2E, test quality, continuous retraining |

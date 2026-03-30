@@ -119,34 +119,47 @@ def save_checksum(file_path: Path) -> Path:
     return checksum_path
 
 
-def verify_checksum(file_path: Path) -> bool:
+def verify_checksum(file_path: Path, *, strict: bool = True) -> bool:
     """Verify that *file_path* matches its ``.sha256`` sidecar.
 
     Behaviour:
 
-    - **No sidecar**: logs a WARNING at ``agent.strategy.checksum.no_sidecar`` and returns
-      ``True`` for backwards compatibility with pre-checksum model artifacts.
-      Callers that require strict verification should check the return value
-      and refuse to load the model when ``False`` would be safer.
-    - **Sidecar present, digest matches**: logs ``agent.strategy.checksum.verified`` at INFO
-      and returns ``True``.
-    - **Sidecar present, digest mismatches**: raises :class:`SecurityError`.
-      The caller must not proceed.
+    - **No sidecar, strict=True** (default): raises :class:`SecurityError`.
+      All production loading paths must have a sidecar; failing open on a
+      missing sidecar would allow an attacker to drop a model file without
+      a checksum and have it silently accepted.
+    - **No sidecar, strict=False**: logs a WARNING and returns ``True``.
+      Use ``strict=False`` only in development or for pre-existing model
+      artifacts that predate the checksum requirement.
+    - **Sidecar present, digest matches**: logs ``agent.strategy.checksum.verified``
+      at INFO and returns ``True``.
+    - **Sidecar present, digest mismatches**: raises :class:`SecurityError`
+      in all modes.  The caller must not proceed.
 
     Args:
         file_path: Path to the model file about to be loaded.
+        strict: When ``True`` (default), a missing ``.sha256`` sidecar raises
+            :class:`SecurityError` instead of proceeding with a warning.
 
     Returns:
-        ``True`` when verification passed (or was skipped due to missing sidecar).
+        ``True`` when verification passed.
 
     Raises:
-        SecurityError: When the computed digest does not match the stored digest.
+        SecurityError: When the sidecar is missing and ``strict=True``, or
+            when the computed digest does not match the stored digest.
         FileNotFoundError: If ``file_path`` itself does not exist.
     """
     file_path = Path(file_path)
     checksum_path = file_path.with_suffix(file_path.suffix + ".sha256")
 
     if not checksum_path.exists():
+        if strict:
+            raise SecurityError(
+                f"No .sha256 sidecar found for {file_path} "
+                f"(expected {checksum_path}). "
+                "Run save_checksum() after training to create the sidecar, "
+                "or pass strict=False to skip verification (development only)."
+            )
         logger.warning(
             "agent.strategy.checksum.no_sidecar",
             path=str(file_path),

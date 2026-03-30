@@ -56,6 +56,7 @@ from agent.config import AgentConfig
 from agent.logging_writer import LogBatchWriter
 from agent.models.ecosystem import ExecutionResult, PositionAction, TradingCycleResult
 from agent.permissions.enforcement import PermissionEnforcer
+from agent.strategies.drift import DriftDetector
 from agent.trading.signal_generator import SignalGenerator, TradingSignal
 from agent.trading.ws_manager import WSManager
 
@@ -128,6 +129,15 @@ class TradingLoop:
             :meth:`~agent.logging_writer.LogBatchWriter.add_signal` with the
             current trace ID attached.  Pass ``None`` (the default) to disable
             batch logging without affecting any other behaviour.
+        drift_detector: Optional :class:`~agent.strategies.drift.DriftDetector`
+            for monitoring strategy performance and triggering retraining when
+            concept drift is detected.  When provided, drift is checked after
+            each tick using portfolio performance metrics; a confirmed first-step
+            drift event enqueues an ensemble retrain task via Celery with a
+            1-hour Redis cooldown.  Pass ``None`` to disable drift monitoring.
+        redis_client: Optional async Redis client passed to
+            :meth:`~agent.strategies.retrain.RetrainOrchestrator.trigger_drift_retrain`
+            for cooldown enforcement.  ``None`` skips the cooldown guard.
 
     Example::
 
@@ -151,6 +161,8 @@ class TradingLoop:
         sdk_client: Any = None,  # noqa: ANN401
         batch_writer: LogBatchWriter | None = None,
         ws_manager: WSManager | None = None,
+        drift_detector: DriftDetector | None = None,
+        redis_client: Any = None,  # noqa: ANN401
     ) -> None:
         self._agent_id = agent_id
         self._config = config
@@ -159,6 +171,8 @@ class TradingLoop:
         self._sdk_client: Any = sdk_client
         self._batch_writer = batch_writer
         self._ws_manager: WSManager | None = ws_manager
+        self._drift_detector: DriftDetector | None = drift_detector
+        self._redis_client: Any = redis_client
 
         # Lifecycle state
         self._stop_event = asyncio.Event()
@@ -453,6 +467,14 @@ class TradingLoop:
         except Exception as exc:  # noqa: BLE001
             # Anomaly detection must never block the trading cycle.
             self._log.debug("agent.anomaly.detection_error", error=str(exc))
+
+        # ── 8b. Drift detection + retrain trigger ──────────────────────────
+        # Best-effort: drift monitoring must never delay or fail a tick.
+        if self._drift_detector is not None:
+            try:
+                await self._check_drift(portfolio_state, signals)
+            except Exception as exc:  # noqa: BLE001
+                self._log.debug("agent.trade.loop.drift.check_error", error=str(exc))
         trades_executed = sum(1 for e in executions if e.success)
 
         result = TradingCycleResult(
@@ -1008,6 +1030,101 @@ class TradingLoop:
                 type=anomaly_type,
                 value=round(value, 4),
                 baseline=round(baseline, 4),
+            )
+
+    async def _check_drift(
+        self,
+        portfolio_state: dict[str, Any],
+        signals: list[TradingSignal],
+    ) -> None:
+        """Feed current performance metrics into the drift detector.
+
+        Extracts Sharpe ratio, win rate, and average PnL from the portfolio
+        state returned by :meth:`_observe` and calls
+        :meth:`~agent.strategies.drift.DriftDetector.update` for each active
+        strategy.  When drift is detected for the first time on this step
+        (``drift_detected_this_step=True``), enqueues an ensemble retrain via
+        the Celery task ``src.tasks.retrain_tasks.retrain_ensemble`` with a
+        1-hour Redis cooldown per strategy.
+
+        The Celery task is dispatched as a best-effort fire-and-forget call.
+        Failure to enqueue (e.g. broker unavailable) is logged but does not
+        propagate.
+
+        Args:
+            portfolio_state: Portfolio metrics dict from :meth:`_observe`.
+                Expected keys: ``sharpe_ratio``, ``win_rate``, ``avg_pnl``.
+            signals: Signals from the current tick (used to derive per-strategy
+                names when no explicit strategy name is available).
+        """
+        if self._drift_detector is None:
+            return
+
+        # Extract performance metrics from portfolio_state with safe defaults.
+        sharpe = float(portfolio_state.get("sharpe_ratio", 0.0) or 0.0)
+        win_rate = float(portfolio_state.get("win_rate", 0.5) or 0.5)
+        avg_pnl = float(portfolio_state.get("avg_pnl", 0.0) or 0.0)
+
+        # Derive strategy name: use the dominant signal's strategy weights,
+        # or fall back to a constant "ensemble" strategy identifier.
+        strategy_name = "ensemble"
+        if signals:
+            top_signal = max(signals, key=lambda s: s.confidence, default=None)
+            if top_signal is not None and top_signal.strategy_weights:
+                # Use the highest-weighted source name as the strategy identifier.
+                top_src = max(top_signal.strategy_weights, key=lambda k: top_signal.strategy_weights[k])
+                strategy_name = f"ensemble_{top_src.lower()}"
+
+        drift_update = self._drift_detector.update(
+            strategy_name=strategy_name,
+            sharpe=sharpe,
+            win_rate=win_rate,
+            avg_pnl=avg_pnl,
+        )
+
+        if drift_update.drift_detected_this_step:
+            self._log.warning(
+                "agent.trade.loop.drift.detected",
+                strategy_name=strategy_name,
+                ph_sum=drift_update.ph_sum,
+                step_count=drift_update.step_count,
+                action="enqueue_retrain",
+            )
+            # Enqueue the ensemble retrain Celery task (fire-and-forget).
+            # The 1-hour cooldown is enforced via Redis; if Redis is unavailable
+            # the retrain still runs (fail-open for retraining).
+            try:
+                from src.tasks.retrain_tasks import retrain_ensemble  # noqa: PLC0415
+
+                retrain_ensemble.apply_async(queue="ml_training")
+                self._log.info(
+                    "agent.trade.loop.drift.retrain_enqueued",
+                    strategy_name=strategy_name,
+                    task="retrain_ensemble",
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._log.warning(
+                    "agent.trade.loop.drift.retrain_enqueue_failed",
+                    strategy_name=strategy_name,
+                    error=str(exc),
+                )
+
+            # Also enforce the Redis cooldown key directly so that if drift
+            # fires again before the Celery task completes, we skip the re-enqueue.
+            if self._redis_client is not None:
+                try:
+                    cooldown_key = f"retrain:cooldown:{strategy_name}"
+                    await self._redis_client.setex(cooldown_key, 3600, "1")
+                except Exception as exc:  # noqa: BLE001
+                    self._log.debug(
+                        "agent.trade.loop.drift.cooldown_set_failed",
+                        error=str(exc),
+                    )
+        elif drift_update.recovery_detected_this_step:
+            self._log.info(
+                "agent.trade.loop.drift.recovered",
+                strategy_name=strategy_name,
+                step_count=drift_update.step_count,
             )
 
     # ------------------------------------------------------------------

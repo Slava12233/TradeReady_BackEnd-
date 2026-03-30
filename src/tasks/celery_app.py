@@ -9,6 +9,10 @@ Beat schedule
 - ``reset_circuit_breakers``   — midnight UTC; clears all per-account daily PnL accumulators
 - ``cleanup_old_data``         — 01:00 UTC daily; prune stale orders + minute snapshots
 - ``refresh_candle_aggregates`` — every 60 seconds  (manual refresh guard; no-op if auto-policy active)
+- ``retrain_ensemble_weights``   — every 8 hours at :30 UTC (staggered from master cycle)
+- ``retrain_regime_classifier``  — weekly Sunday 04:00 UTC
+- ``retrain_genome_population``  — weekly Wednesday 05:00 UTC
+- ``retrain_rl_models``          — monthly 1st of month 03:00 UTC
 
 All tasks are routed to the default queue unless overridden.  The broker
 and result-backend both use the ``REDIS_URL`` environment variable
@@ -55,6 +59,8 @@ app = Celery(
         "agent.tasks",
         # Agent analytics tasks (src/tasks/ package)
         "src.tasks.agent_analytics",
+        # ML retraining tasks — long-running; routed to ml_training queue
+        "src.tasks.retrain_tasks",
     ],
 )
 
@@ -84,10 +90,26 @@ app.conf.update(
     task_queues=(
         Queue("default"),
         Queue("high_priority"),  # reserved for limit_order_monitor
+        Queue("ml_training"),    # reserved for long-running ML retraining tasks
     ),
     task_routes={
         "src.tasks.limit_order_monitor.run_limit_order_monitor": {
             "queue": "high_priority",
+        },
+        "src.tasks.retrain_tasks.run_retraining_cycle": {
+            "queue": "ml_training",
+        },
+        "src.tasks.retrain_tasks.retrain_ensemble": {
+            "queue": "ml_training",
+        },
+        "src.tasks.retrain_tasks.retrain_regime": {
+            "queue": "ml_training",
+        },
+        "src.tasks.retrain_tasks.retrain_genome": {
+            "queue": "ml_training",
+        },
+        "src.tasks.retrain_tasks.retrain_rl": {
+            "queue": "ml_training",
         },
     },
     # Beat — default persistent scheduler (writes celerybeat-schedule file).
@@ -222,5 +244,48 @@ app.conf.beat_schedule = {
     "settle-agent-decisions": {
         "task": "src.tasks.agent_analytics.settle_agent_decisions",
         "schedule": 300.0,  # every 5 minutes
+    },
+    # ── ML Retraining Tasks ───────────────────────────────────────────────
+    # Master retraining cycle — checks all four components for overdue
+    # retraining and runs any that are due.  Runs every 8 hours so the
+    # ensemble weights (8h interval) are always picked up on time.  Regime,
+    # genome, and RL checks are fast no-ops when not yet due.
+    "run-retraining-cycle": {
+        "task": "src.tasks.retrain_tasks.run_retraining_cycle",
+        "schedule": crontab(minute=0, hour="*/8"),  # every 8 hours at :00
+        "options": {"queue": "ml_training"},
+    },
+    # Ensemble weights retrain — every 8 hours (one full trading session).
+    # Staggered 30 minutes after the master cycle to avoid concurrent CPU
+    # contention; the master cycle already dispatches this when overdue.
+    "retrain-ensemble-weights": {
+        "task": "src.tasks.retrain_tasks.retrain_ensemble",
+        "schedule": crontab(minute=30, hour="*/8"),  # every 8 hours at :30
+        "options": {"queue": "ml_training"},
+    },
+    # Regime classifier retrain — weekly on Sunday at 04:00 UTC.
+    # Sunday is the quietest period for crypto markets; running at 04:00
+    # avoids overlap with the daily cleanup tasks (01:00–03:00 UTC).
+    "retrain-regime-classifier": {
+        "task": "src.tasks.retrain_tasks.retrain_regime",
+        "schedule": crontab(hour=4, minute=0, day_of_week=0),  # Sunday 04:00 UTC
+        "options": {"queue": "ml_training"},
+    },
+    # Genome population refresh — weekly on Wednesday at 05:00 UTC.
+    # Mid-week timing avoids the Sunday regime retrain and the Monday/Friday
+    # liquidity spikes; 05:00 UTC is off-peak for all major trading regions.
+    "retrain-genome-population": {
+        "task": "src.tasks.retrain_tasks.retrain_genome",
+        "schedule": crontab(hour=5, minute=0, day_of_week=3),  # Wednesday 05:00 UTC
+        "options": {"queue": "ml_training"},
+    },
+    # PPO RL model retrain — monthly on the 1st at 03:00 UTC.
+    # Full PPO retraining (500k timesteps) takes 30-60 min on a CPU worker.
+    # Running at 03:00 UTC on the 1st avoids overlap with daily cleanup tasks
+    # and the weekly retraining jobs (genome runs Wednesday, regime Sunday).
+    "retrain-rl-models": {
+        "task": "src.tasks.retrain_tasks.retrain_rl",
+        "schedule": crontab(hour=3, minute=0, day_of_month=1),  # 1st of month 03:00 UTC
+        "options": {"queue": "ml_training"},
     },
 }

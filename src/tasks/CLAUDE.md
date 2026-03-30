@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -21,6 +21,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `battle_snapshots.py` | Capture battle equity snapshots every 5s; auto-complete expired battles every 10s |
 | `strategy_tasks.py` | Strategy test episodes: `run_strategy_episode` (5min limit), `aggregate_test_results` (1min limit) |
 | `agent_analytics.py` | 4 agent analytics tasks: `agent_strategy_attribution` (daily), `agent_memory_effectiveness` (weekly), `agent_platform_health_report` (daily), `settle_agent_decisions` (every 5 min) |
+| `retrain_tasks.py` | 5 ML retraining tasks routed to `ml_training` queue: `run_retraining_cycle` (master, all due components), `retrain_ensemble`, `retrain_regime`, `retrain_genome`, `retrain_rl`; each with `soft_time_limit=3600`, `time_limit=3900` |
 | `__init__.py` | Package docstring (no exports) |
 
 ## Architecture & Patterns
@@ -33,13 +34,14 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 - **Result TTL**: 1 hour (`result_expires=3600`).
 - **Worker settings**: `task_acks_late=True`, `task_reject_on_worker_lost=True`, `worker_prefetch_multiplier=1`.
 - **Time limits**: 55s soft / 60s hard globally (overridden per task where needed).
-- **Queues**: `default` and `high_priority`. Only `limit_order_monitor` routes to `high_priority`.
+- **Queues**: `default`, `high_priority`, and `ml_training`. Only `limit_order_monitor` routes to `high_priority`; all five retraining tasks route to `ml_training` so long-running ML jobs do not block platform-critical tasks.
 - **Visibility timeout**: 300s (must exceed `task_time_limit`).
 
 ### Beat Schedule
 
 | Beat Entry | Task | Frequency | Queue |
 |------------|------|-----------|-------|
+| `run-retraining-cycle` | `retrain_tasks.run_retraining_cycle` | Every 8h at :00 | `ml_training` |
 | `limit-order-monitor` | `limit_order_monitor.run_limit_order_monitor` | Every 1s | `high_priority` |
 | `capture-minute-snapshots` | `portfolio_snapshots.capture_minute_snapshots` | Every 60s | default |
 | `capture-hourly-snapshots` | `portfolio_snapshots.capture_hourly_snapshots` | Every 3600s | default |
@@ -79,6 +81,7 @@ All tasks follow the same pattern: a sync Celery task function calls `asyncio.ru
 
 | Task | Soft Limit | Hard Limit |
 |------|-----------|------------|
+| `run_retraining_cycle` / `retrain_*` | 3600s (1 h) | 3900s (1 h 5 min) |
 | Global default | 55s | 60s |
 | `capture_daily_snapshots` | 110s | 120s |
 | `cleanup_old_data` | 110s | 120s |
@@ -174,6 +177,7 @@ celery -A src.tasks.celery_app beat --loglevel=info
 
 ## Recent Changes
 
+- `2026-03-23` — Added `retrain_tasks.py` with 5 ML retraining Celery tasks (`run_retraining_cycle`, `retrain_ensemble`, `retrain_regime`, `retrain_genome`, `retrain_rl`). All tasks route to new `ml_training` queue, use `asyncio.run()` bridge to `RetrainOrchestrator`, and have `soft_time_limit=3600` / `time_limit=3900`. Beat entry `run-retraining-cycle` runs every 8h. Beat schedule count: 15 → 16.
 - `2026-03-22` — Added `settle_agent_decisions` task to `agent_analytics.py` (every 5 min). Closes the feedback loop from trade outcome to agent learning: finds unresolved `AgentDecision` rows, checks if the linked order is filled, computes `realized_pnl` from `Trade` rows, writes back `outcome_pnl` + `outcome_recorded_at`. Beat schedule count: 14 → 15.
 - `2026-03-21` — Added `agent_analytics.py` with 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC — queries `agent_strategy_signals` to compute per-strategy PnL attribution), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC — measures memory retrieval hit rate), `agent_platform_health_report` (daily 06:00 UTC — aggregates agent API call latency and error rates). Beat schedule count: 11 → 14.
 - `2026-03-17` -- Initial CLAUDE.md created

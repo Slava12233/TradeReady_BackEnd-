@@ -102,6 +102,9 @@ class AsyncAgentExchangeClient:
         self._trace_id_provider = trace_id_provider
         self._jwt: str | None = None
         self._jwt_expires_at: float = 0.0  # UNIX timestamp
+        # When True, JWT login has failed (e.g. agent key used instead of account
+        # key) and the client falls back to X-API-Key-only auth for all requests.
+        self._api_key_only: bool = False
         self._http = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._timeout,
@@ -131,11 +134,35 @@ class AsyncAgentExchangeClient:
     # ------------------------------------------------------------------
 
     async def _login(self) -> None:
-        """Exchange API key + secret for a JWT; store it for subsequent calls."""
+        """Exchange API key + secret for a JWT; store it for subsequent calls.
+
+        If login fails because the key belongs to an agent (not an account),
+        the error is swallowed and ``_api_key_only`` is set to ``True`` so that
+        all subsequent requests use ``X-API-Key`` header authentication instead.
+        This allows agent API keys to work transparently without JWT login.
+        """
         response = await self._http.post(
             "/api/v1/auth/login",
             json={"api_key": self._api_key, "api_secret": self._api_secret},
         )
+        # If login fails with ACCOUNT_NOT_FOUND or INVALID_API_KEY it means
+        # the caller supplied an agent-scoped key.  Fall back to API-key-only auth.
+        if response.status_code in (401, 404):
+            body: dict[str, Any] = {}
+            try:
+                body = response.json()
+            except Exception:
+                pass
+            error_code = (body.get("error") or {}).get("code", "")
+            if error_code in ("ACCOUNT_NOT_FOUND", "INVALID_API_KEY", "AUTHENTICATION_ERROR"):
+                logger.debug(
+                    "JWT login unavailable for agent key %s (code=%s); "
+                    "falling back to X-API-Key-only auth",
+                    self._api_key[:20],
+                    error_code,
+                )
+                self._api_key_only = True
+                return
         self._raise_for_response(response)
         data: dict[str, Any] = response.json()
         self._jwt = data["token"]
@@ -143,7 +170,14 @@ class AsyncAgentExchangeClient:
         self._jwt_expires_at = time.time() + expires_in - 30  # 30-s buffer
 
     async def _ensure_auth(self) -> None:
-        """Ensure a valid JWT is available, refreshing if necessary."""
+        """Ensure a valid JWT is available, refreshing if necessary.
+
+        When ``_api_key_only`` is ``True`` (agent key fall-back), this is a no-op
+        because the persistent ``X-API-Key`` header on the httpx client is
+        sufficient for all platform endpoints.
+        """
+        if self._api_key_only:
+            return
         if self._jwt is None or time.time() >= self._jwt_expires_at:
             await self._login()
 
@@ -189,7 +223,11 @@ class AsyncAgentExchangeClient:
             AgentExchangeError subclasses: For all HTTP error responses.
         """
         await self._ensure_auth()
-        headers: dict[str, str] = {"Authorization": f"Bearer {self._jwt}"}
+        # In API-key-only mode (agent keys), rely on the persistent X-API-Key
+        # header set on the httpx client; no Authorization header is added.
+        headers: dict[str, str] = (
+            {} if self._api_key_only else {"Authorization": f"Bearer {self._jwt}"}
+        )
         if self._trace_id_provider:
             trace_id = self._trace_id_provider()
             if trace_id:

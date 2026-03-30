@@ -130,6 +130,7 @@ class AgentServer:
         self._pydantic_agent: Any = None  # pydantic_ai.Agent
         self._batch_writer: LogBatchWriter | None = None
         self._ws_manager: WSManager | None = None
+        self._budget_manager: Any = None  # BudgetManager | None (lazy import to avoid circular deps)
 
         # Lifecycle state
         self._shutdown_event: asyncio.Event = asyncio.Event()
@@ -418,6 +419,14 @@ class AgentServer:
 
         # Redis hot cache — lazy connection; errors surface on first real use
         self._redis_cache = RedisMemoryCache(config=self._config)
+
+        # Budget manager — shared, long-lived instance so that pending persist
+        # tasks created during trading activity can be tracked and drained on
+        # graceful shutdown (prevents counter snapshot loss).
+        from agent.permissions.budget import BudgetManager  # noqa: PLC0415
+
+        self._budget_manager = BudgetManager(config=self._config)
+        self._log.info("agent_server.budget_manager_ready")
 
         # Postgres memory store — requires a DB session factory
         try:
@@ -949,6 +958,14 @@ class AgentServer:
                 await self._batch_writer.stop()
             except Exception as exc:  # noqa: BLE001
                 self._log.warning("agent_server.shutdown_writer_stop_failed", error=str(exc))
+
+        # Await all pending budget persist tasks so no counter snapshot is lost
+        # when the event loop is torn down after shutdown.
+        if self._budget_manager is not None:
+            try:
+                await self._budget_manager.close()
+            except Exception as exc:  # noqa: BLE001
+                self._log.warning("agent_server.shutdown_budget_close_failed", error=str(exc))
 
         # Persist current working state
         try:

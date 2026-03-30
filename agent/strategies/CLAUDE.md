@@ -1,6 +1,6 @@
 # agent/strategies/ — Agent Trading Strategy System
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Five complementary strategy implementations that can operate independently or together through the ensemble combiner. All strategies execute against the platform's backtest or live sandbox APIs using existing SDK and REST tool integrations.
 
@@ -15,7 +15,8 @@ The `agent/strategies/` package provides a complete multi-strategy trading agent
 | `regime/` | Market regime classification (XGBoost / RandomForest) | Select the best rule-based strategy for the current market condition |
 | `risk/` | Portfolio-level risk overlay | Gate and resize every trade signal before execution |
 | `ensemble/` | Weighted meta-learner | Combine RL + EVOLVED + REGIME signals into a single `ConsensusSignal` |
-| `walk_forward.py` | Rolling walk-forward validation | Compute WFE for RL and evolutionary strategies; WFE >= 50% required to deploy |
+| `walk_forward.py` | Rolling walk-forward validation | Compute WFE for RL, evolutionary, and regime strategies; WFE >= 50% required to deploy |
+| `walk_forward_results/` | Walk-forward output | JSON reports from validation runs (e.g., `regime_wf_report.json`) |
 | `drift.py` | Distribution drift detection | `DriftDetector` (Page-Hinkley test) on log-returns; integrated into `TradingLoop._observe()` |
 | `retrain.py` | Retraining orchestrator | `RetrainOrchestrator`: 4 schedules (ensemble 8h, regime 7d, genome 7d, PPO 30d) with A/B gate |
 
@@ -383,11 +384,12 @@ The `risk/` overlay is inserted between the MetaLearner output and order executi
 - **Concurrent API calls via `asyncio.gather`** — N+1 sequential API call patterns have been replaced with `asyncio.gather` where multiple independent requests are made (e.g., fetching candles for multiple symbols simultaneously).
 - **Blocking I/O via `asyncio.to_thread`** — file system operations (model load/save, checksum read/write) are wrapped in `asyncio.to_thread` to avoid blocking the event loop.
 - **Bounded caches via `collections.deque`** — observation buffers and rolling windows use `collections.deque(maxlen=N)` to prevent unbounded memory growth during long runs.
-- **Model integrity via SHA-256 checksums** — `checksum.py` provides `save_checksum()` / `verify_checksum()` for `.zip` and `.joblib` model files. Call `save_checksum()` after every model save and `verify_checksum()` before every model load. `SecurityError` is raised on digest mismatch.
+- **Model integrity via SHA-256 checksums** — `checksum.py` provides `save_checksum()` / `verify_checksum()` for `.zip` and `.joblib` model files. Call `save_checksum()` after every model save and `verify_checksum()` before every model load. `SecurityError` is raised on digest mismatch. `verify_checksum(path, strict=True)` is the default — missing sidecars raise `SecurityError`. Pass `strict=False` only in development.
 - **No `--api-key` CLI arguments** — API keys are read exclusively from `agent/.env` via `AgentConfig`. Passing secrets on the command line would expose them in shell history and `ps` output.
 
 ## Recent Changes
 
+- `2026-03-23` — R3-01: Regime classifier trained (99.92% accuracy, WFE 97.46%, Sharpe 1.14 vs MACD 0.74). R3-04: `walk_forward_regime()` added to `walk_forward.py`. Checksum `strict=True` now default (missing sidecars raise `SecurityError`). 0 HIGH security issues remaining across all strategy files.
 - `2026-03-22` — Tasks 28/31/attribution: Added `retrain.py` (`RetrainOrchestrator`, 4 schedules, A/B gate, 57 tests), `drift.py` (`DriftDetector` Page-Hinkley test, integrated into `TradingLoop`), `ensemble/attribution.py` (`AttributionLoader`, `AttributionResult`, auto-pause via `StrategyCircuitBreaker`, 45 tests). All 37/37 Trading Agent Master Plan tasks complete.
 - `2026-03-22` — Task 29: Added `walk_forward.py` with rolling walk-forward validation. `WalkForwardConfig` (env prefix `WF_`), `WindowResult`, `WalkForwardResult` Pydantic models; `generate_windows()`, `compute_wfe()` pure functions; `run_walk_forward()` algorithm-agnostic orchestrator; `walk_forward_rl()` integration (mocked SB3 train/eval via `asyncio.to_thread`); `walk_forward_evolutionary()` integration (mocked BattleRunner via `_create_evo_battle_runner` factory); `TrainingRunner.walk_forward_train()` synchronous wrapper; `walk_forward_evolve()` in `evolve.py`. WFE < 50% triggers `overfit_warning=True` and `is_deployable=False`. Report written as JSON to `walk_forward_results/`. CLI entry point via `python -m agent.strategies.walk_forward --strategy rl`. 94 unit tests in `agent/tests/test_walk_forward.py`.
 - `2026-03-22` — Task 28: Added `retrain.py` with `RetrainOrchestrator`. Manages 4 retraining schedules: ensemble weights (8h), regime classifier (7d), genome population (7d, 2–3 new generations), PPO RL (30d, rolling 6-month window). A/B gate on all deployments (`_build_comparison` + `min_improvement` threshold). All training callables injectable for testing. 57 unit tests in `agent/tests/test_retrain.py`.

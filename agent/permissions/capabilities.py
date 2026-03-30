@@ -38,9 +38,9 @@ Example::
     caps = await manager.get_capabilities("agent-uuid")
     allowed = await manager.has_capability("agent-uuid", Capability.CAN_TRADE)
 
-    await manager.grant_capability("agent-uuid", Capability.CAN_TRADE, granted_by="account-uuid")
-    await manager.revoke_capability("agent-uuid", Capability.CAN_TRADE)
-    await manager.set_role("agent-uuid", AgentRole.LIVE_TRADER, granted_by="account-uuid")
+    await manager.grant_capability("agent-uuid", Capability.CAN_TRADE, granted_by="admin-uuid")
+    await manager.revoke_capability("agent-uuid", Capability.CAN_TRADE, granted_by="admin-uuid")
+    await manager.set_role("agent-uuid", AgentRole.LIVE_TRADER, granted_by="admin-uuid")
 """
 
 from __future__ import annotations
@@ -466,11 +466,16 @@ class CapabilityManager:
             agent_id: UUID string of the agent receiving the capability.
             capability: The :class:`Capability` to grant.
             granted_by: UUID string of the account performing the grant.
+                Must resolve to an agent with ``ADMIN`` role.
 
         Raises:
             ValueError: If *agent_id* or *granted_by* are not valid UUIDs.
+            PermissionDenied: If the grantor does not have ``ADMIN`` role or
+                if the grantor's role cannot be determined (fail-closed).
             Exception: Propagates unexpected DB errors after logging.
         """
+        from agent.permissions.enforcement import PermissionDenied  # noqa: PLC0415
+        from agent.permissions.roles import AgentRole, ROLE_HIERARCHY  # noqa: PLC0415
         from src.database.repositories.agent_permission_repo import (  # noqa: PLC0415
             AgentPermissionNotFoundError,
             AgentPermissionRepository,
@@ -483,6 +488,25 @@ class CapabilityManager:
             raise ValueError(
                 f"Invalid UUID for agent_id={agent_id!r} or granted_by={granted_by!r}"
             ) from exc
+
+        # Fail-closed: grantor must be ADMIN.  If the role lookup fails for any
+        # reason (grantor not in agents table, DB error), get_role() returns the
+        # default "viewer" role which is not ADMIN, so the check still denies.
+        grantor_role = await self.get_role(granted_by)
+        if ROLE_HIERARCHY.get(grantor_role, 0) < ROLE_HIERARCHY[AgentRole.ADMIN]:
+            logger.warning(
+                "agent.permission.grant_capability.denied_not_admin",
+                agent_id=agent_id,
+                granted_by=granted_by,
+                grantor_role=grantor_role.value,
+                capability=capability.value,
+            )
+            raise PermissionDenied(
+                f"Grantor {granted_by} is {grantor_role.value}, not ADMIN",
+                agent_id=granted_by,
+                action="grant_capability",
+                reason=f"Grantor {granted_by} is {grantor_role.value}, not ADMIN",
+            )
 
         session = await self._get_db_session()
         try:
@@ -512,7 +536,7 @@ class CapabilityManager:
                 capability=capability.value,
                 granted_by=granted_by,
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, PermissionDenied):
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(
@@ -529,6 +553,7 @@ class CapabilityManager:
         self,
         agent_id: str,
         capability: Capability,
+        granted_by: str | None = None,
     ) -> None:
         """Explicitly revoke *capability* from *agent_id* in Postgres.
 
@@ -542,11 +567,20 @@ class CapabilityManager:
         Args:
             agent_id: UUID string of the agent losing the capability.
             capability: The :class:`Capability` to revoke.
+            granted_by: UUID string of the account performing the revocation.
+                Must resolve to an agent with ``ADMIN`` role.  When ``None``
+                the operation is **always denied** (fail-closed) — callers
+                must supply a valid ADMIN grantor UUID.
 
         Raises:
-            ValueError: If *agent_id* is not a valid UUID.
+            ValueError: If *agent_id* or *granted_by* are not valid UUIDs.
+            PermissionDenied: If *granted_by* is ``None``, if the grantor does
+                not have ``ADMIN`` role, or if the grantor's role cannot be
+                determined (fail-closed).
             Exception: Propagates unexpected DB errors after logging.
         """
+        from agent.permissions.enforcement import PermissionDenied  # noqa: PLC0415
+        from agent.permissions.roles import AgentRole, ROLE_HIERARCHY  # noqa: PLC0415
         from src.database.repositories.agent_permission_repo import (  # noqa: PLC0415
             AgentPermissionNotFoundError,
             AgentPermissionRepository,
@@ -556,6 +590,38 @@ class CapabilityManager:
             agent_uuid = UUID(agent_id)
         except (ValueError, AttributeError) as exc:
             raise ValueError(f"Invalid UUID for agent_id={agent_id!r}") from exc
+
+        if granted_by is None:
+            raise PermissionDenied(
+                "revoke_capability requires a granted_by ADMIN UUID; none was supplied",
+                agent_id="",
+                action="revoke_capability",
+                reason="revoke_capability requires a granted_by ADMIN UUID; none was supplied",
+            )
+
+        try:
+            grantor_uuid = UUID(granted_by)
+        except (ValueError, AttributeError) as exc:
+            raise ValueError(f"Invalid UUID for granted_by={granted_by!r}") from exc
+
+        # Fail-closed: grantor must be ADMIN.  If the role lookup fails for any
+        # reason (grantor not in agents table, DB error), get_role() returns the
+        # default "viewer" role which is not ADMIN, so the check still denies.
+        grantor_role = await self.get_role(granted_by)
+        if ROLE_HIERARCHY.get(grantor_role, 0) < ROLE_HIERARCHY[AgentRole.ADMIN]:
+            logger.warning(
+                "agent.permission.revoke_capability.denied_not_admin",
+                agent_id=agent_id,
+                granted_by=granted_by,
+                grantor_role=grantor_role.value,
+                capability=capability.value,
+            )
+            raise PermissionDenied(
+                f"Grantor {granted_by} is {grantor_role.value}, not ADMIN",
+                agent_id=granted_by,
+                action="revoke_capability",
+                reason=f"Grantor {granted_by} is {grantor_role.value}, not ADMIN",
+            )
 
         session = await self._get_db_session()
         try:
@@ -567,11 +633,9 @@ class CapabilityManager:
                     record = await repo.get_by_agent(agent_uuid)
                     current_caps: dict[str, Any] = dict(record.capabilities or {})
                     current_role: str = record.role
-                    grantor_uuid = record.granted_by
                 except AgentPermissionNotFoundError:
                     current_caps = {}
                     current_role = self._config.default_agent_role
-                    grantor_uuid = agent_uuid  # self-grant placeholder
 
                 current_caps[capability.value] = False
                 await repo.upsert(
@@ -585,8 +649,9 @@ class CapabilityManager:
                 "agent.permission.capability_revoked",
                 agent_id=agent_id,
                 capability=capability.value,
+                granted_by=granted_by,
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, PermissionDenied):
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(
@@ -617,11 +682,16 @@ class CapabilityManager:
             role: The new :class:`~agent.permissions.roles.AgentRole` to
                 assign.
             granted_by: UUID string of the account performing the role change.
+                Must resolve to an agent with ``ADMIN`` role.
 
         Raises:
             ValueError: If *agent_id* or *granted_by* are not valid UUIDs.
+            PermissionDenied: If the grantor does not have ``ADMIN`` role or
+                if the grantor's role cannot be determined (fail-closed).
             Exception: Propagates unexpected DB errors after logging.
         """
+        from agent.permissions.enforcement import PermissionDenied  # noqa: PLC0415
+        from agent.permissions.roles import AgentRole as _AgentRole, ROLE_HIERARCHY  # noqa: PLC0415
         from src.database.repositories.agent_permission_repo import (  # noqa: PLC0415
             AgentPermissionNotFoundError,
             AgentPermissionRepository,
@@ -634,6 +704,25 @@ class CapabilityManager:
             raise ValueError(
                 f"Invalid UUID for agent_id={agent_id!r} or granted_by={granted_by!r}"
             ) from exc
+
+        # Fail-closed: grantor must be ADMIN.  If the role lookup fails for any
+        # reason (grantor not in agents table, DB error), get_role() returns the
+        # default "viewer" role which is not ADMIN, so the check still denies.
+        grantor_role = await self.get_role(granted_by)
+        if ROLE_HIERARCHY.get(grantor_role, 0) < ROLE_HIERARCHY[_AgentRole.ADMIN]:
+            logger.warning(
+                "agent.permission.set_role.denied_not_admin",
+                agent_id=agent_id,
+                granted_by=granted_by,
+                grantor_role=grantor_role.value,
+                new_role=role.value,
+            )
+            raise PermissionDenied(
+                f"Grantor {granted_by} is {grantor_role.value}, not ADMIN",
+                agent_id=granted_by,
+                action="set_role",
+                reason=f"Grantor {granted_by} is {grantor_role.value}, not ADMIN",
+            )
 
         session = await self._get_db_session()
         try:
@@ -660,7 +749,7 @@ class CapabilityManager:
                 new_role=role.value,
                 granted_by=granted_by,
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, PermissionDenied):
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception(

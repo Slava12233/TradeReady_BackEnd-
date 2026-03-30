@@ -335,23 +335,23 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
         headers=headers,
         timeout=15.0,
     ) as http:
-        # Step 8: GET /api/v1/health
-        log.info("agent.workflow.smoke_test.step_8", action="GET /api/v1/health")
+        # Step 8: GET /health — platform health endpoint (mounted without /api/v1 prefix)
+        log.info("agent.workflow.smoke_test.step_8", action="GET /health")
         try:
-            resp = await http.get("/api/v1/health")
+            resp = await http.get("/health")
             if resp.status_code == 200:
                 body = resp.json()
                 status_field = body.get("status", "<missing>")
                 steps_completed += 1
                 findings.append(
-                    f"Step 8 PASS: GET /api/v1/health returned 200 — "
+                    f"Step 8 PASS: GET /health returned 200 — "
                     f"status={status_field!r}"
                 )
                 metrics["health_status"] = status_field
                 log.info("agent.workflow.smoke_test.step_8.pass", health_status=status_field)
             else:
                 bugs_found.append(
-                    f"Step 8 FAIL: GET /api/v1/health returned HTTP {resp.status_code} "
+                    f"Step 8 FAIL: GET /health returned HTTP {resp.status_code} "
                     f"(expected 200); body={resp.text[:200]}"
                 )
                 log.warning(
@@ -361,7 +361,7 @@ async def run_smoke_test(config: AgentConfig) -> WorkflowResult:
                 )
         except httpx.RequestError as exc:
             bugs_found.append(
-                f"Step 8 FAIL: GET /api/v1/health network error — "
+                f"Step 8 FAIL: GET /health network error — "
                 f"{type(exc).__name__}: {exc}"
             )
             log.warning("agent.workflow.smoke_test.step_8.fail", error=str(exc))

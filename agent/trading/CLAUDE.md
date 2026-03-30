@@ -1,6 +1,6 @@
 # agent/trading/ — Trading Loop, Signal Generator, Executor, Monitor, Journal, Strategy Manager, A/B Testing
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Autonomous trading system: an observe-analyse-decide-execute-record cycle, multi-strategy signal generation, position monitoring, trade journaling with LLM reflections, performance tracking, and A/B test framework.
 
@@ -422,6 +422,7 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 
 ## Recent Changes
 
+- `2026-03-23` — R5-03: `DriftDetector` (Page-Hinkley test, `agent/strategies/drift.py`) wired into `TradingLoop._observe()`. Each tick feeds the current log-return into the detector; when drift is detected, `loop._on_drift_detected()` is called which logs a structured event, triggers `RetrainOrchestrator.request_retrain("regime")`, and emits a `drift_events_total` Prometheus counter increment. `TradingLoop` constructor gains optional `drift_detector: DriftDetector | None` and `retrain_orchestrator: RetrainOrchestrator | None` kwargs (both default `None` for backwards compatibility).
 - `2026-03-21` — Initial CLAUDE.md created.
 - `2026-03-21` — Logging instrumentation added: `loop.py` generates a fresh `trace_id` per tick and passes it to `LogBatchWriter` for async DB persistence; includes EMA-based anomaly detection on tick latency. `journal.py` wraps every LLM call with `log_api_call()` context manager from `agent.logging_middleware`. `journal.py` and `loop.py` both call `configure_agent_logging()` at startup.
 - `2026-03-22` — Task 24: `SignalGenerator.generate()` now applies two post-ensemble filters: (1) confidence threshold filter (configurable via `AgentConfig.signal_confidence_threshold`, default 0.55) downgrades sub-threshold signals to HOLD; (2) volume confirmation filter (`_apply_volume_filter`) rejects signals when the latest candle volume is < 50% of the 20-period rolling average. New constants: `_VOLUME_LOOKBACK = 20`, `_VOLUME_MIN_RATIO = 0.5`. New methods: `_apply_volume_filter()`, `_compute_volume_ratio()`.

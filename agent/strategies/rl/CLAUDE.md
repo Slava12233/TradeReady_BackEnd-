@@ -1,6 +1,6 @@
 # agent/strategies/rl/ — PPO Reinforcement Learning Strategy
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Trains, evaluates, and deploys a PPO portfolio agent via Stable-Baselines3 on the `TradeReady-Portfolio-v0` gymnasium environment.
 
@@ -75,14 +75,14 @@ The bridge maintains an observation buffer (`lookback_window` candles, default 3
 
 ```bash
 # Validate data availability before training
+# API key is read from PLATFORM_API_KEY env var (agent/.env)
 python -m agent.strategies.rl.data_prep \
     --base-url http://localhost:8000 \
-    --api-key ak_live_... \
     --assets BTCUSDT ETHUSDT SOLUSDT
 
 # Train a single seed
+# API key is read from PLATFORM_API_KEY env var (agent/.env)
 python -m agent.strategies.rl.train \
-    --api-key ak_live_... \
     --timesteps 500000 \
     --reward sharpe
 
@@ -123,8 +123,10 @@ python -m agent.strategies.rl.deploy \
 - **SB3's `predict()` returns a numpy array of portfolio weights, not a single action.** The `rl_weights_to_signals()` converter in `ensemble/meta_learner.py` normalizes and thresholds these before passing to `MetaLearner`.
 - **`data_prep.py` exits with code 1 if any split has insufficient history.** Do not skip this validation step — the training will fail or produce biased results if data gaps exist.
 - **Security note:** SB3 `.zip` model files contain Python pickle. Only load from trusted, locally-generated paths. Never load models from network paths or untrusted sources.
+- **`verify_checksum` now strict by default.** As of 2026-03-23, `verify_checksum(path)` raises `SecurityError` when the `.sha256` sidecar is missing (strict mode). Previously it logged a warning and returned `True`. Pass `strict=False` only in development. `PPODeployBridge.load()` and `PPODeployBridge.load_from_registry()` both call `verify_checksum()` with default strict mode before `PPO.load()`.
 
 ## Recent Changes
 
+- `2026-03-23` — Checksum strict mode: `PPODeployBridge.load()` now calls `verify_checksum(path, strict=True)` (the new default). Missing `.sha256` sidecars raise `SecurityError` rather than silently skipping. Existing `.zip` files without sidecars must have `save_checksum()` run against them before they can be loaded. `deploy.py` updated to call `save_checksum()` immediately after every `PPO.save()`.
 - `2026-03-20` — Initial CLAUDE.md created.
 - `2026-03-22` — Added `"composite"` to valid `reward_type` values. Added 5 composite-specific config fields to `RLConfig`: `composite_sortino_weight`, `composite_pnl_weight`, `composite_activity_weight`, `composite_drawdown_weight`, `composite_activity_bonus`. Updated `_build_reward()` in `train.py` and `--reward` CLI choices.

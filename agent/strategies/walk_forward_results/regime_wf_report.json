@@ -1,0 +1,88 @@
+{
+  "strategy_type": "regime",
+  "generated_at": "2026-03-23T18:19:06.277239+00:00",
+  "config": {
+    "data_start": "2024-01-01T00:00:00Z",
+    "data_end": "2025-01-01T00:00:00Z",
+    "train_months": 6,
+    "oos_months": 1,
+    "min_wfe_threshold": 0.5
+  },
+  "summary": {
+    "total_windows": 6,
+    "successful_windows": 6,
+    "mean_is_metric": 0.9954129879783374,
+    "mean_oos_metric": 0.9701107049499589,
+    "walk_forward_efficiency": 0.9745811202646985,
+    "is_deployable": true,
+    "overfit_warning": false
+  },
+  "windows": [
+    {
+      "window_index": 0,
+      "train_start": "2024-01-01T00:00:00Z",
+      "train_end": "2024-07-01T00:00:00Z",
+      "oos_start": "2024-07-01T00:00:00Z",
+      "oos_end": "2024-08-01T00:00:00Z",
+      "is_metric": 0.9988452655889145,
+      "oos_metric": 0.9957446808510638,
+      "is_successful": true,
+      "error": null
+    },
+    {
+      "window_index": 1,
+      "train_start": "2024-02-01T00:00:00Z",
+      "train_end": "2024-08-01T00:00:00Z",
+      "oos_start": "2024-08-01T00:00:00Z",
+      "oos_end": "2024-09-01T00:00:00Z",
+      "is_metric": 0.9965357967667436,
+      "oos_metric": 0.9730496453900709,
+      "is_successful": true,
+      "error": null
+    },
+    {
+      "window_index": 2,
+      "train_start": "2024-03-01T00:00:00Z",
+      "train_end": "2024-09-01T00:00:00Z",
+      "oos_start": "2024-09-01T00:00:00Z",
+      "oos_end": "2024-10-01T00:00:00Z",
+      "is_metric": 0.9954337899543378,
+      "oos_metric": 0.9691629955947136,
+      "is_successful": true,
+      "error": null
+    },
+    {
+      "window_index": 3,
+      "train_start": "2024-04-01T00:00:00Z",
+      "train_end": "2024-10-01T00:00:00Z",
+      "oos_start": "2024-10-01T00:00:00Z",
+      "oos_end": "2024-11-01T00:00:00Z",
+      "is_metric": 0.9931113662456946,
+      "oos_metric": 0.9602836879432625,
+      "is_successful": true,
+      "error": null
+    },
+    {
+      "window_index": 4,
+      "train_start": "2024-05-01T00:00:00Z",
+      "train_end": "2024-11-01T00:00:00Z",
+      "oos_start": "2024-11-01T00:00:00Z",
+      "oos_end": "2024-12-01T00:00:00Z",
+      "is_metric": 0.9942922374429224,
+      "oos_metric": 0.9295154185022027,
+      "is_successful": true,
+      "error": null
+    },
+    {
+      "window_index": 5,
+      "train_start": "2024-06-01T00:00:00Z",
+      "train_end": "2024-12-01T00:00:00Z",
+      "oos_start": "2024-12-01T00:00:00Z",
+      "oos_end": "2025-01-01T00:00:00Z",
+      "is_metric": 0.9942594718714122,
+      "oos_metric": 0.9929078014184397,
+      "is_successful": true,
+      "error": null
+    }
+  ]
+}

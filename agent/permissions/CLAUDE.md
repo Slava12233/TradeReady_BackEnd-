@@ -1,6 +1,6 @@
 # agent/permissions/ — Roles, Capabilities, Budget Limits, and Enforcement
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Four-layer permission system for trading agents: role definitions, capability management, per-agent budget tracking, and enforcement with audit logging.
 
@@ -100,9 +100,9 @@ Resolves effective capabilities by combining role-level grants with per-agent JS
 |--------|---------|-------------|
 | `get_capabilities(agent_id)` | `frozenset[Capability]` | Resolve full effective capability set; returns empty set on any error (fail-closed) |
 | `has_capability(agent_id, capability)` | `bool` | True if `capability` is in the resolved set |
-| `grant_capability(agent_id, capability)` | `None` | Upsert an explicit `true` override; invalidates Redis cache |
-| `revoke_capability(agent_id, capability)` | `None` | Upsert an explicit `false` override; invalidates Redis cache |
-| `set_role(agent_id, role)` | `None` | Update the agent's role in Postgres; invalidates Redis cache |
+| `grant_capability(agent_id, capability, granted_by)` | `None` | Upsert an explicit `true` override; invalidates Redis cache. `granted_by` must resolve to an agent with `ADMIN` role; raises `PermissionDenied` otherwise |
+| `revoke_capability(agent_id, capability, granted_by=None)` | `None` | Upsert an explicit `false` override; invalidates Redis cache. When `granted_by` is provided it must be `ADMIN` |
+| `set_role(agent_id, role, granted_by)` | `None` | Update the agent's role in Postgres; invalidates Redis cache. `granted_by` must be `ADMIN` |
 | `get_role(agent_id)` | `AgentRole` | Fetch the agent's current role from Postgres |
 
 ---
@@ -241,7 +241,7 @@ The `session_factory` is optional and only required for audit log persistence. W
 
 **Audit logging:**
 
-Denied permission events are buffered in memory and flushed to the `agent_feedback` table either when the buffer reaches 100 entries or every 30 seconds. Allowed events are not persisted (performance). The `session_factory` is required for flushing; if absent, the buffer accumulates silently.
+All permission check outcomes (both allowed and denied) are persisted to the `agent_audit_log` table (migration 020) via `AgentAuditLog` model. Records include: `agent_id`, `action`, `outcome` (`"allowed"` or `"denied"`), `reason`, `capability`, `timestamp`. The `session_factory` is required; if absent, audit rows are silently dropped. Previously buffered only denials to `agent_feedback` — now all outcomes write to the dedicated audit table.
 
 **`require(capability)` decorator:**
 
@@ -292,6 +292,7 @@ All `src.database` imports are lazy (inside methods) to keep the module importab
 
 ## Recent Changes
 
+- `2026-03-23` — R2-01: `grant_capability`, `revoke_capability`, and `set_role` now require a `granted_by` admin agent ID. The grantor's role is checked against `ADMIN` before mutation; non-admin grantors get `PermissionDenied`. R2-02: `BudgetManager` gained an async `close()` method to flush the persist timer and release internal resources cleanly. R2-04: `AgentAuditLog` model added (migration 020, `agent_audit_log` table) — all permission check outcomes are now written to the audit table (not just denials to `agent_feedback`).
 - `2026-03-22` — `PermissionDenied` promoted to `src.utils.exceptions.PermissionDenied` (a `TradingPlatformError` subclass). `enforcement.py` now imports it from `src.utils.exceptions` instead of defining it locally. Auto-serialized with `code="permission_denied"`, HTTP 403. Updated Gotchas section.
 - `2026-03-21` — Initial CLAUDE.md created (agent ecosystem Phase 2).
 - `2026-03-21` — Metrics instrumentation added: `enforcement.py` increments a `permission_denials_total` Prometheus counter (labeled by `agent_id` and `action`) on every `PermissionDenied` event. `budget.py` emits `budget_usage_ratio` gauge metrics on each `check_and_record()` call. All metrics via `agent.metrics.AGENT_REGISTRY`.

@@ -207,8 +207,8 @@ async def handle_analyze(
         if not candles:
             return f"No candle data available for {symbol}."
 
-        closes = [float(c.close) for c in candles]
-        sma_20 = sum(closes[-20:]) / min(20, len(closes))
+        closes = [Decimal(str(c.close)) for c in candles]
+        sma_20 = sum(closes[-20:]) / Decimal(str(min(20, len(closes))))
         latest_close = closes[-1]
         trend = "BULLISH" if latest_close > sma_20 else "BEARISH"
 
@@ -219,18 +219,18 @@ async def handle_analyze(
             for i in range(1, 15):
                 diff = closes[-15 + i] - closes[-15 + i - 1]
                 (gains if diff > 0 else losses).append(abs(diff))
-            avg_gain = sum(gains) / 14 if gains else 0.0
-            avg_loss = sum(losses) / 14 if losses else 0.0
+            avg_gain = sum(gains) / Decimal("14") if gains else Decimal("0")
+            avg_loss = sum(losses) / Decimal("14") if losses else Decimal("0")
             if avg_loss > 0:
                 rs = avg_gain / avg_loss
-                rsi = 100.0 - (100.0 / (1.0 + rs))
+                rsi = Decimal("100") - (Decimal("100") / (Decimal("1") + rs))
                 rsi_str = f"{rsi:.1f}"
                 if rsi >= 70:
                     rsi_str += " (overbought)"
                 elif rsi <= 30:
                     rsi_str += " (oversold)"
 
-        vol_24h = sum(float(c.volume) for c in candles[-24:]) if len(candles) >= 24 else 0.0
+        vol_24h = sum(Decimal(str(c.volume)) for c in candles[-24:]) if len(candles) >= 24 else Decimal("0")
 
         lines = [
             f"Technical Analysis — {symbol}",

@@ -15,12 +15,26 @@
 - `get_settings()` caches on first call — tests MUST patch `src.config.get_settings` before the cached instance is created
 - The `test_settings` fixture in conftest handles this correctly; always use it, never construct `Settings` manually
 
+## Celery Stub Pattern for agent/tests/ (2026-03-23)
+
+When testing `src/tasks/*.py` from `agent/tests/`, Celery is NOT installed. Use a sys.modules stub:
+1. Create `_FakeCelery` with `.tasks` dict and `.conf` with `beat_schedule`/`task_routes`
+2. Create `_FakeConf` with `.update(**kwargs)` method (celery_app calls `app.conf.update(...)`)
+3. Inject into `sys.modules["celery"]`, `sys.modules["celery.schedules"]`, `sys.modules["kombu"]` at module level before any `src.tasks.*` import
+4. Import `src.tasks.celery_app` first (registers beat_schedule), then `src.tasks.retrain_tasks` (fires `@app.task` decorators)
+5. Test `_*_async` functions directly with `patch.multiple("agent.strategies.retrain", RetrainConfig=..., RetrainOrchestrator=...)`
+6. For sync wrapper `duration_ms` tests, use `patch.object(rt, "_*_async", new=async_fn)` then call wrapper directly
+7. `ANN401` allowed on stub `__init__`/`task` methods — use `*_args: object, **_kwargs: object` to avoid it
+
+**Why:** Celery is a platform-side dependency, not in agent's pyproject.toml. Tests must use stubs.
+**How to apply:** Any `agent/tests/` file testing `src/tasks/*.py` should copy this pattern.
+
 ## Test Counts (last verified 2026-03-22)
 
 - Unit tests: 72 files, 1203 tests (`tests/unit/`) — added `test_agent_api_call_repo.py` (9 tests), `test_agent_strategy_signal_repo.py` (10 tests)
 - Integration tests: 24 files, 504 tests (`tests/integration/`)
 - Frontend tests: 207 unit tests (`Frontend/tests/`)
-- Agent package tests: 35 files (`agent/tests/`) — added `test_redis_memory_cache.py` (25 tests), `test_server_writer_wiring.py` (20 tests), `test_server_handlers.py` (54 tests)
+- Agent package tests: 37 files (`agent/tests/`) — added `test_retrain_celery.py` (29 tests, 2026-03-23); previously added `test_redis_memory_cache.py`, `test_server_writer_wiring.py`, `test_server_handlers.py`, `test_security_regressions.py`
 - Agent strategy tests: 578 tests (`agent/strategies/`)
 
 **Pre-existing failures in `agent/tests/` (245 total, as of 2026-03-21):**
@@ -81,9 +95,9 @@ All auto-generate UUIDs via `uuid4()`. Pass the same UUID explicitly to both fac
 
 ## Ruff Rules for Tests
 
-- `ANN` (type annotations) — disabled for `tests/**/*.py`
+- `ANN` (type annotations) — disabled for `tests/**/*.py` (platform tests) BUT **enabled** for `agent/tests/` — all test methods need `-> None` return annotations and typed parameters
 - `S` (security/bandit) — disabled for `tests/**/*.py`
-- No type annotations needed on test functions
+- `agent/pyproject.toml` has no per-file-ignores, so `ANN` applies to `agent/tests/` fully
 
 ## File-to-Module Mapping Convention
 

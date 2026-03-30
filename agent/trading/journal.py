@@ -841,7 +841,7 @@ class TradingJournal:
                     "market_snapshot": r.market_snapshot or {},
                     "signals": r.signals or [],
                     "risk_assessment": r.risk_assessment or {},
-                    "outcome_pnl": float(r.outcome_pnl) if r.outcome_pnl is not None else None,
+                    "outcome_pnl": str(r.outcome_pnl) if r.outcome_pnl is not None else None,
                     "created_at": r.created_at,
                 }
                 for r in rows

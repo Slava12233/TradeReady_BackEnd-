@@ -1032,6 +1032,222 @@ async def walk_forward_evolutionary(
 
 
 # ---------------------------------------------------------------------------
+# Regime walk-forward integration
+# ---------------------------------------------------------------------------
+
+
+async def walk_forward_regime(
+    seed: int = 42,
+    wf_config: WalkForwardConfig | None = None,
+    base_url: str = "http://localhost:8000",
+    api_key: str = "",
+) -> WalkForwardResult:
+    """Run walk-forward validation for the regime classifier strategy.
+
+    For each rolling window the ``RegimeClassifier`` is retrained on candles
+    in the in-sample period, then evaluated on the immediately following OOS
+    period.  The primary metric is **accuracy** (fraction of candles where the
+    classifier correctly predicts the rule-based regime label).
+
+    WFE = mean(OOS accuracy) / mean(IS accuracy).  A WFE >= 0.5 means the
+    classifier retains at least half its in-sample discriminative power on
+    unseen market conditions, indicating the learned regime boundaries
+    generalise rather than memorise.
+
+    Args:
+        seed: Master random seed for classifier reproducibility.
+        wf_config: Walk-forward configuration.  Defaults to
+            :class:`WalkForwardConfig()`.
+        base_url: Platform REST API base URL for fetching historical candles.
+        api_key: ``ak_live_...`` platform API key.
+
+    Returns:
+        :class:`WalkForwardResult` with per-window accuracy metrics and WFE.
+    """
+    import httpx  # noqa: PLC0415
+
+    import numpy as np  # noqa: PLC0415
+    import pandas as pd  # noqa: PLC0415
+
+    from agent.strategies.regime.classifier import RegimeClassifier  # noqa: PLC0415
+    from agent.strategies.regime.labeler import generate_training_data  # noqa: PLC0415
+
+    if wf_config is None:
+        wf_config = WalkForwardConfig()
+
+    # ---------------------------------------------------------------------------
+    # Helper: fetch 1-hour BTC candles for a given ISO-8601 date window.
+    # Returns a list of OHLCV dicts with keys: open, high, low, close, volume.
+    # ---------------------------------------------------------------------------
+    _CANDLES_ENDPOINT = "/api/v1/market/candles/BTCUSDT"
+
+    async def _fetch_candles(start: str, end: str) -> list[dict]:
+        """Fetch 1-hour BTC candles from the platform API for [start, end).
+
+        The platform enforces a maximum of 1000 candles per request (validated
+        at the schema level).  For windows longer than 1000 hours (~42 days),
+        we page forward using ``start_time`` + ``end_time`` range queries,
+        advancing the cursor by 1000 hours on each page.
+        """
+        start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+
+        headers: dict[str, str] = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        # Platform max per-request candle limit (enforced by Pydantic schema).
+        _MAX_LIMIT: int = 1000
+        # Step size in hours for each paginated request.
+        _STEP_HOURS: int = _MAX_LIMIT
+
+        all_candles: list[dict] = []
+        cursor = start_dt
+
+        async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+            while cursor < end_dt:
+                page_end = min(cursor + timedelta(hours=_STEP_HOURS), end_dt)
+
+                resp = await client.get(
+                    _CANDLES_ENDPOINT,
+                    params={
+                        "interval": "1h",
+                        "limit": _MAX_LIMIT,
+                        "start_time": cursor.isoformat().replace("+00:00", "Z"),
+                        "end_time": page_end.isoformat().replace("+00:00", "Z"),
+                    },
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                raw = resp.json()
+
+                # The API response is {"symbol":..., "candles":[...], "count":N}
+                if isinstance(raw, dict):
+                    page_candles = raw.get("candles", raw.get("data", []))
+                else:
+                    page_candles = raw
+
+                all_candles.extend(page_candles)
+
+                # Advance cursor to avoid gap in coverage.
+                cursor = page_end
+
+        return all_candles
+
+    # ---------------------------------------------------------------------------
+    # TrainFn: train a fresh RegimeClassifier on the IS window.
+    # Returns (classifier, is_accuracy) so the eval step can reuse is_accuracy.
+    # ---------------------------------------------------------------------------
+
+    async def _train(
+        train_start: str, train_end: str, window_index: int
+    ) -> tuple[RegimeClassifier, float, int]:
+        """Fetch IS candles, label them, train classifier; return (clf, is_accuracy, n_test)."""
+        logger.info(
+            "agent.strategies.walk_forward.regime.training",
+            window=window_index,
+            train_start=train_start,
+            train_end=train_end,
+        )
+        candles = await _fetch_candles(train_start, train_end)
+
+        if len(candles) < 60:
+            raise RuntimeError(
+                f"Window {window_index}: only {len(candles)} IS candles — need >= 60"
+            )
+
+        # generate_training_data returns (features_df, labels_series) tuple.
+        features_df, labels_series = generate_training_data(candles)
+        if features_df.empty:
+            raise RuntimeError(f"Window {window_index}: generate_training_data produced empty DataFrame")
+
+        feature_cols = ["adx", "atr_ratio", "bb_width", "rsi", "macd_hist", "volume_ratio"]
+        available = [c for c in feature_cols if c in features_df.columns]
+
+        # Temporal IS/test split: first 80% train, last 20% held out for IS accuracy.
+        split = int(len(features_df) * 0.8)
+        train_features = features_df.iloc[:split]
+        train_labels = labels_series.iloc[:split]
+        test_features = features_df.iloc[split:]
+        test_labels = labels_series.iloc[split:]
+
+        if len(train_features) < 10 or len(test_features) < 5:
+            raise RuntimeError(
+                f"Window {window_index}: insufficient samples after split "
+                f"(train={len(train_features)}, test={len(test_features)})"
+            )
+
+        clf = RegimeClassifier(seed=seed + window_index)
+        clf.train(train_features[available], train_labels)
+
+        is_metrics = clf.evaluate(test_features[available], test_labels)
+        is_accuracy = float(is_metrics.get("accuracy", 0.0))
+        n_test = int(is_metrics.get("n_samples", len(test_features)))
+
+        logger.info(
+            "agent.strategies.walk_forward.regime.training_complete",
+            window=window_index,
+            is_accuracy=round(is_accuracy, 4),
+            n_is_train=len(train_features),
+            n_is_test=n_test,
+        )
+        return clf, is_accuracy, n_test
+
+    # ---------------------------------------------------------------------------
+    # EvalFn: evaluate the IS-trained classifier on the OOS window.
+    # Returns (is_accuracy, oos_accuracy).
+    # ---------------------------------------------------------------------------
+
+    async def _eval(
+        model_artifact: tuple[RegimeClassifier, float, int],
+        oos_start: str,
+        oos_end: str,
+        window_index: int,
+    ) -> tuple[float, float]:
+        """Generate OOS regime labels and measure accuracy; return (IS, OOS) accuracy."""
+        clf, is_accuracy, _n_is_test = model_artifact
+
+        logger.info(
+            "agent.strategies.walk_forward.regime.evaluating_oos",
+            window=window_index,
+            oos_start=oos_start,
+            oos_end=oos_end,
+        )
+        oos_candles = await _fetch_candles(oos_start, oos_end)
+
+        if len(oos_candles) < 30:
+            raise RuntimeError(
+                f"Window {window_index}: only {len(oos_candles)} OOS candles — need >= 30"
+            )
+
+        # generate_training_data returns (features_df, labels_series) tuple.
+        oos_features, oos_labels = generate_training_data(oos_candles)
+        if oos_features.empty:
+            raise RuntimeError(f"Window {window_index}: OOS generate_training_data produced empty DataFrame")
+
+        feature_cols = ["adx", "atr_ratio", "bb_width", "rsi", "macd_hist", "volume_ratio"]
+        available = [c for c in feature_cols if c in oos_features.columns]
+
+        oos_metrics = clf.evaluate(oos_features[available], oos_labels)
+        oos_accuracy = float(oos_metrics.get("accuracy", 0.0))
+
+        logger.info(
+            "agent.strategies.walk_forward.regime.oos_complete",
+            window=window_index,
+            oos_accuracy=round(oos_accuracy, 4),
+            n_oos=int(oos_metrics.get("n_samples", len(oos_features))),
+        )
+        return is_accuracy, oos_accuracy
+
+    return await run_walk_forward(
+        strategy_type="regime",
+        wf_config=wf_config,
+        train_fn=_train,
+        eval_fn=_eval,
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -1046,11 +1262,11 @@ def _build_cli() -> Any:
 
     parser = argparse.ArgumentParser(
         prog="python -m agent.strategies.walk_forward",
-        description="Run walk-forward validation for RL or evolutionary strategies.",
+        description="Run walk-forward validation for RL, evolutionary, or regime strategies.",
     )
     parser.add_argument(
         "--strategy",
-        choices=["rl", "evolutionary"],
+        choices=["rl", "evolutionary", "regime"],
         required=True,
         help="Strategy type to validate.",
     )
@@ -1082,6 +1298,14 @@ def _build_cli() -> Any:
         default=42,
         help="Master random seed for reproducibility (default: 42).",
     )
+    parser.add_argument(
+        "--base-url",
+        default="http://localhost:8000",
+        help=(
+            "Platform REST API base URL (regime strategy only). "
+            "Can also be set via PLATFORM_BASE_URL env var."
+        ),
+    )
     return parser
 
 
@@ -1109,12 +1333,26 @@ async def _async_main(args: Any) -> int:
 
             rl_config = RLConfig(seed=args.seed)
             result = await walk_forward_rl(config=rl_config, wf_config=wf_config)
-        else:
+        elif args.strategy == "evolutionary":
             from agent.strategies.evolutionary.config import EvolutionConfig  # noqa: PLC0415
 
             evo_config = EvolutionConfig(seed=args.seed)
             result = await walk_forward_evolutionary(
                 evo_config=evo_config, wf_config=wf_config
+            )
+        else:
+            import os  # noqa: PLC0415
+
+            # --base-url takes precedence; fall back to env var.
+            base_url = getattr(args, "base_url", None) or os.environ.get(
+                "PLATFORM_BASE_URL", "http://localhost:8000"
+            )
+            api_key = os.environ.get("PLATFORM_API_KEY", "")
+            result = await walk_forward_regime(
+                seed=args.seed,
+                wf_config=wf_config,
+                base_url=base_url,
+                api_key=api_key,
             )
     except Exception as exc:  # noqa: BLE001
         logger.error(

@@ -231,8 +231,8 @@ def _build_observation_from_platform(
     total_position_value = 0.0
     for sym in symbols:
         pos = position_map.get(sym, {})
-        qty = float(pos.get("quantity", 0))
-        price = float(prices.get(sym, Decimal("0")))
+        qty = float(pos.get("quantity", 0))  # float() required for numpy/SB3 interop
+        price = float(prices.get(sym, Decimal("0")))  # float() required for numpy/SB3 interop
         total_position_value += qty * price
 
     obs[-1] = np.clip(total_position_value / equity_f, 0.0, 1.0)
@@ -394,7 +394,7 @@ def _weights_to_orders(
                 continue
 
             sell_qty = min(
-                float(Decimal(str(sell_value)) / price_dec),
+                float(Decimal(str(sell_value)) / price_dec),  # float() required for numpy/SB3 interop
                 current_qty,
             )
             qty_dec = Decimal(str(sell_qty)).quantize(
@@ -614,6 +614,7 @@ class PPODeployBridge:
                     prices: dict[str, Decimal] = {}
                     for sym in self._config.env_symbols:
                         raw_price = prices_raw.get(sym, prices_raw.get(sym.upper(), 0))
+                        # float() required for numpy/SB3 interop
                         prices[sym] = Decimal(str(float(raw_price))) if raw_price else Decimal("0")
 
                     # Compute weights before.
@@ -621,6 +622,7 @@ class PPODeployBridge:
                     position_map = {p.get("symbol", "").upper(): p for p in positions}
                     for sym in self._config.env_symbols:
                         pos = position_map.get(sym, {})
+                        # float() required for numpy/SB3 interop
                         qty = float(pos.get("quantity", 0))
                         price_f = float(prices.get(sym, Decimal("0")))
                         weights_before[sym] = (qty * price_f) / max(equity_f, 1e-8)
@@ -852,8 +854,8 @@ class PPODeployBridge:
                     position_map = {p.get("symbol", "").upper(): p for p in positions}
                     for sym in self._config.env_symbols:
                         pos = position_map.get(sym, {})
-                        qty = float(pos.get("quantity", 0))
-                        price_f = float(prices.get(sym, Decimal("0")))
+                        qty = float(pos.get("quantity", 0))  # float() required for numpy/SB3 interop
+                        price_f = float(prices.get(sym, Decimal("0")))  # float() required for numpy/SB3 interop
                         weights_before[sym] = (qty * price_f) / max(equity_f, 1e-8)
 
                     # Build observation and predict.

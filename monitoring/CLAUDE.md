@@ -1,8 +1,8 @@
 # monitoring/ — Grafana Dashboards and Prometheus Alert Rules
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-03-23 -->
 
-> Infrastructure monitoring configuration: 6 Grafana dashboard JSON definitions and 11 Prometheus alert rules for the agent ecosystem.
+> Infrastructure monitoring configuration: 7 Grafana dashboard JSON definitions and 11 Prometheus alert rules for the agent ecosystem.
 
 ## What This Directory Does
 
@@ -22,6 +22,7 @@ Contains all **external monitoring configuration** for the AiTradingAgent platfo
 | `dashboards/agent-memory.json` | Grafana: memory store operations, cache hit/miss ratio, retrieval latency |
 | `dashboards/agent-strategy.json` | Grafana: per-strategy signal distribution, confidence histogram, PnL attribution |
 | `dashboards/ecosystem-health.json` | Grafana: cross-agent health overview — budget utilization, permission denials, trade success rate |
+| `dashboards/retraining.json` | Grafana: continuous retraining pipeline — retrain events by component, A/B gate outcomes, drift detection rate, last retrain timestamps |
 | `provisioning/datasources/prometheus.yml` | Grafana auto-provisioned datasource — points to `http://prometheus:9090` with uid `prometheus` |
 | `provisioning/dashboards/dashboards.yml` | Grafana auto-provisioned dashboard loader — serves all JSON files from `/var/lib/grafana/dashboards` |
 
@@ -44,7 +45,7 @@ Contains all **external monitoring configuration** for the AiTradingAgent platfo
 
 - Dashboard JSON files are auto-provisioned into Grafana via `monitoring/provisioning/dashboards/dashboards.yml` — no manual import needed after the initial `docker compose up`
 - Alert rules are loaded by Prometheus via `rule_files:` in `prometheus.yml` — mounted into the container at `/etc/prometheus/rules/agent-alerts.yml`
-- All dashboards use `AGENT_REGISTRY`-scoped metric names (`agent_*` prefix) and platform metric names (`platform_*` prefix)
+- All dashboards use `AGENT_REGISTRY`-scoped metric names (`agent_*` prefix), platform metric names (`platform_*` prefix), and retrain metric names (`retrain_*` prefix for `retraining.json`)
 - Dashboards are parameterized by `agent_id` variable for per-agent drill-down
 - Two Prometheus scrape jobs: `api` (`:8000/metrics`, default registry) and `agent` (`:8001/metrics`, `AGENT_REGISTRY`). The `agent` job only has data when the agent service profile is running.
 
@@ -58,5 +59,6 @@ Contains all **external monitoring configuration** for the AiTradingAgent platfo
 
 ## Recent Changes
 
+- `2026-03-23` — R5-05: Added `dashboards/retraining.json` — 7th Grafana dashboard tracking continuous retraining pipeline: retrain event counts by component (ensemble/regime/genome/PPO), A/B gate pass/fail rates, drift detection events, time-since-last-retrain panels. Dashboard count: 6 → 7.
 - `2026-03-22` — Task 36: Fixed 3 issues: (1) Added `rule_files:` stanza to `prometheus.yml` so alert rules are actually loaded. (2) Added `agent:8001` scrape job to `prometheus.yml` for `AGENT_REGISTRY` metrics. (3) Added Grafana auto-provisioning via `monitoring/provisioning/` — datasource (Prometheus) and dashboard loader configs, with 3 new volume mounts in `docker-compose.yml`.
 - `2026-03-21` — Initial creation: 6 Grafana dashboards + 11 Prometheus alert rules added as part of Agent Logging System (34 tasks, 5 phases).

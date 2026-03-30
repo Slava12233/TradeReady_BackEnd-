@@ -40,6 +40,7 @@ Agent ecosystem tables:
 - ``AgentObservation``    — market snapshots at decision points (TimescaleDB hypertable)
 - ``AgentApiCall``        — outbound API call log for observability
 - ``AgentStrategySignal`` — per-strategy signals before ensemble combination
+- ``AgentAuditLog``       — durable audit trail for all permission check outcomes (allow + deny)
 
 All models inherit from the shared ``Base`` declarative base.
 """
@@ -3289,4 +3290,95 @@ class AgentStrategySignal(Base):
         return (
             f"<AgentStrategySignal id={self.id} agent={self.agent_id} "
             f"strategy={self.strategy_name!r} symbol={self.symbol!r} action={self.action!r}>"
+        )
+
+
+# ── AgentAuditLog ─────────────────────────────────────────────────────────────
+
+
+class AgentAuditLog(Base):
+    """Durable audit trail for all permission check outcomes.
+
+    Records every "allow" and "deny" decision made by the
+    :class:`~agent.permissions.enforcement.PermissionEnforcer` so that a
+    complete audit trail survives process restarts.
+
+    "Allow" events are higher-volume than "deny" events.  The enforcer
+    uses the same batch-flush pattern (100 entries or 30 seconds) for both
+    and supports a configurable ``audit_allow_events`` flag to disable
+    "allow" persistence when write pressure is a concern.
+
+    Attributes:
+        id:          Primary key (UUID v4, server-generated).
+        agent_id:    UUID of the agent whose action was checked.  Indexed
+                     for efficient per-agent audit queries.  Not a FK so
+                     records survive agent deletion.
+        action:      Action name string (e.g. ``"execute_trade"``,
+                     ``"grant_capability"``).
+        outcome:     Result of the check: ``"allow"`` or ``"deny"``.
+        reason:      Human-readable explanation; empty for allowed actions.
+        trade_value: USDT monetary value of the trade being authorised
+                     (``NUMERIC(20, 8)``).  Nullable for non-financial actions.
+        event_metadata: JSONB bag of caller-supplied context (e.g. symbol,
+                        portfolio_value, budget counters at check time).
+                        Stored in the ``metadata`` DB column.
+        created_at:     UTC timestamp of the permission check.  Indexed for
+                        time-range queries.
+    """
+
+    __tablename__ = "agent_audit_log"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+    )
+    action: Mapped[str] = mapped_column(
+        VARCHAR(100),
+        nullable=False,
+    )
+    outcome: Mapped[str] = mapped_column(
+        VARCHAR(10),
+        nullable=False,
+    )
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    trade_value: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    # Named 'event_metadata' in Python to avoid collision with
+    # SQLAlchemy's reserved DeclarativeBase.metadata attribute.
+    # The underlying DB column is named 'metadata'.
+    event_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('allow', 'deny')",
+            name="ck_agent_audit_log_outcome",
+        ),
+        Index("idx_agent_audit_log_agent_id", "agent_id"),
+        Index("idx_agent_audit_log_created_at", "created_at"),
+        Index("idx_agent_audit_log_agent_created", "agent_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentAuditLog id={self.id} agent={self.agent_id} "
+            f"action={self.action!r} outcome={self.outcome!r}>"
         )

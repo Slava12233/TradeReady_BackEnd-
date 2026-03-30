@@ -7,7 +7,7 @@ description: >
   needs a full project status update.
 user-invocable: true
 allowed-tools: Read, Write, Grep, Glob, Bash
-model: sonnet
+model: opus
 argument-hint: "[scope: full|progress|quality|risk|agents|roadmap]"
 ---
 

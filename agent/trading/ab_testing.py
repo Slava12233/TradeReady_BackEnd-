@@ -909,16 +909,16 @@ def _count_completed(records: deque[_TradeRecord]) -> int:
     return sum(1 for r in records if r.outcome_pnl is not None)
 
 
-def _extract_completed_pnls(records: deque[_TradeRecord]) -> list[float]:
+def _extract_completed_pnls(records: deque[_TradeRecord]) -> list[Decimal]:
     """Extract completed PnL values from a record deque.
 
     Args:
         records: Deque of :class:`_TradeRecord` instances.
 
     Returns:
-        List of realised PnL values (floats) for completed trades.
+        List of realised PnL values (Decimal) for completed trades.
     """
-    return [float(r.outcome_pnl) for r in records if r.outcome_pnl is not None]
+    return [r.outcome_pnl for r in records if r.outcome_pnl is not None]
 
 
 def _compute_variant_performance(
@@ -982,8 +982,8 @@ def _compute_variant_performance(
 
 
 def _run_significance_test(
-    pnl_a: list[float],
-    pnl_b: list[float],
+    pnl_a: list[Decimal],
+    pnl_b: list[Decimal],
     *,
     min_trades: int,
     alpha: float = _SIGNIFICANCE_ALPHA,
@@ -1019,14 +1019,17 @@ def _run_significance_test(
     if n_a < 2 or n_b < 2:
         return 1.0, False, "inconclusive"
 
-    p_value = _welch_ttest_p_value(pnl_a, pnl_b)
+    # Convert Decimal to float for scipy/pure-Python statistical test.
+    pnl_a_f = [float(p) for p in pnl_a]
+    pnl_b_f = [float(p) for p in pnl_b]
+    p_value = _welch_ttest_p_value(pnl_a_f, pnl_b_f)
     is_significant = p_value < alpha and both_ready
 
     if not is_significant:
         return p_value, False, "inconclusive"
 
-    mean_a = sum(pnl_a) / n_a
-    mean_b = sum(pnl_b) / n_b
+    mean_a = sum(pnl_a) / Decimal(str(n_a))
+    mean_b = sum(pnl_b) / Decimal(str(n_b))
     winner = "a" if mean_a >= mean_b else "b"
 
     return p_value, True, winner

@@ -48,22 +48,26 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # Enable AOF persistence + RDB snapshots for durability
+    # Enable AOF persistence + RDB snapshots for durability.
+    # requirepass enforces authentication on all connections (HIGH-3 fix).
     command: >
       redis-server
+      --requirepass ${REDIS_PASSWORD}
       --appendonly yes
       --appendfsync everysec
       --save 60 1
       --save 300 10
       --save 900 100
+    env_file: .env
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    # No host port exposed — Redis is only reachable within the Docker internal
+    # network (e.g. redis:6379 from api/celery/ingestion containers).
+    # This eliminates external attack surface entirely (stronger than 127.0.0.1 binding).
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5

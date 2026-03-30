@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 import structlog
@@ -76,7 +77,7 @@ class AttributionResult:
     agent_id: str
     strategies_loaded: int = 0
     strategies_paused: int = 0
-    attribution_pnl: dict[str, float] = field(default_factory=dict)
+    attribution_pnl: dict[str, Decimal] = field(default_factory=dict)
     new_weights: dict[str, float] = field(default_factory=dict)
     duration_ms: float = 0.0
     errors: list[str] = field(default_factory=list)
@@ -184,14 +185,17 @@ class AttributionLoader:
             agent_id=agent_id,
             window_days=window_days,
             strategies=list(attribution_pnl.keys()),
-            pnl={k: round(v, 4) for k, v in attribution_pnl.items()},
+            pnl={k: round(float(v), 4) for k, v in attribution_pnl.items()},
         )
 
         # ── Apply to MetaLearner ──────────────────────────────────────────────
+        # MetaLearner.apply_attribution_weights expects dict[str, float] since
+        # weights are signal-combining scalars, not monetary values.
         if self._meta_learner is not None:
             try:
+                attribution_pnl_float = {k: float(v) for k, v in attribution_pnl.items()}
                 new_weights = self._meta_learner.apply_attribution_weights(
-                    attribution_pnl,
+                    attribution_pnl_float,
                     min_weight=min_weight,
                 )
                 result.new_weights = {s.value: round(w, 4) for s, w in new_weights.items()}
@@ -206,7 +210,7 @@ class AttributionLoader:
         # ── Auto-pause strategies with negative 7-day PnL ────────────────────
         if self._circuit_breaker is not None:
             for strategy_name, pnl in attribution_pnl.items():
-                if pnl < 0.0:
+                if pnl < Decimal("0"):
                     try:
                         already_paused = await self._circuit_breaker.is_paused(
                             strategy_name, agent_id
@@ -306,7 +310,7 @@ class AttributionLoader:
             rows = result.all()
 
         return {
-            row.strategy_name: float(row.pnl_sum if row.pnl_sum is not None else Decimal("0"))
+            row.strategy_name: (row.pnl_sum if row.pnl_sum is not None else Decimal("0"))
             for row in rows
             if row.strategy_name
         }

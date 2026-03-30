@@ -248,6 +248,9 @@ class BudgetManager:
         # This prevents a TOCTOU race when multiple async tasks call check_budget
         # and record_trade for the same agent concurrently.
         self._locks: dict[str, asyncio.Lock] = {}
+        # Tracked fire-and-forget persist tasks so we can await them on shutdown
+        # and ensure no counter snapshots are lost when the process exits cleanly.
+        self._pending_persists: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -898,8 +901,11 @@ class BudgetManager:
                 error=str(exc),
             )
 
-        # Best-effort persist — never raises.
-        asyncio.ensure_future(self._maybe_persist(agent_id))
+        # Best-effort persist — never raises.  Task is tracked so _shutdown
+        # can await all pending persists before the process exits.
+        task = asyncio.create_task(self._maybe_persist(agent_id))
+        self._pending_persists.add(task)
+        task.add_done_callback(self._pending_persists.discard)
 
     async def check_and_record(
         self, agent_id: str, trade_value: Decimal
@@ -982,8 +988,11 @@ class BudgetManager:
                 error=str(exc),
             )
 
-        # Best-effort persist — never raises.
-        asyncio.ensure_future(self._maybe_persist(agent_id))
+        # Best-effort persist — never raises.  Task is tracked so _shutdown
+        # can await all pending persists before the process exits.
+        task = asyncio.create_task(self._maybe_persist(agent_id))
+        self._pending_persists.add(task)
+        task.add_done_callback(self._pending_persists.discard)
 
     async def get_budget_status(self, agent_id: str) -> BudgetStatus:
         """Return the current budget utilisation for *agent_id*.
@@ -1109,3 +1118,36 @@ class BudgetManager:
 
         # Invalidate limits cache so any limit changes take effect immediately.
         await self._invalidate_limits_cache(agent_id)
+
+    async def close(self) -> None:
+        """Await all pending background persist tasks before shutdown.
+
+        Called during graceful shutdown to ensure that the last counter
+        snapshot for every agent is flushed to Postgres before the process
+        exits.  Without this, any persist tasks fired after the most recent
+        :data:`_PERSIST_INTERVAL_SECONDS` checkpoint would be silently
+        dropped when the event loop is torn down.
+
+        Uses ``asyncio.gather(..., return_exceptions=True)`` so that a
+        failure in one task does not prevent the others from completing.
+        All exceptions are logged at WARNING level.
+
+        Safe to call even if ``_pending_persists`` is empty — it is a no-op
+        in that case.
+        """
+        pending = list(self._pending_persists)
+        if not pending:
+            return
+
+        logger.info(
+            "agent.budget.close_awaiting_persists",
+            count=len(pending),
+        )
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        for exc in results:
+            if isinstance(exc, BaseException):
+                logger.warning(
+                    "agent.budget.close_persist_task_failed",
+                    error=str(exc),
+                )
+        logger.info("agent.budget.close_complete")

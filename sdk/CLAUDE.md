@@ -1,6 +1,6 @@
 # AgentExchange Python SDK
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-03-23 -->
 
 > Universal Python client library for the AgentExchange AI crypto trading platform -- sync, async, and WebSocket.
 
@@ -182,4 +182,5 @@ cd sdk && ruff check . && mypy agentexchange/
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Fixed model count: 12 -> 13 frozen dataclasses (AccountInfo was undercounted)
 - `2026-03-19` -- Synced with codebase: confirmed 6 Python files and all documented items exist. No changes needed.
+- `2026-03-23` — R1-09: `AsyncAgentExchangeClient` now handles agent-key fallback for authentication. When JWT login fails with a 401 that signals the key is an agent key (not an account key), the client sets `_api_key_only=True` and uses the persistent `X-API-Key` header for all subsequent requests, bypassing the JWT flow. This allows agent keys (`ak_live_...`) to authenticate directly without a registered account login endpoint.
 - `2026-03-21` -- Added `trace_id_provider: Callable[[], str] | None = None` to `AsyncAgentExchangeClient.__init__`. When provided and the returned string is non-empty, `X-Trace-Id` is injected into every outbound request header. `agent/tools/sdk_tools.py` passes `get_trace_id` from `agent.logging` as the provider.

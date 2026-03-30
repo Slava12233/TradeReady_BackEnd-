@@ -1,6 +1,6 @@
 # agent/tests — Agent Package Unit Tests
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-03-24 -->
 
 > Unit tests for the `agent` package. All external dependencies are mocked; no running platform or LLM is required.
 
@@ -24,7 +24,7 @@ Provides isolated unit tests for the agent's configuration, output models, and t
 | `test_pair_selector.py` | 42 tests — `PairSelector` cache, filters, ranking, momentum tier, batch splitting, concurrency |
 | `__init__.py` | Empty package marker |
 
-Additional test files (all 37 master plan tasks):
+Additional test files (all 37 master plan tasks + C-level recommendations):
 - `test_kelly_hybrid_sizing.py` — Kelly/Hybrid sizer tests
 - `test_evolutionary_fitness.py` — OOS composite fitness tests
 - `test_drawdown_profiles.py` — DrawdownProfile/DrawdownTier preset tests
@@ -40,8 +40,10 @@ Additional test files (all 37 master plan tasks):
 - `test_optimize_weights.py` — weight optimizer utilities
 - `test_regime.py`, `test_regime_labeler.py` — regime features (189 total regime tests)
 - `test_risk_middleware.py` — correlation gate tests (59 total)
+- `test_security_regressions.py` — 20 regression tests for 7 security fixes (ADMIN role checks, BudgetManager.close(), audit log, checksum strict mode)
+- `test_retrain_celery.py` — 29 integration tests for `src/tasks/retrain_tasks.py` Celery task wiring and `RetrainOrchestrator` Celery bridge
 
-Total: **1400+ tests** across 50 test files in `agent/tests/`.
+Total: **2300+ tests** across 52 test files in `agent/tests/`.
 
 ## Patterns
 
@@ -106,6 +108,7 @@ Each test file uses a class-per-subject structure (e.g. `TestTradeSignal`, `Test
 
 ## Recent Changes
 
+- `2026-03-23` — Added `test_security_regressions.py` (20 tests) covering: ADMIN role check in `grant_capability`, `revoke_capability`, `set_role`; `BudgetManager.close()` resource cleanup; `AgentAuditLog` row persistence; checksum `strict=True` behavior. Added `test_retrain_celery.py` (29 tests) covering: Celery task registration, `run_retraining_cycle` dispatcher, all 4 sub-tasks, beat schedule entries, `ml_training` queue routing, `asyncio.run()` bridge. Test file count: 50 → 52. Total: 2300+ tests.
 - `2026-03-22` — ALL 37/37 Trading Agent Master Plan tasks complete. Added test files for: `test_drift_detector.py`, `test_retrain.py` (57 tests), `test_dynamic_weights.py` (55 tests), `test_ensemble_backtest_validation.py` (40 tests), `test_regime.py`, `test_regime_labeler.py`, `test_risk_middleware.py`, `test_optimize_weights.py`, `test_kelly_hybrid_sizing.py`, `test_evolutionary_fitness.py`, `test_drawdown_profiles.py`. Total: 50 test files, 1400+ tests.
 - `2026-03-22` — Task 31: Created `test_attribution.py` (45 tests) covering `MetaLearner.weights` property, `apply_attribution_weights()` (positive boost, negative shrink, min_weight floor, unknown strategy names ignored), `AttributionLoader` init variants, no-data path, data path with DB mock, auto-pause logic (negative PnL → `StrategyCircuitBreaker.pause()` with 48h TTL, already-paused skip, all-negative pauses all), error capture (DB errors, CB errors, ML errors never raise), `EnsembleRunner.load_attribution()` integration (no-op before initialize, wires meta_learner and circuit_breaker). Fixed: non-UUID agent IDs accepted in tests via try/except in `_fetch_attribution`.
 - `2026-03-22` — Task 15: Created `test_ensemble_backtest_validation.py` (40 tests) covering `EnsembleReport` new financial metric fields, `BacktestValidationReport` model, `build_validation_report()` acceptance criteria (5 criteria, all pass/fail paths), `EnsembleRunner._fetch_backtest_metrics()` (success, nested/flat response, HTTP errors, bad session IDs, missing keys, non-numeric values), `_build_report()` platform_metrics propagation, `run_backtest()` end-to-end metrics attachment, and `_cli_main()` backtest mode dual-file output.

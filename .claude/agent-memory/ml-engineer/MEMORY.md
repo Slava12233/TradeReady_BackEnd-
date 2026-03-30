@@ -27,7 +27,9 @@ Five complementary strategies that can operate independently or together through
 
 ## Regime Detection (`agent/strategies/regime/`)
 - 4 regime types: `TRENDING` (ADX > 25), `HIGH_VOLATILITY` (ATR/close > 2× median), `LOW_VOLATILITY` (ATR/close < 0.5× median), `MEAN_REVERTING` (remainder)
-- `RegimeClassifier`: 5-feature input (ADX, ATR/close, RSI, MACD line, close-vs-SMA20). XGBoost preferred; falls back to `RandomForestClassifier`
+- `RegimeClassifier`: **6-feature** input (ADX, ATR/close, BB width, RSI, MACD histogram, volume_ratio). XGBoost preferred; falls back to `RandomForestClassifier`
+- Trained model in `agent/strategies/regime/models/regime_classifier.joblib` — 12,000 BTC 1h candles, 99.92% test accuracy (2026-03-23). Checksum sidecar present and verified.
+- Walk-forward validation (R3-04, 2026-03-23): WFE = **97.46%** (6/6 windows, IS=99.54%, OOS=97.01%). Deployable: True.
 - `RegimeSwitcher.step(candles) -> (RegimeType, strategy_id, switched: bool)`. Cooldown default 20 candles — will not switch more than once per cooldown period regardless of confidence
 - Persist via joblib
 
@@ -88,6 +90,12 @@ Five complementary strategies that can operate independently or together through
 - Bounded caches via `collections.deque(maxlen=N)` for observation buffers
 - Model integrity via SHA-256: call `save_checksum()` after every model save, `verify_checksum()` before every model load; raises `SecurityError` on mismatch
 - Always call `env.close()` at end of training to finalize `TrainingTracker` run on platform
+
+## Platform API Candles / Backtest Keys (2026-03-23)
+- Candles endpoint `GET /api/v1/market/candles/{symbol}` supports `start_time`/`end_time` query params (NOT `start`/`end`) — max 1000 per request, page forward in 1000-hour steps
+- `POST /api/v1/backtest/create` requires an **agent-scoped** API key (`ak_live_...` from the agents table) — the account-level `PLATFORM_API_KEY` returns 500; use `MOMENTUM_AGENT_API_KEY` from `agent/.env`
+- `walk_forward.py` now supports `--strategy regime` (added 2026-03-23): trains a fresh `RegimeClassifier` per IS window, evaluates OOS accuracy, WFE = mean(OOS)/mean(IS)
+- `generate_training_data()` in `labeler.py` returns `tuple[pd.DataFrame, pd.Series]` — unpack as `features_df, labels_series = generate_training_data(candles)`
 
 ## Walk-Forward Validation (`agent/strategies/walk_forward.py`)
 - `WalkForwardConfig` (Pydantic BaseSettings, env prefix `WF_`): `data_start`, `data_end`, `train_months` (default 6), `oos_months` (default 1), `min_wfe_threshold` (default 0.5), `results_dir`

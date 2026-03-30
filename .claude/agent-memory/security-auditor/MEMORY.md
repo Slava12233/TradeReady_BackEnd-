@@ -7,6 +7,7 @@
 | `agent/permissions/` (roles, capabilities, budget, enforcement) | 2026-03-20 | 4 CRITICAL fixed; 4 HIGH deferred |
 | `agent/strategies/` (rl, evolutionary, regime, risk, ensemble) | 2026-03-20 | 0 CRITICAL; 3 HIGH deferred; overall CONDITIONAL PASS |
 | Phase 3 logging: `src/api/middleware/audit.py`, `agent/logging_writer.py`, `src/api/middleware/logging.py`, `sdk/agentexchange/async_client.py`, `agent/tools/rest_tools.py` | 2026-03-21 | 0 CRITICAL; 1 HIGH (unvalidated X-Trace-Id); 3 MEDIUM; 3 LOW; CONDITIONAL PASS |
+| R2-01 through R2-08 fix verification (all HIGH recommendations) | 2026-03-23 | 0 CRITICAL; 1 HIGH (R2-04 partial — enforcement.py still routes to agent_feedback not agent_audit_log); 1 MEDIUM (pgAdmin default password); 2 LOW; CONDITIONAL PASS |
 
 ## Areas NOT Yet Audited (as of 2026-03-21)
 
@@ -46,6 +47,10 @@
 - Operations: `INCR` + `EXPIRE 60` (sliding per-minute window)
 - Limit headers returned on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 - No rate limiting on `request_escalation` (LOW issue from permissions review)
+
+## R2-04 Remaining Gap (as of 2026-03-23)
+
+`enforcement.py._persist_audit_entries()` still writes to `AgentFeedback` (not `AgentAuditLog`). The `AgentAuditLogRepository` exists but is not wired. Allow events are silently dropped via `continue` on line 438 regardless of the `audit_allow_events` constructor flag. Fix requires: import `AgentAuditLog` + `AgentAuditLogRepository`, map `AuditEntry.result` → `outcome`, persist both outcomes, honor `self._audit_allow_events`.
 
 ## Passed Checks (stable — no need to re-audit unless code changes)
 

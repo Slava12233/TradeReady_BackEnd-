@@ -1,18 +1,19 @@
 # deploy-checker — Persistent Memory
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-23 -->
 
 ## Docker Services (docker-compose.yml)
 
-**Core services (always up):**
-- `db` — TimescaleDB (PostgreSQL extension, port 5432)
-- `redis` — Redis (port 6379)
+**Core services (always up) — 9 total:**
+- `timescaledb` — TimescaleDB (PostgreSQL 16 + TimescaleDB extension, port 5432)
+- `redis` — Redis 7 (port 6379)
 - `api` — FastAPI app via uvicorn (port 8000)
-- `worker` — Celery worker
-- `beat` — Celery beat scheduler
-- `price_ingestion` — Price ingestion service
+- `ingestion` — Price ingestion service (no external port)
+- `celery` — Celery worker (queues: default, high_priority)
+- `celery-beat` — Celery beat scheduler
+- `pgadmin` — pgAdmin 4 web UI (port 5050)
 - `prometheus` — Prometheus metrics scraper (port 9090)
-- `grafana` — Grafana dashboards (port 3000)
+- `grafana` — Grafana dashboards (port **3001**, mapped from container 3000)
 
 **Profile-gated (opt-in):**
 - `agent` — Platform testing agent; started with `--profile agent`; reads `agent/.env`
@@ -59,6 +60,9 @@
 - `alembic upgrade head` must run before first API start; current head is migration `019`
 - Frontend build requires `NEXT_PUBLIC_*` vars at build time (not just runtime)
 - No migration 011 in chain — gap is intentional (010 → 012)
+- **DB volume password mismatch:** If `timescaledb_data` volume existed before `.env` was updated, the stored password hash won't match. Fix: `docker exec <container> psql -U agentexchange -d agentexchange -c "ALTER USER agentexchange WITH PASSWORD '<new_pw>';"` — peer auth via docker exec bypasses password check.
+- **API health "degraded" on startup is normal:** `/health` returns `degraded` with stale pair list when ingestion just started. `ingestion_active: true` + Redis/DB connected confirms healthy state. Prices populate within minutes.
+- **`docker exec psql` uses peer/Unix socket auth** — does NOT test TCP password auth. Use `psql postgresql://user:pass@localhost:5432/db` to test real auth path.
 
 ## Access Points
 
@@ -67,7 +71,9 @@
 | API | `http://localhost:8000` |
 | Swagger | `http://localhost:8000/docs` |
 | Prometheus | `http://localhost:9090` |
-| Grafana | `http://localhost:3000` |
-| Frontend | `http://localhost:3000` (pnpm dev) |
+| Grafana | `http://localhost:3001` (host port 3001 → container 3000) |
+| pgAdmin | `http://localhost:5050` |
+| Frontend | `http://localhost:3000` (pnpm dev, not in compose) |
 | WebSocket | `ws://localhost:8000/ws/v1?api_key=...` |
+
 - [project_monitoring_stack.md](project_monitoring_stack.md) — Prometheus + Grafana monitoring config patterns and common issues

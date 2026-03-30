@@ -1,6 +1,6 @@
 # Database Repositories
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-24 -->
 
 > Async repository layer providing typed CRUD methods for all database models; the sole interface between service code and SQLAlchemy/TimescaleDB.
 
@@ -28,6 +28,7 @@ Every database table has a corresponding repository class that encapsulates all 
 | `waitlist_repo.py` | Single-method repository for the `waitlist_entries` table -- add email to waitlist with duplicate detection |
 | `agent_api_call_repo.py` | `AgentApiCallRepository` -- insert and query `agent_api_calls` rows: bulk save, list by agent/trace_id, aggregate latency/cost stats |
 | `agent_strategy_signal_repo.py` | `AgentStrategySignalRepository` -- insert and query `agent_strategy_signals` rows: bulk save, list by agent/source/action, daily attribution query |
+| `agent_audit_log_repo.py` | `AgentAuditLogRepository` -- insert and query `agent_audit_log` rows: permission check outcomes (allow + deny), by agent/action/time range |
 
 ## Architecture & Patterns
 

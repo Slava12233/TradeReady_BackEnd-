@@ -419,7 +419,7 @@ The agent test suite is independent of the main platform test suite in `tests/`.
 
 `asyncio_mode = "auto"` is configured in `agent/pyproject.toml` — no `@pytest.mark.asyncio` decorator needed on async tests.
 
-The full agent test suite (including `agent/strategies/` and all 37 master plan tasks) covers 2200+ tests across 50 test files in `agent/tests/`.
+The full agent test suite (including `agent/strategies/`, all 37 master plan tasks, and C-level recommendations) covers 2300+ tests across 52 test files in `agent/tests/`.
 
 ## Gotchas and Pitfalls
 
@@ -433,7 +433,7 @@ The full agent test suite (including `agent/strategies/` and all 37 master plan 
 - **Workflow failures are non-crashing**. All workflow runners catch exceptions per-step and append them to `bugs_found` or `findings`. The runner always returns a valid `WorkflowResult`. Only critical setup failures (e.g., no backtest `session_id`) trigger an early return with `status="fail"`.
 - **`platform_root` is computed**. `AgentConfig.platform_root` is a `@computed_field` that returns `Path(__file__).parent.parent.resolve()`. It is the repo root (parent of `agent/`). This is used as the MCP server subprocess `cwd`.
 - **Report files accumulate in `agent/reports/`**. The directory is `.gitignore`d. Each run appends timestamped files; old reports are not cleaned up automatically.
-- **Model files are checksum-verified before loading**. `agent/strategies/checksum.py` provides `save_checksum()` / `verify_checksum()` utilities that write and check SHA-256 `.sha256` sidecar files. `verify_checksum()` raises `SecurityError` on digest mismatch. Missing sidecars produce a WARNING but do not block loading (backwards compatibility). Call `save_checksum()` immediately after saving any `.zip` or `.joblib` model file.
+- **Model files are checksum-verified before loading**. `agent/strategies/checksum.py` provides `save_checksum()` / `verify_checksum()` utilities that write and check SHA-256 `.sha256` sidecar files. `verify_checksum()` raises `SecurityError` on digest mismatch. As of 2026-03-23, `strict=True` is the default — missing sidecars also raise `SecurityError` (previously only logged a warning). Call `save_checksum()` immediately after saving any `.zip` or `.joblib` model file. Pass `strict=False` only in development for pre-existing files.
 - **No `--api-key` CLI argument in strategy scripts**. API keys are read from `agent/.env` via `AgentConfig` (pydantic-settings) — they are never passed as command-line arguments, which would expose secrets in shell history and process listings.
 
 ## Sub-CLAUDE.md Index
@@ -455,6 +455,7 @@ Each subdirectory has its own `CLAUDE.md` with full details. Read the local file
 
 ## Recent Changes
 
+- `2026-03-23` — C-level recommendations (39 tasks): 0 HIGH security issues remaining. ADMIN role checks added to `grant_capability`/`set_role`/`revoke_capability`. `BudgetManager.close()` added. `AgentAuditLog` model + migration 020. DriftDetector wired into `TradingLoop`. `retrain_tasks.py` Celery tasks wired (5 tasks, `ml_training` queue). Regime classifier trained (99.92% accuracy). `retraining.json` Grafana dashboard (7th). Checksum strict mode. 49 new tests (20 security regression + 29 retrain integration). Updated total: 2300+ tests, 52 files.
 - `2026-03-20` — Initial CLAUDE.md created.
 - `2026-03-20` — Added Sub-CLAUDE.md Index with references to all 5 sub-module files.
 - `2026-03-20` — Added `strategies/` directory to Directory Structure. Added strategy-specific optional dependencies table. Added `agent/strategies/CLAUDE.md` to Sub-CLAUDE.md Index.

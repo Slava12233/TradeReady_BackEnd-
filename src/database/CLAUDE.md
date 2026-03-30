@@ -1,6 +1,6 @@
 # Database Layer
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-03-23 -->
 
 > SQLAlchemy ORM models, async session management, and repository pattern for TimescaleDB/PostgreSQL.
 
@@ -8,7 +8,7 @@
 
 This module defines the entire data layer for the AI Agent Crypto Trading Platform. It contains:
 
-1. **ORM models** (`models.py`) -- all 24 table definitions using SQLAlchemy 2.0 mapped columns (18 original + 6 strategy/training tables)
+1. **ORM models** (`models.py`) -- all 27 table definitions using SQLAlchemy 2.0 mapped columns (18 original + 6 strategy/training tables + 3 agent ecosystem tables)
 2. **Session management** (`session.py`) -- async engine, session factory, and raw asyncpg pool as lazy singletons
 3. **Repository classes** (`repositories/`) -- data access layer with one repository per domain entity (covered in `repositories/CLAUDE.md`)
 
@@ -18,7 +18,7 @@ The database is **TimescaleDB** (PostgreSQL extension). Four tables are hypertab
 
 | File | Purpose |
 |------|---------|
-| `models.py` | All 24 ORM model classes inheriting from shared `Base` |
+| `models.py` | All 27 ORM model classes inheriting from shared `Base` |
 | `session.py` | Async engine, `async_sessionmaker`, raw `asyncpg` pool, `init_db()`/`close_db()` lifecycle |
 | `__init__.py` | Empty (package marker only) |
 | `repositories/` | One repository class per domain entity (has its own CLAUDE.md) |
@@ -53,6 +53,7 @@ All models inherit from `Base` (a plain `DeclarativeBase`). No mixins or abstrac
 - `AgentStrategySignal` -- per-step strategy signal log: source, action, confidence (migration 018)
 - `AgentDecision.trace_id` -- new column on existing model linking decisions to distributed traces (migration 018)
 - `AgentFeedback.status`/`.resolution` -- feedback lifecycle columns with CHECK constraint (migration 019)
+- `AgentAuditLog` -- durable audit trail for all permission check outcomes (allow + deny): `agent_id`, `action`, `outcome`, `reason`, `capability`, `timestamp` (migration 020)
 
 **Backtesting:**
 - `BacktestSession` -- run config, progress, and final metrics (JSONB)
@@ -113,7 +114,7 @@ Trading tables (`balances`, `orders`, `trades`, `positions`, `portfolio_snapshot
 | Export | Description |
 |--------|-------------|
 | `Base` | Declarative base for Alembic `target_metadata` |
-| 26 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode`, `AgentApiCall`, `AgentStrategySignal` |
+| 27 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode`, `AgentApiCall`, `AgentStrategySignal`, `AgentAuditLog` |
 
 ## Dependencies
 
@@ -156,5 +157,6 @@ Tests use mocked sessions from `tests/conftest.py`. The `get_async_session` depe
 
 ## Recent Changes
 
+- `2026-03-23` — Migration 020: added `AgentAuditLog` model (`agent_audit_log` table) for durable, complete permission audit trail (all outcomes, not just denials). 3 indexes on `agent_id`, `created_at`, and `(agent_id, created_at)` composite. Model count: 26 → 27. Alembic head: 020.
 - `2026-03-21` — Migration 018: added `AgentApiCall` and `AgentStrategySignal` tables; added `trace_id` column to `agent_decisions`. Migration 019: added `status`/`resolution` lifecycle columns to `agent_feedback` with CHECK constraint. Model count: 24 → 26.
 - `2026-03-17` -- Initial CLAUDE.md created

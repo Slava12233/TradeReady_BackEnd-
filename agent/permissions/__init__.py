@@ -61,9 +61,9 @@ Quick usage::
     cap_manager = CapabilityManager(config=config)
     allowed = await cap_manager.has_capability("agent-uuid", Capability.CAN_TRADE)
     caps = await cap_manager.get_capabilities("agent-uuid")
-    await cap_manager.set_role("agent-uuid", AgentRole.LIVE_TRADER, granted_by="account-uuid")
-    await cap_manager.grant_capability("agent-uuid", Capability.CAN_ADJUST_RISK, granted_by="account-uuid")
-    await cap_manager.revoke_capability("agent-uuid", Capability.CAN_TRADE)
+    await cap_manager.set_role("agent-uuid", AgentRole.LIVE_TRADER, granted_by="admin-uuid")
+    await cap_manager.grant_capability("agent-uuid", Capability.CAN_ADJUST_RISK, granted_by="admin-uuid")
+    await cap_manager.revoke_capability("agent-uuid", Capability.CAN_TRADE, granted_by="admin-uuid")
 
     # --- Budget checks ---
     budget_manager = BudgetManager(config=config)
