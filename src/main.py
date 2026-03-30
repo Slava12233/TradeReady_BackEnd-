@@ -164,18 +164,15 @@ def create_app() -> FastAPI:
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    # Explicit origins list so that allow_credentials=True works correctly.
-    # Browsers reject responses with `Access-Control-Allow-Origin: *` when
-    # credentials (cookies / auth headers) are involved; explicit origins are
-    # required in that case.  Add production domains here or via env var.
+    # Origins loaded from CORS_ORIGINS env var (comma-separated).
+    # Defaults to localhost for development; set to production domain in .env.
+    from src.config import get_settings  # noqa: PLC0415
+
+    _settings = get_settings()
+    _origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:3001",
-        ],
+        allow_origins=_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

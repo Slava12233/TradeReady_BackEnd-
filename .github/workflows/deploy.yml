@@ -21,11 +21,50 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd ~/TradeReady_BackEnd-
-            git pull origin V0.0.1
+
+            echo "=== Record rollback point ==="
+            ROLLBACK_COMMIT=$(git rev-parse HEAD)
+            echo "$ROLLBACK_COMMIT" > /tmp/last-deploy-rollback.txt
+            echo "Rollback commit: $ROLLBACK_COMMIT"
+
+            echo "=== Database backup ==="
+            mkdir -p ~/backups
+            docker compose exec -T timescaledb pg_dump \
+              -U agentexchange -d agentexchange \
+              --no-owner --no-acl \
+              | gzip > ~/backups/pre-deploy-$(date +%Y%m%d-%H%M%S).sql.gz
+            echo "Backup saved"
+
+            echo "=== Pull latest main ==="
+            git fetch origin main
+            git checkout main
+            git pull origin main
+
+            echo "=== Build application images ==="
             docker compose build api ingestion celery
-            docker compose up -d api ingestion celery celery-beat
+
+            echo "=== Run database migrations ==="
             docker compose exec -T api alembic upgrade head
+
+            echo "=== Rolling restart ==="
+            docker compose up -d celery-beat
+            docker compose up -d celery
             sleep 5
-            curl -sf http://localhost:8000/health || exit 1
-            echo "Deploy successful - $(date)"
+            docker compose up -d api
+            sleep 5
+            docker compose up -d ingestion
+
+            echo "=== Health check ==="
+            sleep 10
+            curl -sf http://localhost:8000/health || {
+              echo "HEALTH CHECK FAILED - rolling back to $ROLLBACK_COMMIT"
+              git checkout "$ROLLBACK_COMMIT"
+              docker compose build api ingestion celery
+              docker compose up -d api ingestion celery celery-beat
+              docker compose exec -T api alembic downgrade -3
+              exit 1
+            }
+
+            echo "=== Deploy successful - $(date) ==="

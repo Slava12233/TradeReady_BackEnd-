@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
     api_base_url: str = Field(default="https://api.agentexchange.com")
 
+    # ── CORS ──────────────────────────────────────────────────────────────────
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
+        description="Comma-separated list of allowed CORS origins.",
+    )
+
     # ── Authentication ────────────────────────────────────────────────────────
     jwt_secret: str = Field(
         description="Secret key for JWT signing.  Must be at least 32 characters.",

@@ -22,3 +22,9 @@ type: reference
 |------|-------|--------|-------|
 | `obsidian-integration-plan.md` | 32 | 10 | Obsidian vault, frontmatter, wikilinks, templates. Non-code plan. |
 | `recommendations-plan.md` | 36 | 5 | 5 C-level recommendations: Docker infra, 7 HIGH security, regime training E2E, test quality, continuous retraining |
+
+## Deployment Plans
+
+| Plan | File | Branch | Key Issues | Created |
+|------|------|--------|------------|---------|
+| V.0.0.2 Production Deploy | `development/deployment-plan-v002.md` | V.0.0.2 -> main | deploy.yml pulls wrong branch, CORS hardcoded, 3 additive migrations (018-020), no rollback procedure | 2026-03-30 |
