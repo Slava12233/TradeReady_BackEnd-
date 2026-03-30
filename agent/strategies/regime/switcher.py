@@ -174,7 +174,7 @@ class RegimeSwitcher:
     # Core public API
     # ------------------------------------------------------------------
 
-    def detect_regime(self, candles: list[dict]) -> tuple[RegimeType, float]:
+    def detect_regime(self, candles: list[dict]) -> tuple[RegimeType, float]:  # type: ignore[type-arg]
         """Compute features from ``candles`` and call the classifier.
 
         Args:
@@ -295,7 +295,7 @@ class RegimeSwitcher:
         """
         return self._strategy_map[self.current_regime]
 
-    def step(self, candles: list[dict]) -> tuple[RegimeType, str, bool]:
+    def step(self, candles: list[dict]) -> tuple[RegimeType, str, bool]:  # type: ignore[type-arg]
         """Process a new batch of candles, switching regime if criteria are met.
 
         This is the primary entry point for the agent's decision loop.  Call
@@ -394,7 +394,7 @@ class RegimeSwitcher:
 # ---------------------------------------------------------------------------
 
 
-def _make_synthetic_candles(n: int, seed: int = 42) -> list[dict]:
+def _make_synthetic_candles(n: int, seed: int = 42) -> list[dict]:  # type: ignore[type-arg]
     """Generate a synthetic OHLCV candle stream with regime variation.
 
     The stream is divided into four equal segments, each mimicking a different
@@ -412,7 +412,7 @@ def _make_synthetic_candles(n: int, seed: int = 42) -> list[dict]:
         List of OHLCV dicts ordered oldest to newest.
     """
     rng = np.random.default_rng(seed)
-    candles: list[dict] = []
+    candles: list[dict] = []  # type: ignore[type-arg]
     close = 50000.0
     segment_size = n // 4
 
@@ -448,7 +448,7 @@ def _make_synthetic_candles(n: int, seed: int = 42) -> list[dict]:
     return candles
 
 
-def _train_demo_classifier(candles: list[dict], seed: int = 42) -> RegimeClassifier:
+def _train_demo_classifier(candles: list[dict], seed: int = 42) -> RegimeClassifier:  # type: ignore[type-arg]
     """Train a RegimeClassifier on the provided candles for the demo.
 
     Uses the first 80% of candles for training and the rest for evaluation.

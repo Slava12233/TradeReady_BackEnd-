@@ -405,7 +405,7 @@ def _detect_gaps(
 
     # Flush trailing gap.
     if gap_run_start is not None and gap_run_count > 0:
-        gap = _flush_gap(gap_run_start, gap_run_count, gap_run_last)  # type: ignore[possibly-undefined]
+        gap = _flush_gap(gap_run_start, gap_run_count, gap_run_last)
         if gap is not None:
             gaps.append(gap)
 
@@ -735,7 +735,7 @@ async def validate_data(
                 # Re-raise unexpected errors so the caller sees them.
                 raise result
             else:
-                asset_reports.append(result)
+                asset_reports.append(result)  # type: ignore[arg-type]
 
     ready_assets = [a.symbol for a in asset_reports if a.ready]
     unready_assets = [a.symbol for a in asset_reports if not a.ready]

@@ -528,7 +528,7 @@ async def run_evolution(cfg: EvolutionConfig) -> dict[str, Any]:
     # walk-forward loop).
     _run_champion_strategy_id: str | None = None
 
-    agent_cfg = AgentConfig()  # reads agent/.env
+    agent_cfg = AgentConfig()  # type: ignore[call-arg]  # reads agent/.env
 
     # Log the window split for operator visibility.
     is_start, split, oos_end = cfg.is_split

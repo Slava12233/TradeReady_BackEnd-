@@ -258,7 +258,7 @@ class EvolutionConfig(BaseSettings):
             ValueError: If ``end`` is not after ``historical_start``.
         """
         # ``info.data`` is only populated when ``historical_start`` validated first.
-        start: date | None = getattr(info, "data", {}).get("historical_start")  # type: ignore[union-attr]
+        start: date | None = getattr(info, "data", {}).get("historical_start")
         if start is not None and end <= start:
             raise ValueError(
                 f"historical_end ({end}) must be after historical_start ({start})"

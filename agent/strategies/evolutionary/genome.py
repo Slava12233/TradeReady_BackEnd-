@@ -198,7 +198,7 @@ class StrategyGenome(BaseModel):
         n_pairs = rng.randint(1, len(AVAILABLE_PAIRS))
         sampled_pairs = rng.sample(AVAILABLE_PAIRS, k=n_pairs)
 
-        return cls(**scalar_vals, **int_vals, pairs=sampled_pairs)
+        return cls(**scalar_vals, **int_vals, pairs=sampled_pairs)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
     # Vector conversion — for evolutionary operators

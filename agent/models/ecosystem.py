@@ -93,7 +93,7 @@ class TradeDecision(BaseModel):
         ...,
         description="Full LLM reasoning chain that produced the decision.",
     )
-    signals: dict = Field(
+    signals: dict = Field(  # type: ignore[type-arg]
         default_factory=dict,
         description="Strategy signal values that fed into the decision.",
     )
@@ -101,7 +101,7 @@ class TradeDecision(BaseModel):
         ...,
         description="Adverse scenarios or tail risks that could invalidate the decision.",
     )
-    strategy_weights: dict = Field(
+    strategy_weights: dict = Field(  # type: ignore[type-arg]
         default_factory=dict,
         description="Per-strategy contribution weights at decision time.",
     )
@@ -394,7 +394,7 @@ class JournalEntry(BaseModel):
         pattern=r"^(reflection|daily_summary|weekly_review|observation|ab_test)$",
     )
     content: str = Field(..., description="Full text content of the journal entry.")
-    market_context: dict = Field(
+    market_context: dict = Field(  # type: ignore[type-arg]
         default_factory=dict,
         description="Market conditions snapshot at the time of writing.",
     )
@@ -723,7 +723,7 @@ class AuditEntry(BaseModel):
         default="",
         description="Denial reason; empty for allowed checks.",
     )
-    context: dict = Field(
+    context: dict = Field(  # type: ignore[type-arg]
         default_factory=dict,
         description="Caller-supplied context for the check (e.g. symbol, value).",
     )

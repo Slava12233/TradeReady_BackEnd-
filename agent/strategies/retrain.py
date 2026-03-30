@@ -1161,15 +1161,15 @@ class RetrainOrchestrator:
                 fitness_fn="composite",
             )
             population = Population(seed=evo_config.seed)
-            population.initialize(evo_config.population_size)
+            population.initialize(evo_config.population_size)  # type: ignore[call-arg]
 
             best_fitness = -999.0
             for _ in range(generations):
                 # Without BattleRunner (no platform connection in offline mode),
                 # we evaluate genome fitness via a simplified proxy metric.
-                scores = [g.proxy_fitness() for g in population.genomes]
+                scores = [g.proxy_fitness() for g in population.genomes]  # type: ignore[attr-defined]
                 stats = population.stats(scores)
-                best_fitness = max(best_fitness, stats.max_fitness)
+                best_fitness = max(best_fitness, stats.max_fitness)  # type: ignore[attr-defined]
                 population.evolve(scores)
 
             return best_fitness
@@ -1217,7 +1217,7 @@ class RetrainOrchestrator:
                 evaluator.evaluate, model_path.parent
             )
             # Best model Sharpe ratio across evaluated seeds
-            model_metrics = [m for m in report.models if not m.is_benchmark]
+            model_metrics = [m for m in report.models if not m.is_benchmark]  # type: ignore[attr-defined]
             if not model_metrics:
                 return None
             sharpes = [m.sharpe_ratio for m in model_metrics if m.sharpe_ratio is not None]

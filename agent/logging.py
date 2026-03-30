@@ -211,7 +211,7 @@ def configure_agent_logging(log_level: str = "INFO") -> None:
             # PrintLoggerFactory produces PrintLogger which lacks .name, so we
             # skip this processor to avoid AttributeError on structlog >= 25.x.
             structlog.processors.TimeStamper(fmt="iso", utc=True),
-            add_correlation_context,
+            add_correlation_context,  # type: ignore[list-item]
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),

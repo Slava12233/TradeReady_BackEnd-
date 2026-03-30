@@ -743,8 +743,8 @@ class RiskMiddleware:
                 reduced_size = capped
 
         # Clamp to [0, 1].
-        result: Decimal = max(Decimal("0"), min(Decimal("1"), reduced_size))
-        return result
+        clamped_size: Decimal = max(Decimal("0"), min(Decimal("1"), reduced_size))
+        return clamped_size
 
     @staticmethod
     def _candles_to_log_returns(candles: Any) -> list[float]:  # noqa: ANN401

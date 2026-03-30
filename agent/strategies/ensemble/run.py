@@ -1541,7 +1541,7 @@ class EnsembleRunner:
                     )
                     continue
 
-                sym, payload = fetch_result
+                sym, payload = fetch_result  # type: ignore[misc]
                 if isinstance(payload, httpx.HTTPStatusError):
                     if payload.response.status_code in (404, 409, 410):
                         loop_done = True
@@ -1558,7 +1558,7 @@ class EnsembleRunner:
                         error=str(payload),
                     )
                 else:
-                    candles_by_symbol[sym] = payload
+                    candles_by_symbol[sym] = payload  # type: ignore[assignment]
 
             if loop_done:
                 break

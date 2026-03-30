@@ -280,7 +280,7 @@ def _macd_hist_series(
 # ---------------------------------------------------------------------------
 
 
-def label_candles(candles: list[dict], window: int = 20) -> list[RegimeType]:
+def label_candles(candles: list[dict], window: int = 20) -> list[RegimeType]:  # type: ignore[type-arg]
     """Assign a RegimeType to each candle based on ADX and ATR/close ratio.
 
     Args:
@@ -361,7 +361,7 @@ def label_candles(candles: list[dict], window: int = 20) -> list[RegimeType]:
 
 
 def generate_training_data(
-    candles: list[dict],
+    candles: list[dict],  # type: ignore[type-arg]
     window: int = 20,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Build feature matrix and label series for classifier training.

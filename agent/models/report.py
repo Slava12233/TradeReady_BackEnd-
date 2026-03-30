@@ -70,7 +70,7 @@ class WorkflowResult(BaseModel):
         default_factory=list,
         description="Platform improvement ideas identified during the run.",
     )
-    metrics: dict = Field(
+    metrics: dict = Field(  # type: ignore[type-arg]
         default_factory=dict,
         description="Arbitrary JSON-serialisable performance data collected.",
     )

@@ -1000,7 +1000,7 @@ class BattleRunner:
             )
             response.raise_for_status()
             data = response.json()
-            return data  # type: ignore[return-value]
+            return data  # type: ignore[no-any-return]
         except httpx.HTTPStatusError as exc:
             logger.warning(
                 "agent.strategy.evolutionary.battle_runner.fetch_results_failed",

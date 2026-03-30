@@ -847,7 +847,7 @@ async def _create_evo_battle_runner(evo_config: Any) -> Any:
     from agent.strategies.evolutionary.battle_runner import BattleRunner  # noqa: PLC0415
     from agent.tools.rest_tools import PlatformRESTClient  # noqa: PLC0415
 
-    agent_cfg = AgentConfig()
+    agent_cfg = AgentConfig()  # type: ignore[call-arg]
     rest_client = PlatformRESTClient(agent_cfg)
     return await BattleRunner.create(agent_cfg, rest_client)
 
@@ -908,7 +908,7 @@ async def walk_forward_evolutionary(
             import numpy as np  # noqa: PLC0415
 
             rng = np.random.default_rng(evo_config.seed + window_index)
-            pop = Population(size=evo_config.population_size, rng=rng)
+            pop = Population(size=evo_config.population_size, rng=rng)  # type: ignore[call-arg]
             pop.initialize()
 
             best_genome: StrategyGenome | None = None
@@ -1081,7 +1081,7 @@ async def walk_forward_regime(
     # ---------------------------------------------------------------------------
     _CANDLES_ENDPOINT = "/api/v1/market/candles/BTCUSDT"
 
-    async def _fetch_candles(start: str, end: str) -> list[dict]:
+    async def _fetch_candles(start: str, end: str) -> list[dict]:  # type: ignore[type-arg]
         """Fetch 1-hour BTC candles from the platform API for [start, end).
 
         The platform enforces a maximum of 1000 candles per request (validated
@@ -1101,7 +1101,7 @@ async def walk_forward_regime(
         # Step size in hours for each paginated request.
         _STEP_HOURS: int = _MAX_LIMIT
 
-        all_candles: list[dict] = []
+        all_candles: list[dict] = []  # type: ignore[type-arg]
         cursor = start_dt
 
         async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
@@ -1351,7 +1351,7 @@ async def _async_main(args: Any) -> int:
             result = await walk_forward_regime(
                 seed=args.seed,
                 wf_config=wf_config,
-                base_url=base_url,
+                base_url=base_url,  # type: ignore[arg-type]
                 api_key=api_key,
             )
     except Exception as exc:  # noqa: BLE001

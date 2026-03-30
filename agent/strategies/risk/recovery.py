@@ -618,7 +618,7 @@ class RecoveryManager:
         """
         try:
             pipe = self._redis.pipeline()
-            pipe.hset(self._key, mapping=snapshot.to_dict())
+            pipe.hset(self._key, mapping=snapshot.to_dict())  # type: ignore[arg-type]
             await pipe.execute()
         except RedisError as exc:
             logger.error(

@@ -169,7 +169,7 @@ class AttributionLoader:
             return result
 
         result.strategies_loaded = len(attribution_pnl)
-        result.attribution_pnl = attribution_pnl
+        result.attribution_pnl = attribution_pnl  # type: ignore[assignment]
 
         if not attribution_pnl:
             log.info(
@@ -288,10 +288,10 @@ class AttributionLoader:
         now = datetime.now(tz=UTC)
         window_start = now - timedelta(days=window_days)
         try:
-            agent_uuid: UUID | str = UUID(agent_id) if not isinstance(agent_id, UUID) else agent_id  # type: ignore[arg-type]
+            agent_uuid: UUID | str = UUID(agent_id) if not isinstance(agent_id, UUID) else agent_id
         except ValueError:
             # Non-UUID strings are accepted in tests where the DB is mocked.
-            agent_uuid = agent_id  # type: ignore[assignment]
+            agent_uuid = agent_id
 
         async with self._session_factory() as db:
             stmt = (
@@ -310,7 +310,7 @@ class AttributionLoader:
             rows = result.all()
 
         return {
-            row.strategy_name: (row.pnl_sum if row.pnl_sum is not None else Decimal("0"))
+            row.strategy_name: (row.pnl_sum if row.pnl_sum is not None else Decimal("0"))  # type: ignore[misc]
             for row in rows
             if row.strategy_name
         }

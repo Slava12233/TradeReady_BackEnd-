@@ -469,7 +469,7 @@ class RegimeClassifier:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_candles(base_url: str, api_key: str, symbol: str, limit: int, timeframe: str) -> list[dict]:
+async def _fetch_candles(base_url: str, api_key: str, symbol: str, limit: int, timeframe: str) -> list[dict]:  # type: ignore[type-arg]
     """Fetch historical candles from the platform REST API.
 
     Paginates automatically since the API caps at 1000 candles per request.
@@ -489,7 +489,7 @@ async def _fetch_candles(base_url: str, api_key: str, symbol: str, limit: int, t
     url = f"{base_url.rstrip('/')}/api/v1/market/candles/{symbol}"
     headers = {"X-API-Key": api_key}
     page_size = 1000
-    all_candles: list[dict] = []
+    all_candles: list[dict] = []  # type: ignore[type-arg]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         remaining = limit
@@ -504,7 +504,7 @@ async def _fetch_candles(base_url: str, api_key: str, symbol: str, limit: int, t
             data = response.json()
 
             # Extract candle list from response
-            candles: list[dict] = []
+            candles: list[dict] = []  # type: ignore[type-arg]
             if isinstance(data, list):
                 candles = data
             elif isinstance(data, dict):

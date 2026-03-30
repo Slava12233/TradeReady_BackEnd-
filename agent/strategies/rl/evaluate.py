@@ -575,7 +575,7 @@ class ModelEvaluator:
             candidates.append(ensemble)
         best_name: str | None = None
         if candidates:
-            best_name = max(candidates, key=lambda r: r.sharpe_ratio or float("-inf")).name  # type: ignore[arg-type]
+            best_name = max(candidates, key=lambda r: r.sharpe_ratio or float("-inf")).name
 
         report = EvaluationReport(
             timestamp=datetime.now(UTC).isoformat(),

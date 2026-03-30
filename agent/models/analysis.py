@@ -53,7 +53,7 @@ class MarketAnalysis(BaseModel):
         ...,
         description="Key resistance price as a string to preserve decimal precision.",
     )
-    indicators: dict = Field(
+    indicators: dict = Field(  # type: ignore[type-arg]
         default_factory=dict,
         description="Computed indicator values keyed by indicator name.",
     )

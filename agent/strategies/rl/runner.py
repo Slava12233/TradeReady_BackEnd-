@@ -205,10 +205,10 @@ def _make_convergence_callback(monitor: _ConvergenceMonitor, config: Any) -> Any
             # We retrieve the latest mean reward from the model's
             # ``ep_info_buffer`` — available after each rollout collection.
             if self.n_calls % max(config.eval_freq // config.n_envs, 1) == 0:
-                if len(self.model.ep_info_buffer) > 0:
+                if len(self.model.ep_info_buffer) > 0:  # type: ignore[arg-type]
                     ep_rewards = [
                         ep_info["r"]
-                        for ep_info in self.model.ep_info_buffer
+                        for ep_info in self.model.ep_info_buffer  # type: ignore[union-attr]
                         if "r" in ep_info
                     ]
                     if ep_rewards:
@@ -744,11 +744,11 @@ class TrainingRunner:
         if successful:
             with_sharpe = [m for m in successful if m.sharpe_ratio is not None]
             if with_sharpe:
-                best_metrics = max(with_sharpe, key=lambda m: m.sharpe_ratio)  # type: ignore[arg-type]
+                best_metrics = max(with_sharpe, key=lambda m: m.sharpe_ratio)  # type: ignore[arg-type, return-value]
             else:
                 with_reward = [m for m in successful if m.final_eval_reward is not None]
                 if with_reward:
-                    best_metrics = max(with_reward, key=lambda m: m.final_eval_reward)  # type: ignore[arg-type]
+                    best_metrics = max(with_reward, key=lambda m: m.final_eval_reward)  # type: ignore[arg-type, return-value]
 
         sharpes = [m.sharpe_ratio for m in successful if m.sharpe_ratio is not None]
         rois = [m.roi_pct for m in successful if m.roi_pct is not None]
