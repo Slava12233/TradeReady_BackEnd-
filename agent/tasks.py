@@ -559,7 +559,7 @@ async def _run_performance_snapshot() -> dict[str, Any]:
     from decimal import Decimal  # noqa: PLC0415
     from uuid import UUID  # noqa: PLC0415
 
-    from sqlalchemy import and_, func, select  # noqa: PLC0415
+    from sqlalchemy import Integer, and_, func, select  # noqa: PLC0415
     from src.database.models import Agent, AgentPerformance, Trade  # noqa: PLC0415
     from src.database.repositories.agent_performance_repo import AgentPerformanceRepository  # noqa: PLC0415
     from src.database.session import get_session_factory  # noqa: PLC0415
@@ -578,7 +578,7 @@ async def _run_performance_snapshot() -> dict[str, Any]:
     try:
         async with session_factory() as db:
             stmt = (
-                select(Agent.id, Agent.active_strategy_label)
+                select(Agent.id, Agent.active_strategy_label)  # type: ignore[attr-defined]
                 .where(Agent.status != "archived")
                 .order_by(Agent.created_at.asc())
             )
@@ -607,7 +607,7 @@ async def _run_performance_snapshot() -> dict[str, Any]:
                                 (Trade.realized_pnl > Decimal("0"), 1),
                                 else_=0,
                             ),
-                            func.Integer,
+                            Integer,
                         )
                     ).label("winning_trades"),
                     func.sum(func.coalesce(Trade.realized_pnl, Decimal("0"))).label("total_pnl"),

@@ -304,10 +304,10 @@ class CCXTAdapter(ExchangeAdapter):
 
         try:
             while True:
-                tick = await queue.get()
-                if tick is None:
+                item: ExchangeTick | None = await queue.get()
+                if item is None:
                     break
-                yield tick
+                yield item
         finally:
             for t in tasks:
                 t.cancel()
