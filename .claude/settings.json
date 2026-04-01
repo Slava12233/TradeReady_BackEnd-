@@ -101,7 +101,7 @@
           {
             "type": "command",
             "command": "bash scripts/log-agent-activity.sh",
-            "timeout": 5
+            "timeout": 15
           }
         ]
       }

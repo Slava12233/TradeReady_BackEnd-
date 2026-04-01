@@ -7,8 +7,8 @@
 
 LOG_FILE="development/agent-activity-log.jsonl"
 
-# Read hook input (gracefully handle empty stdin)
-HOOK_INPUT=$(cat 2>/dev/null || echo '{}')
+# Read hook input with timeout protection (Windows bash can hang on stdin)
+HOOK_INPUT=$(timeout 3 cat 2>/dev/null || echo '{}')
 
 # Extract fields
 if command -v jq &>/dev/null; then

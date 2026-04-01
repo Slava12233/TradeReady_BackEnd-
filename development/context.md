@@ -17,10 +17,10 @@ tags:
 
 ## Current State
 
-**Active work:** Strategy search system planning complete. Full A-Z implementation plan created (16 modules, 6 phases). Comprehensive research produced (strategy landscape, autoresearch integration, training loop analysis, cost modeling). Ready to begin Phase 1: Foundation modules (Feature Pipeline, Signal Interface, Deflated Sharpe).
-**Last session:** 2026-03-23 — Full strategy research cycle: (1) strategy-research-complete.md (senior report), (2) strategy-research-intern-guide.md (intern version), (3) training-loops-research-intern-guide.md (training loop costs and schedules), (4) implementation-plan-a-to-z.md (16-module build plan). Codebase audit revealed 14 of 16 planned modules are MISSING. Vision clarified: find ONE best strategy via automated search, not run 1000 agents.
-**Next steps:** (1) Build Module A: Unified Feature Pipeline (`agent/strategies/features/`). (2) Build Module B: Pluggable Signal Interface (`agent/strategies/signals/`). (3) Build Module C: Deflated Sharpe Ratio (`agent/strategies/validation/`). (4) Then Phase 2: Volume Spike, Momentum, Mean Reversion strategies.
-**Blocked:** Nothing. All infrastructure in place. Implementation plan ready.
+**Active work:** Production stable. Market data ingestion running (legacy Binance WS, 447 prices). CI/CD pipeline passing.
+**Last session:** 2026-04-01 — Production market data fix + CI/CD fixes: seeded 439 trading pairs, fixed CCXT spot/swap crash, fixed symbol mapper swap overwrite, fixed Celery circular import (`importlib.util.find_spec`), fixed mypy errors (`ccxt_adapter` type narrowing, `agent/tasks.py` attr-defined + Cast type), fixed ruff formatting, fixed production DB connection exhaustion (`max_connections` 50→200, `idle_in_transaction_session_timeout=60s`).
+**Next steps:** (1) Monitor production ingestion stability. (2) Resume strategy search system: Build Module A (Feature Pipeline), Module B (Signal Interface), Module C (Deflated Sharpe). Implementation plan in `development/implementation-plan-a-to-z.md`.
+**Blocked:** Nothing.
 
 ---
 
@@ -148,6 +148,80 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 ---
 
 ## Recent Activity
+
+### 2026-04-01 — Production Market Data Fix
+
+**Changes:**
+- `src/exchange/ccxt_adapter.py` — `fetch_markets()` now filters to `type == "spot"` only; prevents ~2000 swap/futures markets from being included and crashing ingestion. `watch_trades()` now batches symbols in groups of 200 (`_WS_BATCH_SIZE`) via concurrent asyncio tasks writing to a shared `asyncio.Queue` (`_watch_single_batch`, `_batch_watcher`, `_watch_trades_roundrobin` extracted). Added `asyncio` import.
+- `src/exchange/symbol_mapper.py` — `load_markets()` now skips non-spot entries when a spot mapping already exists; prevents `BTC/USDT:USDT` (perpetual swap) from overwriting `BTC/USDT` (spot) in the reverse lookup.
+- `src/tasks/celery_app.py` — `agent.tasks` detection changed from direct `import` to `importlib.util.find_spec()` to avoid circular ImportError (`agent/tasks.py` → `celery_app.app` → not yet defined). Celery workers now start without the optional agent package.
+- `agent/tasks.py` — Added `# type: ignore[attr-defined]` for lazy-imported `Agent.active_strategy_label`; replaced `func.Integer` with `Integer` for correct `Cast` typing.
+
+**Decisions:**
+- Run on legacy Binance WS fallback while CCXT fixes are validated in production; switch back to CCXT path once stability confirmed.
+- Seed `trading_pairs` via `seed_pairs.py` SSH run (439 pairs) rather than automatic startup migration — seed is an operational step, not a schema migration.
+
+**Bugs fixed:**
+- **CCXT ingestion crash (spot/swap mixing)** — `fetch_markets()` returned ~3000 markets including perpetual swaps; the mapper tried to subscribe to swap symbols that Binance WS rejected. Fix: filter to `type == "spot"`.
+- **Symbol mapper swap overwrite** — After loading spot symbols, a second loop iteration encountered swap variants (e.g., `BTC/USDT:USDT`) and overwrote the `BTCUSDT` → `BTC/USDT` reverse mapping. Fix: skip non-spot entry if spot mapping already present.
+- **Celery circular ImportError** — `celery_app.py` directly imported `agent.tasks` which imports `app` from `celery_app` — but `app` wasn't defined yet. Fix: use `importlib.util.find_spec()` to check availability without importing.
+- **Empty `trading_pairs` table** — Production DB had 0 pairs after initial deploy; ingestion service failed to subscribe to anything. Fix: ran `seed_pairs.py` on server via SSH, seeded 439 pairs.
+- **DB connection exhaustion (401 errors)** — PostgreSQL `max_connections=50` was exhausted by leaked idle-in-transaction sessions from Celery tasks. Auth middleware couldn't get a DB connection, returning 401 for all authenticated requests. Fix: increased `max_connections` to 200, added `idle_in_transaction_session_timeout=60s` on production TimescaleDB.
+- **mypy errors** — `ccxt_adapter.py` type narrowing issue with `ExchangeTick | None` queue; `agent/tasks.py` `func.Integer` wrong type for `Cast`. Both fixed.
+
+**Learnings:**
+- CCXT `fetch_markets()` on Binance returns spot + perpetual swaps + delivery futures by default. Always filter by `type` when you only want spot.
+- The `watch_trades()` call on CCXT Pro opens one WS connection per symbol if not batched — for 439 symbols this means 439 connections. Batching is mandatory.
+- Production Docker services were all healthy but ingestion was silent because the `trading_pairs` table was empty. Health checks don't verify seed data.
+- Circular imports between Celery modules: never directly import a module that imports `app` before `app = Celery(...)` is executed. Use `importlib.util.find_spec()` to check availability without triggering the import chain.
+- DB `max_connections=50` is too low for this stack (API + Celery 4 workers + Beat + ingestion + pgAdmin). Celery tasks that open sessions without proper cleanup leak idle-in-transaction connections. The `idle_in_transaction_session_timeout` PostgreSQL setting is essential protection.
+
+---
+
+### 2026-04-01 — V.0.0.2 Production Deployment Fixes
+
+**Changes:**
+
+CI/CD Pipeline Fixes:
+- `pyproject.toml` — Added 2 mypy per-module overrides (`agent.strategies.rl.*` and `src.mcp.tools`) to suppress SB3/MCP stub warnings (`warn_unused_ignores=false`, `disallow_subclassing_any=false`)
+- `requirements.txt` — Added `numpy>=1.26` required by `src/strategies/` (was missing, broke CI)
+- `tests/unit/test_ab_testing.py` — Added `pytest.importorskip("pandas")` guard; skips gracefully when agent ML deps absent
+- `tests/unit/test_strategy_manager.py` — Same `pytest.importorskip("pandas")` guard
+- `tests/unit/test_agent_tools.py` — Added `pytest.importorskip("agentexchange")` guard; skips when SDK not installed
+- `agent/strategies/rl/runner.py` — Fixed mypy type-ignore comments for SB3 `BaseCallback` stubs
+
+Deployment Pipeline Fixes:
+- `.github/workflows/deploy.yml` — Major rewrite: reads DB credentials from `.env` (not hardcoded), SSH timeout raised to 30m, excludes heavy time-series tables from pg_dump, stashes local changes before `git pull`, uses `git reset --hard`, starts `timescaledb` and `redis` before alembic commands, uses `docker compose run --rm` instead of `exec` for alembic
+- `.github/workflows/test.yml` — Changed trigger: only runs on `main` branch (was running on all pushes)
+
+Docker/Infrastructure Fixes:
+- `docker-compose.yml` — Removed Redis `--requirepass` flag; Redis is internal-network-only with no host port exposure, password requirement was unnecessary and caused auth failures
+- `.env.example` — Removed `REDIS_PASSWORD`, simplified `REDIS_URL` (no password component)
+
+Migration Fix:
+- `alembic/versions/012_agent_scoped_unique_constraints.py` — Fixed: now drops constraint before dropping the backing index. PostgreSQL prevents `DROP INDEX` on an index that backs a live constraint.
+
+Registration Bug Fix:
+- `src/accounts/service.py` — Removed `TradingSession` creation from `register()`. `TradingSession.agent_id` is NOT NULL but registration has no `agent_id`, causing every registration to fail with `IntegrityError` misreported as `DuplicateAccountError`. TradingSession is now created downstream when an agent is assigned.
+- `src/config.py` — Added `https://tradeready.io` and `https://www.tradeready.io` to default `CORS_ORIGINS`
+
+New Files:
+- `development/deployment-fix-plan.md` — Deployment fix planning document (archived)
+
+**Decisions:**
+- Redis password removed from default config: Redis is on an internal Docker network only (no host-port binding), so `--requirepass` adds complexity with no security benefit in this topology.
+- `test.yml` restricted to `main` branch only: feature branch CI was consuming quota and slowing iteration; production gate is sufficient on `main`.
+- `docker compose run --rm` preferred over `exec` for alembic migrations in deploy: `exec` requires a running container; `run --rm` works whether or not the service is already up.
+
+**Bugs fixed:**
+- **Registration always failing** — `register()` tried to create a `TradingSession` with `agent_id=NULL`, but the column is `NOT NULL`. SQLAlchemy raised `IntegrityError`, which the exception handler misclassified as `DuplicateAccountError`. Fix: removed `TradingSession` creation from `register()`.
+- **Migration 012 failing on redeploy** — `DROP INDEX` on a constraint-backing index raised `ERROR: cannot drop index ... because constraint ... requires it`. Fix: `DROP CONSTRAINT` first, then `DROP INDEX`.
+
+**Learnings:**
+- Always verify `NOT NULL` column constraints before constructing ORM objects — SQLAlchemy defers constraint checking to flush time, so the error appears at an unexpected call site.
+- When `IntegrityError` is caught and re-raised as a domain error, the message can mask the real cause — log the original exception detail before re-raising.
+
+---
 
 ### 2026-03-23 — Strategy Research & Implementation Planning
 

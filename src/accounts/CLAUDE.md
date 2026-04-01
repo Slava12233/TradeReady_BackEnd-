@@ -1,6 +1,6 @@
 # Accounts Module
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-01 -->
 
 > Authentication, balance management, and account lifecycle for the AI trading platform.
 
@@ -57,7 +57,7 @@ This module handles three core responsibilities: (1) cryptographic operations fo
 
 | Method | Purpose |
 |--------|---------|
-| `register(display_name, email=None, starting_balance=None, password=None)` | Atomic registration: Account + TradingSession + credentials |
+| `register(display_name, email=None, starting_balance=None, password=None)` | Registration: Account + credentials only (does NOT create TradingSession — agent_id required for that) |
 | `authenticate(api_key)` | API key auth; checks active status |
 | `authenticate_with_password(email, password)` | Email/password auth; checks active status |
 | `get_account(account_id)` | Fetch account by UUID |
@@ -117,7 +117,9 @@ This module handles three core responsibilities: (1) cryptographic operations fo
 - **`lru_cache` on `get_settings()`**: In tests, you must patch `src.config.get_settings` BEFORE the cached instance is created, or the real config will be used.
 - **Agent ID transition**: All `BalanceManager` methods have `agent_id=None` as optional. When `None`, they use legacy `account_id`-scoped repo methods. New code should always pass `agent_id`.
 - **Registration no longer creates balances**: `AccountService.register()` does NOT create the initial USDT balance row. Balance creation is handled by `AgentService.create_agent()`, which creates agent-scoped balances (`Balance.agent_id` is NOT NULL).
+- **Registration does NOT create TradingSession**: As of 2026-04-01, `register()` no longer creates a `TradingSession`. `TradingSession.agent_id` is `NOT NULL`, but registration has no `agent_id` yet. Creating it in `register()` caused every registration to fail with `IntegrityError` (misreported as `DuplicateAccountError`). TradingSession is created later, when an agent is assigned.
 
 ## Recent Changes
 
+- `2026-04-01` -- Removed TradingSession creation from `register()` to fix registration IntegrityError bug; updated `register()` docstring/signature entry above
 - `2026-03-17` -- Initial CLAUDE.md created
