@@ -195,17 +195,9 @@ class AccountService:
 
             account = await self._account_repo.create(account)
 
-            # NOTE: Balance creation is handled by AgentService.create_agent(),
-            # which creates an agent-scoped balance (Balance.agent_id is NOT NULL).
-
-            session_row = TradingSession(
-                account_id=account.id,
-                starting_balance=balance_amount,
-                status="active",
-            )
-            self._session.add(session_row)
-            await self._session.flush()
-            await self._session.refresh(session_row)
+            # NOTE: Balance and TradingSession creation is handled by
+            # AgentService.create_agent(), which creates agent-scoped rows
+            # (Balance.agent_id and TradingSession.agent_id are NOT NULL).
 
         except IntegrityError as exc:
             await self._session.rollback()
@@ -224,7 +216,6 @@ class AccountService:
             account_id=str(account.id),
             display_name=display_name,
             starting_balance=str(balance_amount),
-            session_id=str(session_row.id),
         )
 
         return AccountCredentials(
