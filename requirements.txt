@@ -38,3 +38,6 @@ httpx==0.28.1
 
 # Exchange connectivity (110+ exchanges via unified API)
 ccxt>=4.0.0
+
+# Numerical computation (used by src/strategies/ indicators & executor)
+numpy>=1.26

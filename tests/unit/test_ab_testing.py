@@ -28,7 +28,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent.trading.ab_testing import (
+# Skip entire module if agent ML dependencies are not installed (e.g. CI).
+# The import chain: agent.trading → agent.strategies → regime/classifier → pandas.
+pytest.importorskip("pandas", reason="agent/ ML dependencies not installed")
+
+from agent.trading.ab_testing import (  # noqa: E402
     ABTest,
     ABTestInactiveError,
     ABTestNotFoundError,

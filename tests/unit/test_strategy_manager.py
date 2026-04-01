@@ -24,8 +24,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent.trading.signal_generator import TradingSignal
-from agent.trading.strategy_manager import (
+# Skip entire module if agent ML dependencies are not installed (e.g. CI).
+# The import chain: agent.trading → agent.strategies → regime/classifier → pandas.
+pytest.importorskip("pandas", reason="agent/ ML dependencies not installed")
+
+from agent.trading.signal_generator import TradingSignal  # noqa: E402
+from agent.trading.strategy_manager import (  # noqa: E402
     StrategyManager,
     _build_comparison_recommendation,
     _compute_max_drawdown,
