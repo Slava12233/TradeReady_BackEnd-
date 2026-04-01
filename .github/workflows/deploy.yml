@@ -60,7 +60,12 @@ jobs:
             echo "=== Run database migrations ==="
             docker compose exec -T api alembic upgrade head
 
-            echo "=== Rolling restart ==="
+            echo "=== Ensure infrastructure is healthy ==="
+            docker compose up -d timescaledb redis
+            echo "Waiting for infra health checks..."
+            sleep 15
+
+            echo "=== Rolling restart of app services ==="
             docker compose up -d celery-beat
             docker compose up -d celery
             sleep 5
@@ -69,7 +74,7 @@ jobs:
             docker compose up -d ingestion
 
             echo "=== Health check ==="
-            sleep 10
+            sleep 15
             curl -sf http://localhost:8000/health || {
               echo "HEALTH CHECK FAILED - rolling back to $ROLLBACK_COMMIT"
               git checkout "$ROLLBACK_COMMIT"
