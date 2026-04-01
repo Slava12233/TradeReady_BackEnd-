@@ -192,7 +192,7 @@ def _make_convergence_callback(monitor: _ConvergenceMonitor, config: Any) -> Any
     """
     from stable_baselines3.common.callbacks import BaseCallback  # noqa: PLC0415
 
-    class _ConvergenceCallback(BaseCallback):
+    class _ConvergenceCallback(BaseCallback):  # type: ignore[misc]
         """Reads EvalCallback's ``last_mean_reward`` and feeds it into the monitor.
 
         Plateau detection: if the eval reward does not improve by ``min_delta``

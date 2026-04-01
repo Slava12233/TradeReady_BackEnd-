@@ -57,6 +57,15 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "agent.strategies.rl.*"
+warn_unused_ignores = false
+disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
+module = "src.mcp.tools"
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
