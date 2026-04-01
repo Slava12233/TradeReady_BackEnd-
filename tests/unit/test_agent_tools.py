@@ -20,6 +20,9 @@ from uuid import uuid4
 
 import pytest
 
+# Skip entire module if the agentexchange SDK is not installed (e.g. CI).
+pytest.importorskip("agentexchange", reason="agentexchange SDK not installed")
+
 # ---------------------------------------------------------------------------
 # Patch path constants (kept short so patch() calls stay under 120 chars)
 # ---------------------------------------------------------------------------
