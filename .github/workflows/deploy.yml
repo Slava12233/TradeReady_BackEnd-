@@ -20,21 +20,27 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 30m
           script: |
             set -euo pipefail
             cd ~/TradeReady_BackEnd-
+            set -a && source .env && set +a
 
             echo "=== Record rollback point ==="
             ROLLBACK_COMMIT=$(git rev-parse HEAD)
             echo "$ROLLBACK_COMMIT" > /tmp/last-deploy-rollback.txt
             echo "Rollback commit: $ROLLBACK_COMMIT"
 
-            echo "=== Database backup ==="
+            echo "=== Database backup (schema + app data, excluding heavy time-series) ==="
             mkdir -p ~/backups
-            set -a && source .env && set +a
             docker compose exec -T timescaledb pg_dump \
               -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
               --no-owner --no-acl \
+              --exclude-table-data='_timescaledb_internal._hyper_*' \
+              --exclude-table-data='ticks' \
+              --exclude-table-data='candles_backfill' \
+              --exclude-table-data='portfolio_snapshots' \
+              --exclude-table-data='backtest_snapshots' \
               | gzip > ~/backups/pre-deploy-$(date +%Y%m%d-%H%M%S).sql.gz
             echo "Backup saved"
 
