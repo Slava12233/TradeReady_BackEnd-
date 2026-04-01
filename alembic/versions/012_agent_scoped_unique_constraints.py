@@ -41,14 +41,27 @@ def upgrade() -> None:
     if result.fetchone():
         op.drop_constraint("uq_positions_account_symbol", "positions", type_="unique")
 
-    # balances: may be an index named uq_balances_account_asset or uq_balances_account_asset_legacy
+    # balances: may be a constraint or plain index named uq_balances_account_asset
     for old_name in ("uq_balances_account_asset", "uq_balances_account_asset_legacy"):
+        # Try dropping as constraint first (PostgreSQL won't let you drop the
+        # backing index while the constraint still exists)
         result = conn.execute(
-            sa.text("SELECT 1 FROM pg_indexes WHERE indexname = :name"),
+            sa.text(
+                "SELECT 1 FROM pg_constraint WHERE conname = :name "
+                "AND conrelid = 'balances'::regclass"
+            ),
             {"name": old_name},
         )
         if result.fetchone():
-            op.drop_index(old_name, table_name="balances")
+            op.drop_constraint(old_name, "balances", type_="unique")
+        else:
+            # Fall back to dropping as a plain index
+            result = conn.execute(
+                sa.text("SELECT 1 FROM pg_indexes WHERE indexname = :name"),
+                {"name": old_name},
+            )
+            if result.fetchone():
+                op.drop_index(old_name, table_name="balances")
 
     # ── Create agent-scoped unique indexes ───────────────────────────────
     result = conn.execute(
