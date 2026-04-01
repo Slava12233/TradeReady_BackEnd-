@@ -89,9 +89,8 @@ class TestRegister:
         assert result.display_name == "TestBot"
         assert result.starting_balance == Decimal("10000")
         svc._account_repo.create.assert_called_once()
-        # Balance creation is now handled by AgentService.create_agent(),
-        # so we only verify that a TradingSession was added via session.add.
-        session.add.assert_called_once()
+        # Balance and TradingSession creation is handled by AgentService.create_agent(),
+        # so register() only creates the Account row via the repo.
 
     @patch("src.accounts.service.generate_api_credentials")
     async def test_duplicate_email_raises(self, mock_gen_creds):
