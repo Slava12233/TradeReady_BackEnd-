@@ -31,8 +31,9 @@ jobs:
 
             echo "=== Database backup ==="
             mkdir -p ~/backups
+            set -a && source .env && set +a
             docker compose exec -T timescaledb pg_dump \
-              -U agentexchange -d agentexchange \
+              -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
               --no-owner --no-acl \
               | gzip > ~/backups/pre-deploy-$(date +%Y%m%d-%H%M%S).sql.gz
             echo "Backup saved"
