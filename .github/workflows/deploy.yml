@@ -53,17 +53,17 @@ jobs:
             echo "=== Build application images ==="
             docker compose build api ingestion celery
 
-            echo "=== Record pre-migration revision ==="
-            ROLLBACK_REVISION=$(docker compose exec -T api alembic current 2>/dev/null | grep -oP '^\w+' | head -1)
-            echo "Rollback revision: $ROLLBACK_REVISION"
-
-            echo "=== Run database migrations ==="
-            docker compose exec -T api alembic upgrade head
-
             echo "=== Ensure infrastructure is healthy ==="
             docker compose up -d timescaledb redis
             echo "Waiting for infra health checks..."
             sleep 15
+
+            echo "=== Record pre-migration revision ==="
+            ROLLBACK_REVISION=$(docker compose run --rm -T api alembic current 2>/dev/null | grep -oP '^\w+' | head -1 || echo "none")
+            echo "Rollback revision: $ROLLBACK_REVISION"
+
+            echo "=== Run database migrations ==="
+            docker compose run --rm -T api alembic upgrade head
 
             echo "=== Rolling restart of app services ==="
             docker compose up -d celery-beat
