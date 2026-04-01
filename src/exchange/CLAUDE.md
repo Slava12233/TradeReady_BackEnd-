@@ -2,7 +2,7 @@
 
 > CCXT-powered multi-exchange connectivity — the adapter pattern that lets TradeReady talk to 110+ exchanges through one interface.
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-01 -->
 
 ## What This Module Does
 
@@ -13,9 +13,9 @@ Provides a clean abstraction over exchange connectivity so the rest of the platf
 | File | Purpose |
 |------|---------|
 | `adapter.py` | `ExchangeAdapter` — abstract base class defining the universal exchange interface |
-| `ccxt_adapter.py` | `CCXTAdapter` — CCXT-based implementation of `ExchangeAdapter` |
+| `ccxt_adapter.py` | `CCXTAdapter` — CCXT-based implementation of `ExchangeAdapter`. `fetch_markets()` filters to spot markets only (`type == "spot"`). `watch_trades()` batches symbols into groups of 200 (`_WS_BATCH_SIZE`) via concurrent asyncio tasks writing to a shared `asyncio.Queue`. Extracted helpers: `_parse_ws_trade()`, `_watch_single_batch()`, `_batch_watcher()`, `_watch_trades_roundrobin()`. |
 | `types.py` | `ExchangeTick`, `ExchangeCandle`, `ExchangeMarket` — canonical data types returned by adapters |
-| `symbol_mapper.py` | `SymbolMapper` — bidirectional translation between `BTCUSDT` (platform) and `BTC/USDT` (CCXT) |
+| `symbol_mapper.py` | `SymbolMapper` — bidirectional translation between `BTCUSDT` (platform) and `BTC/USDT` (CCXT). `load_markets()` skips non-spot entries when a spot mapping already exists, preventing swap symbols from overwriting spot entries. |
 | `factory.py` | `create_adapter()` — factory function that reads config and builds adapters |
 | `__init__.py` | Re-exports all public symbols |
 
@@ -115,9 +115,13 @@ Parses `settings.additional_exchanges` comma-separated string.
 - **Symbol mapping requires market data** — call `initialize()` to load accurate mappings. The heuristic fallback works for 99% of pairs but may fail for exotic ones.
 - **CCXT Pro WebSocket is a separate import** — `ccxt.pro` vs `ccxt.async_support`. The adapter handles this internally.
 - **`watch_trades()` blocks in a loop** — it's an async generator that yields forever. Cancel the consuming task to stop it.
+- **`watch_trades()` uses 200-symbol batches** — large symbol lists are split into `_WS_BATCH_SIZE=200` chunks, each handled by a `_watch_single_batch()` task. All tasks write to a shared `asyncio.Queue`. This prevents CCXT from opening one WS connection per symbol.
+- **`fetch_markets()` returns spot markets only** — filters `type == "spot"` to avoid swap/futures markets being included in ingestion. Without this, Binance returns ~3000 markets (including perpetual swaps) which crash ingestion.
+- **Symbol mapper prefers spot entries** — if a spot mapping for a symbol already exists, `load_markets()` skips any subsequent non-spot entry with the same base name. This prevents `BTC/USDT:USDT` (perpetual) from overwriting `BTC/USDT` (spot) in the reverse lookup table.
 - **`fetch_ohlcv` doesn't return trade count** — CCXT's unified OHLCV format is `[timestamp, O, H, L, C, V]` with no trade count. The field is set to `0`.
 - **Float conversion for orders** — CCXT's `create_order()` expects floats, not Decimals. The adapter converts internally.
 
 ## Recent Changes
 
+- `2026-04-01` — Production fix: `ccxt_adapter.py` `fetch_markets()` now filters to `type == "spot"` only to prevent crash from swap/futures markets. `watch_trades()` batched into groups of 200 symbols via concurrent asyncio tasks + shared Queue (`_watch_single_batch`, `_batch_watcher`, `_watch_trades_roundrobin` extracted). `symbol_mapper.py` `load_markets()` now skips non-spot entries when a spot mapping already exists, preventing swap symbols overwriting spot in the reverse lookup.
 - `2026-03-18` — Module created with ExchangeAdapter ABC, CCXTAdapter, SymbolMapper, factory

@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-03-23 -->
+<!-- last-updated: 2026-04-01 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -12,7 +12,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 
 | File | Purpose |
 |------|---------|
-| `celery_app.py` | Celery app factory, broker/backend config, queue definitions, full beat schedule |
+| `celery_app.py` | Celery app factory, broker/backend config, queue definitions, full beat schedule. The `agent.tasks` module import is wrapped in `try/except ModuleNotFoundError` so Celery starts successfully without the optional agent package installed. |
 | `limit_order_monitor.py` | Sweeps all pending limit/stop-loss/take-profit orders every 1s via `run_matcher_once` |
 | `portfolio_snapshots.py` | Captures minute/hourly/daily equity snapshots for all active accounts; resets circuit breakers at midnight |
 | `candle_aggregation.py` | Safety-net refresh of TimescaleDB OHLCV continuous aggregates (`candles_1m/5m/1h/1d`) every 60s |
@@ -174,9 +174,11 @@ celery -A src.tasks.celery_app beat --loglevel=info
 - **Circuit breaker reset runs 1 minute after daily snapshots**: `reset-circuit-breakers` is at 00:01 UTC (not 00:00) so it does not race with `capture-daily-snapshots`. They are separate beat entries so a failure in one does not block the other.
 - **No Redis needed for cleanup tasks**: `cleanup.py` and `backtest_cleanup.py` only touch the database. They do not create Redis clients, unlike `portfolio_snapshots.py` and `limit_order_monitor.py`.
 - **`max_retries=0` on all tasks**: No task retries on failure. For high-frequency tasks (limit order monitor at 1s, battle snapshots at 5s), the next beat invocation serves as the implicit retry. For daily tasks, manual re-trigger is expected.
+- **`agent.tasks` import is optional**: `celery_app.py` wraps the `agent.tasks` import in `try/except ModuleNotFoundError`. The agent package is not installed in the base platform Docker image, so Celery must start without it. If the package is present (e.g., in the agent profile), the tasks auto-register.
 
 ## Recent Changes
 
+- `2026-04-01` — Production fix: `celery_app.py` `agent.tasks` import wrapped in `try/except ModuleNotFoundError` so Celery workers start successfully on deployments where the optional `agent` package is not installed.
 - `2026-03-23` — Added `retrain_tasks.py` with 5 ML retraining Celery tasks (`run_retraining_cycle`, `retrain_ensemble`, `retrain_regime`, `retrain_genome`, `retrain_rl`). All tasks route to new `ml_training` queue, use `asyncio.run()` bridge to `RetrainOrchestrator`, and have `soft_time_limit=3600` / `time_limit=3900`. Beat entry `run-retraining-cycle` runs every 8h. Beat schedule count: 15 → 16.
 - `2026-03-22` — Added `settle_agent_decisions` task to `agent_analytics.py` (every 5 min). Closes the feedback loop from trade outcome to agent learning: finds unresolved `AgentDecision` rows, checks if the linked order is filled, computes `realized_pnl` from `Trade` rows, writes back `outcome_pnl` + `outcome_recorded_at`. Beat schedule count: 14 → 15.
 - `2026-03-21` — Added `agent_analytics.py` with 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC — queries `agent_strategy_signals` to compute per-strategy PnL attribution), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC — measures memory retrieval hit rate), `agent_platform_health_report` (daily 06:00 UTC — aggregates agent API call latency and error rates). Beat schedule count: 11 → 14.

@@ -1,6 +1,6 @@
 # Price Ingestion
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-01 -->
 
 > Streams real-time trade ticks from any exchange (via CCXT or legacy Binance WebSocket), caches prices in Redis, and bulk-flushes tick history to TimescaleDB.
 
@@ -27,7 +27,7 @@ Additionally, `binance_klines.py` provides a REST client for fetching historical
 | `service.py` | Main entry point and orchestrator. Wires up all dependencies, creates tick source (CCXT or legacy Binance), runs the tick loop, handles signals. |
 | `exchange_ws.py` | `ExchangeWebSocketClient` -- CCXT-powered drop-in replacement for `BinanceWebSocketClient`. Works with any exchange. Produces identical `Tick` namedtuples. |
 | `exchange_klines.py` | `fetch_exchange_klines()` -- CCXT-powered drop-in replacement for `fetch_binance_klines()`. Works with any exchange. Falls back to legacy Binance if CCXT unavailable. |
-| `binance_ws.py` | `BinanceWebSocketClient` -- legacy direct Binance WebSocket client. Kept as fallback when CCXT is unavailable or `_FORCE_LEGACY_BINANCE` is set. |
+| `binance_ws.py` | `BinanceWebSocketClient` -- legacy direct Binance WebSocket client. Kept as fallback when CCXT is unavailable or `_FORCE_LEGACY_BINANCE` is set. **Current production behavior**: ingestion runs via the legacy Binance WS client (not CCXT) because the CCXT `watch_trades()` path was crashing on spot/swap market mixing. The CCXT adapter bugs were fixed (2026-04-01) but legacy WS is the active path until explicitly switched back. |
 | `tick_buffer.py` | `TickBuffer` -- asyncio-safe in-memory buffer with time-based and size-based flush triggers. Uses asyncpg `COPY` for bulk inserts. Retains ticks on flush failure. |
 | `broadcaster.py` | `PriceBroadcaster` -- publishes ticks to the Redis `price_updates` pub/sub channel. Supports single and batched (pipeline) publishing. |
 | `binance_klines.py` | `fetch_binance_klines()` -- legacy async function to fetch historical OHLCV candles from Binance REST. Used as fallback for `exchange_klines.py`. |
@@ -157,8 +157,10 @@ python scripts/backfill_history.py
 - **Binance combined-stream URL format**: streams are joined with `/` (e.g., `?streams=btcusdt@trade/ethusdt@trade`). The `@trade` suffix selects trade events specifically; other stream types (e.g., `@kline_1m`) would need different parsing logic.
 - **`_parse_message` returns `None` for non-trade events** (e.g., connection ack messages). These are silently dropped, which is correct behavior.
 - **Decimal precision**: prices and quantities are parsed as `Decimal(str)` to avoid float rounding. Never convert to float in this pipeline.
+- **Production uses legacy Binance WS fallback (as of 2026-04-01)**: After the CCXT ingestion crash (spot/swap market mixing in `fetch_markets()` + `watch_trades()` calling one connection per symbol), production reverted to the legacy `BinanceWebSocketClient`. The CCXT adapter fixes are in place — to switch back, ensure `_FORCE_LEGACY_BINANCE` is not set and the `trading_pairs` table is seeded. Running on legacy provides 447 live prices with `stale=false`.
 
 ## Recent Changes
 
+- `2026-04-01` -- Production market data fix: seeded 439 Binance USDT pairs into `trading_pairs` table. CCXT ingestion crash investigated: `fetch_markets()` was including swap markets (fixed in `src/exchange/ccxt_adapter.py`), symbol mapper was overwriting spot with swap entries (fixed in `src/exchange/symbol_mapper.py`). Production currently running on legacy Binance WS fallback (447 prices, `stale=false`).
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Added CCXT-based `exchange_ws.py` and `exchange_klines.py`. Updated `service.py` to support multi-exchange via `_create_tick_source()` with legacy Binance fallback.

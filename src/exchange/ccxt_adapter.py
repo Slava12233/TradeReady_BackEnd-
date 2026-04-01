@@ -14,6 +14,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -120,6 +121,10 @@ class CCXTAdapter(ExchangeAdapter):
             if info.get("quote", "").upper() != quote_upper:
                 continue
             if not info.get("active", True):
+                continue
+            # Only include spot markets — swap/futures symbols cannot be mixed
+            # with spot in CCXT's watch_trades_for_symbols().
+            if info.get("type", "spot") != "spot":
                 continue
 
             limits = info.get("limits", {})
@@ -246,11 +251,16 @@ class CCXTAdapter(ExchangeAdapter):
 
     # ── Real-time streaming (WebSocket) ────────────────────────────────────
 
+    # Maximum symbols per ``watch_trades_for_symbols`` call.  Binance caps
+    # this at 200; other exchanges may differ but 200 is a safe default.
+    _WS_BATCH_SIZE = 200
+
     async def watch_trades(self, symbols: list[str]) -> AsyncGenerator[ExchangeTick, None]:
         """Stream real-time trades for the given symbols via CCXT Pro.
 
-        Uses CCXT Pro's ``watch_trades_for_symbols()`` when available, falling
-        back to per-symbol ``watch_trades()`` with round-robin polling.
+        When the symbol count exceeds :attr:`_WS_BATCH_SIZE`, multiple
+        ``watch_trades_for_symbols`` calls run concurrently in background
+        tasks and feed a shared :class:`asyncio.Queue`.
         """
         self._ensure_initialized()
 
@@ -266,44 +276,113 @@ class CCXTAdapter(ExchangeAdapter):
             symbol_count=len(ccxt_symbols),
         )
 
+        if not hasattr(self._ws_exchange, "watch_trades_for_symbols"):
+            # Fallback for exchanges without multi-symbol watch.
+            async for tick in self._watch_trades_roundrobin(ccxt_symbols):
+                yield tick
+            return
+
+        # Split into batches of _WS_BATCH_SIZE
+        batches = [
+            ccxt_symbols[i : i + self._WS_BATCH_SIZE]
+            for i in range(0, len(ccxt_symbols), self._WS_BATCH_SIZE)
+        ]
+
+        if len(batches) == 1:
+            # Single batch — no need for queue overhead
+            async for tick in self._watch_single_batch(batches[0]):
+                yield tick
+            return
+
+        # Multiple batches — fan out to concurrent tasks via a shared queue
+        queue: asyncio.Queue[ExchangeTick | None] = asyncio.Queue(maxsize=50_000)
+        tasks = [
+            asyncio.create_task(self._batch_watcher(batch, queue, idx))
+            for idx, batch in enumerate(batches)
+        ]
+
+        log.info(
+            "Multi-batch WebSocket stream started",
+            exchange=self._exchange_id,
+            batches=len(batches),
+            symbols_per_batch=self._WS_BATCH_SIZE,
+        )
+
         try:
             while True:
-                # watch_trades_for_symbols returns trades for any of the given symbols.
-                if hasattr(self._ws_exchange, "watch_trades_for_symbols"):
-                    trades = await self._ws_exchange.watch_trades_for_symbols(ccxt_symbols)
-                else:
-                    # Fallback for exchanges without multi-symbol watch.
-                    # Round-robin through symbols.
-                    trades = []
-                    for ccxt_sym in ccxt_symbols:
-                        batch = await self._ws_exchange.watch_trades(ccxt_sym)
-                        trades.extend(batch)
+                tick = await queue.get()
+                if tick is None:
+                    break
+                yield tick
+        finally:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def _watch_single_batch(
+        self, ccxt_symbols: list[str]
+    ) -> AsyncGenerator[ExchangeTick, None]:
+        """Watch a single batch of symbols."""
+        try:
+            while True:
+                trades = await self._ws_exchange.watch_trades_for_symbols(ccxt_symbols)
                 for trade in trades:
-                    platform_symbol = self._mapper.from_ccxt(trade.get("symbol", ""))
-                    yield ExchangeTick(
-                        symbol=platform_symbol,
-                        price=Decimal(str(trade["price"])),
-                        quantity=Decimal(str(trade["amount"])),
-                        timestamp=datetime.fromtimestamp(trade["timestamp"] / 1000, tz=UTC)
-                        if trade.get("timestamp")
-                        else datetime.now(tz=UTC),
-                        is_buyer_maker=trade.get("side", "").lower() != "buy",
-                        trade_id=str(trade.get("id", "")),
-                        exchange=self._exchange_id,
-                    )
+                    yield self._parse_ws_trade(trade)
+        except Exception as exc:
+            log.error("WebSocket trade stream error", exchange=self._exchange_id, error=str(exc))
+            raise
 
+    async def _batch_watcher(
+        self,
+        ccxt_symbols: list[str],
+        queue: asyncio.Queue[ExchangeTick | None],
+        batch_idx: int,
+    ) -> None:
+        """Background task that watches one batch and pushes ticks to the queue."""
+        try:
+            while True:
+                trades = await self._ws_exchange.watch_trades_for_symbols(ccxt_symbols)
+                for trade in trades:
+                    await queue.put(self._parse_ws_trade(trade))
+        except asyncio.CancelledError:
+            return
         except Exception as exc:
             log.error(
-                "WebSocket trade stream error",
+                "Batch watcher error",
                 exchange=self._exchange_id,
+                batch=batch_idx,
                 error=str(exc),
             )
+            await queue.put(None)  # signal termination
+
+    async def _watch_trades_roundrobin(
+        self, ccxt_symbols: list[str]
+    ) -> AsyncGenerator[ExchangeTick, None]:
+        """Fallback: round-robin per-symbol watch_trades."""
+        try:
+            while True:
+                for ccxt_sym in ccxt_symbols:
+                    batch = await self._ws_exchange.watch_trades(ccxt_sym)
+                    for trade in batch:
+                        yield self._parse_ws_trade(trade)
+        except Exception as exc:
+            log.error("WebSocket trade stream error", exchange=self._exchange_id, error=str(exc))
             raise
-        finally:
-            if self._ws_exchange is not None:
-                await self._ws_exchange.close()
-                self._ws_exchange = None
+
+    def _parse_ws_trade(self, trade: dict) -> ExchangeTick:  # type: ignore[type-arg]
+        """Convert a raw CCXT WS trade dict to an :class:`ExchangeTick`."""
+        platform_symbol = self._mapper.from_ccxt(trade.get("symbol", ""))
+        return ExchangeTick(
+            symbol=platform_symbol,
+            price=Decimal(str(trade["price"])),
+            quantity=Decimal(str(trade["amount"])),
+            timestamp=datetime.fromtimestamp(trade["timestamp"] / 1000, tz=UTC)
+            if trade.get("timestamp")
+            else datetime.now(tz=UTC),
+            is_buyer_maker=trade.get("side", "").lower() != "buy",
+            trade_id=str(trade.get("id", "")),
+            exchange=self._exchange_id,
+        )
 
     # ── Trading (Phase 8) ──────────────────────────────────────────────────
 

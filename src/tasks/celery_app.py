@@ -43,25 +43,34 @@ _REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 # Application instance
 # ---------------------------------------------------------------------------
 
+_INCLUDE_MODULES = [
+    "src.tasks.limit_order_monitor",
+    "src.tasks.portfolio_snapshots",
+    "src.tasks.candle_aggregation",
+    "src.tasks.cleanup",
+    "src.tasks.backtest_cleanup",
+    "src.tasks.battle_snapshots",
+    "src.tasks.strategy_tasks",
+    # Agent analytics tasks (src/tasks/ package)
+    "src.tasks.agent_analytics",
+    # ML retraining tasks — long-running; routed to ml_training queue
+    "src.tasks.retrain_tasks",
+]
+
+# Agent ecosystem tasks (agent/ package) — optional; only available when the
+# agent package is installed (profile-gated Docker service).
+try:
+    import agent.tasks  # noqa: F401
+
+    _INCLUDE_MODULES.append("agent.tasks")
+except ModuleNotFoundError:
+    pass
+
 app = Celery(
     "agentexchange",
     broker=_REDIS_URL,
     backend=_REDIS_URL,
-    include=[
-        "src.tasks.limit_order_monitor",
-        "src.tasks.portfolio_snapshots",
-        "src.tasks.candle_aggregation",
-        "src.tasks.cleanup",
-        "src.tasks.backtest_cleanup",
-        "src.tasks.battle_snapshots",
-        "src.tasks.strategy_tasks",
-        # Agent ecosystem tasks (agent/ package)
-        "agent.tasks",
-        # Agent analytics tasks (src/tasks/ package)
-        "src.tasks.agent_analytics",
-        # ML retraining tasks — long-running; routed to ml_training queue
-        "src.tasks.retrain_tasks",
-    ],
+    include=_INCLUDE_MODULES,
 )
 
 # ---------------------------------------------------------------------------

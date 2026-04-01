@@ -49,6 +49,12 @@ class SymbolMapper:
             quote = market_info.get("quote", "")
             platform_symbol = f"{base}{quote}".upper()
 
+            # Prefer spot markets — if a spot symbol is already mapped, don't
+            # let a swap/futures entry (e.g. BTC/USDT:USDT) overwrite it.
+            market_type = market_info.get("type", "spot")
+            if platform_symbol in self._platform_to_ccxt and market_type != "spot":
+                continue
+
             self._platform_to_ccxt[platform_symbol] = ccxt_symbol
             self._ccxt_to_platform[ccxt_symbol] = platform_symbol
 
