@@ -59,12 +59,13 @@ _INCLUDE_MODULES = [
 
 # Agent ecosystem tasks (agent/ package) — optional; only available when the
 # agent package is installed (profile-gated Docker service).
-try:
-    import agent.tasks  # noqa: F401
+# We check importability via importlib.util.find_spec() instead of importing
+# directly, because `agent.tasks` imports `app` from this module — importing
+# it before `app` is defined would cause a circular ImportError.
+import importlib.util  # noqa: E402
 
+if importlib.util.find_spec("agent.tasks") is not None:
     _INCLUDE_MODULES.append("agent.tasks")
-except ModuleNotFoundError:
-    pass
 
 app = Celery(
     "agentexchange",
