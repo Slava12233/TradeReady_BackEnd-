@@ -283,10 +283,7 @@ class CCXTAdapter(ExchangeAdapter):
             return
 
         # Split into batches of _WS_BATCH_SIZE
-        batches = [
-            ccxt_symbols[i : i + self._WS_BATCH_SIZE]
-            for i in range(0, len(ccxt_symbols), self._WS_BATCH_SIZE)
-        ]
+        batches = [ccxt_symbols[i : i + self._WS_BATCH_SIZE] for i in range(0, len(ccxt_symbols), self._WS_BATCH_SIZE)]
 
         if len(batches) == 1:
             # Single batch — no need for queue overhead
@@ -296,10 +293,7 @@ class CCXTAdapter(ExchangeAdapter):
 
         # Multiple batches — fan out to concurrent tasks via a shared queue
         queue: asyncio.Queue[ExchangeTick | None] = asyncio.Queue(maxsize=50_000)
-        tasks = [
-            asyncio.create_task(self._batch_watcher(batch, queue, idx))
-            for idx, batch in enumerate(batches)
-        ]
+        tasks = [asyncio.create_task(self._batch_watcher(batch, queue, idx)) for idx, batch in enumerate(batches)]
 
         log.info(
             "Multi-batch WebSocket stream started",
@@ -319,9 +313,7 @@ class CCXTAdapter(ExchangeAdapter):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _watch_single_batch(
-        self, ccxt_symbols: list[str]
-    ) -> AsyncGenerator[ExchangeTick, None]:
+    async def _watch_single_batch(self, ccxt_symbols: list[str]) -> AsyncGenerator[ExchangeTick, None]:
         """Watch a single batch of symbols."""
         try:
             while True:
@@ -355,9 +347,7 @@ class CCXTAdapter(ExchangeAdapter):
             )
             await queue.put(None)  # signal termination
 
-    async def _watch_trades_roundrobin(
-        self, ccxt_symbols: list[str]
-    ) -> AsyncGenerator[ExchangeTick, None]:
+    async def _watch_trades_roundrobin(self, ccxt_symbols: list[str]) -> AsyncGenerator[ExchangeTick, None]:
         """Fallback: round-robin per-symbol watch_trades."""
         try:
             while True:
