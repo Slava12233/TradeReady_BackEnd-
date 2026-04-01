@@ -45,9 +45,10 @@ jobs:
             echo "Backup saved"
 
             echo "=== Pull latest main ==="
+            git stash --include-untracked || true
             git fetch origin main
             git checkout main
-            git pull origin main
+            git reset --hard origin/main
 
             echo "=== Build application images ==="
             docker compose build api ingestion celery
