@@ -83,9 +83,14 @@ def _participant_to_response(p: BattleParticipant) -> BattleParticipantResponse:
 
 def _battle_to_response(battle: Battle, *, include_participants: bool = False) -> BattleResponse:
     """Convert an ORM Battle to a response schema."""
+    from sqlalchemy import inspect as sa_inspect  # noqa: PLC0415
+
     participants = None
     participant_count = 0
-    if hasattr(battle, "participants") and battle.participants is not None:
+    # Check if participants are already loaded (avoid lazy load in async context
+    # which causes MissingGreenlet error)
+    state = sa_inspect(battle)
+    if "participants" not in state.unloaded and battle.participants is not None:
         participant_count = len(battle.participants)
         if include_participants:
             participants = [_participant_to_response(p) for p in battle.participants]

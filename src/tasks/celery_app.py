@@ -64,8 +64,11 @@ _INCLUDE_MODULES = [
 # it before `app` is defined would cause a circular ImportError.
 import importlib.util  # noqa: E402
 
-if importlib.util.find_spec("agent.tasks") is not None:
-    _INCLUDE_MODULES.append("agent.tasks")
+try:
+    if importlib.util.find_spec("agent.tasks") is not None:
+        _INCLUDE_MODULES.append("agent.tasks")
+except (ModuleNotFoundError, ValueError):
+    pass  # agent package not installed — skip
 
 app = Celery(
     "agentexchange",
