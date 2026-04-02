@@ -139,6 +139,11 @@ class AccountInfoResponse(_BaseSchema):
         description="UUID of the account.",
         examples=["550e8400-e29b-41d4-a716-446655440000"],
     )
+    api_key: str = Field(
+        ...,
+        description="Account-level API key for X-API-Key header authentication.",
+        examples=["ak_live_abc123..."],
+    )
     display_name: str = Field(
         ...,
         description="Human-readable name for the account / bot.",

@@ -281,6 +281,7 @@ async def get_account_info(
 
     return AccountInfoResponse(
         account_id=account.id,
+        api_key=account.api_key,
         display_name=account.display_name,
         status=account.status,  # type: ignore[arg-type]
         starting_balance=effective_starting_balance,
