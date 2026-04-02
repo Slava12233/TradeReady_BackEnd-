@@ -51,6 +51,7 @@ from src.accounts.auth import (
 from src.config import Settings
 from src.database.models import Account, Balance, Order, TradingSession
 from src.database.repositories.account_repo import AccountRepository
+from src.database.repositories.agent_repo import AgentRepository
 from src.database.repositories.balance_repo import BalanceRepository
 from src.utils.exceptions import (
     AccountNotFoundError,
@@ -87,6 +88,12 @@ class AccountCredentials:
                           once, never store.**
         display_name:     The account's display name.
         starting_balance: USDT balance credited at registration.
+        agent_id:         UUID of the default agent auto-created during
+                          registration.  ``None`` only if agent creation fails
+                          (non-fatal — the account is still valid).
+        agent_api_key:    Plaintext API key for the default agent.  Shown once;
+                          callers should use this key for trading.  ``None``
+                          when ``agent_id`` is ``None``.
     """
 
     account_id: UUID
@@ -94,6 +101,8 @@ class AccountCredentials:
     api_secret: str
     display_name: str
     starting_balance: Decimal
+    agent_id: UUID | None = None
+    agent_api_key: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +134,7 @@ class AccountService:
         self._session = session
         self._settings = settings
         self._account_repo = AccountRepository(session)
+        self._agent_repo = AgentRepository(session)
         self._balance_repo = BalanceRepository(session)
 
     # ------------------------------------------------------------------
@@ -195,10 +205,6 @@ class AccountService:
 
             account = await self._account_repo.create(account)
 
-            # NOTE: Balance and TradingSession creation is handled by
-            # AgentService.create_agent(), which creates agent-scoped rows
-            # (Balance.agent_id and TradingSession.agent_id are NOT NULL).
-
         except IntegrityError as exc:
             await self._session.rollback()
             raise DuplicateAccountError(email=email) from exc
@@ -211,11 +217,38 @@ class AccountService:
             )
             raise DatabaseError("Failed to register account.") from exc
 
+        # Auto-create a default agent so the account can trade immediately.
+        # The agent holds the Balance row (agent_id NOT NULL), so without this
+        # step the account has no usable balance.
+        # Lazy import to avoid circular dependency: accounts → agents → accounts.
+        from src.agents.service import AgentService  # noqa: PLC0415
+
+        agent_svc = AgentService(self._session, self._settings)
+        try:
+            agent_creds = await agent_svc.create_agent(
+                account_id=account.id,
+                display_name=f"{display_name}'s Agent",
+                starting_balance=balance_amount,
+            )
+            agent_id: UUID | None = agent_creds.agent_id
+            agent_api_key: str | None = agent_creds.api_key
+        except Exception as exc:  # noqa: BLE001
+            # Agent creation failure is non-fatal for account creation itself.
+            # Log and continue — the caller can create an agent manually.
+            log.error(
+                "account.register.default_agent_failed",
+                account_id=str(account.id),
+                error=str(exc),
+            )
+            agent_id = None
+            agent_api_key = None
+
         log.info(
             "account.registered",
             account_id=str(account.id),
             display_name=display_name,
             starting_balance=str(balance_amount),
+            default_agent_id=str(agent_id) if agent_id else None,
         )
 
         return AccountCredentials(
@@ -224,6 +257,8 @@ class AccountService:
             api_secret=creds.api_secret,
             display_name=display_name,
             starting_balance=balance_amount,
+            agent_id=agent_id,
+            agent_api_key=agent_api_key,
         )
 
     # ------------------------------------------------------------------
@@ -378,23 +413,30 @@ class AccountService:
     # ------------------------------------------------------------------
 
     async def reset_account(self, account_id: UUID) -> TradingSession:
-        """Reset an account to a clean state with its original starting balance.
+        """Reset an account to a clean state, restoring each agent to its starting balance.
 
         Steps performed inside **one transaction**:
 
         1. Verify the account exists and is ``active``.
-        2. Close the current active :class:`~src.database.models.TradingSession`
-           (sets ``ended_at = now()``, ``status = "closed"``).
-        3. Delete all :class:`~src.database.models.Balance` rows for the account.
-        4. Re-credit the original ``starting_balance`` as a fresh USDT balance.
-        5. Open a new ``TradingSession``.
-        6. Commit.
+        2. Cancel all pending / partially-filled orders for the account so the
+           Celery ``LimitOrderMonitor`` cannot execute stale orders against the
+           freshly-credited balances.
+        3. Close all active :class:`~src.database.models.TradingSession` rows
+           for the account.
+        4. For each non-archived agent that belongs to the account:
+           a. Wipe all :class:`~src.database.models.Balance` rows for that agent.
+           b. Re-credit a fresh USDT balance scoped to that agent.
+           c. Open a new :class:`~src.database.models.TradingSession` with the
+              correct ``agent_id`` (satisfies the ``NOT NULL`` constraint).
+        5. Flush and return the first new session (used by the route layer for
+           the response summary).
 
         Args:
             account_id: UUID of the account to reset.
 
         Returns:
-            The newly-created :class:`~src.database.models.TradingSession`.
+            The newly-created :class:`~src.database.models.TradingSession` for
+            the first agent (or the only agent for single-agent accounts).
 
         Raises:
             AccountNotFoundError:  If no account exists with ``account_id``.
@@ -411,10 +453,14 @@ class AccountService:
         if account.status != "active":
             raise AccountSuspendedError(account_id=account_id)
 
+        # Fetch all non-archived agents before entering the write path so that
+        # a subsequent flush cannot invalidate these ORM instances.
+        agents = await self._agent_repo.list_by_account(account_id, include_archived=False)
+
         try:
-            # 1. Cancel all pending / partially-filled orders before wiping balances.
-            #    Without this, the Celery LimitOrderMonitor could execute stale orders
-            #    against the freshly-credited USDT balance after the reset.
+            # 1. Cancel all pending / partially-filled orders for the account.
+            #    Without this the Celery LimitOrderMonitor could execute stale
+            #    orders against the freshly-credited balances after the reset.
             await self._session.execute(
                 update(Order)
                 .where(
@@ -424,7 +470,7 @@ class AccountService:
                 .values(status="cancelled")
             )
 
-            # 2. Close the current active session (if one exists)
+            # 2. Close all active trading sessions for the account.
             await self._session.execute(
                 update(TradingSession)
                 .where(
@@ -437,42 +483,73 @@ class AccountService:
                 )
             )
 
-            # 3. Wipe all balance rows for the account
-            balances: Sequence[Balance] = await self._balance_repo.get_all(account_id)
-            for bal in balances:
-                await self._session.delete(bal)
-            await self._session.flush()
+            # 3. Per-agent reset: wipe balances, re-credit starting USDT,
+            #    open a new session with the required agent_id.
+            first_new_session: TradingSession | None = None
 
-            # 4. Re-credit starting USDT balance
-            starting = Decimal(str(account.starting_balance))
-            fresh_balance = Balance(
-                account_id=account_id,
-                asset=_STARTING_ASSET,
-                available=starting,
-                locked=Decimal("0"),
-            )
-            self._session.add(fresh_balance)
-            await self._session.flush()
+            for agent in agents:
+                agent_starting = Decimal(str(agent.starting_balance))
 
-            # 5. Open a new trading session
-            new_session = TradingSession(
-                account_id=account_id,
-                starting_balance=starting,
-                status="active",
-            )
-            self._session.add(new_session)
-            await self._session.flush()
-            await self._session.refresh(new_session)
+                # 3a. Wipe all balance rows for this agent.
+                agent_balances: Sequence[Balance] = await self._balance_repo.get_all_by_agent(agent.id)
+                for bal in agent_balances:
+                    await self._session.delete(bal)
+                await self._session.flush()
+
+                # 3b. Re-credit the agent's starting USDT balance.
+                fresh_balance = Balance(
+                    account_id=account_id,
+                    agent_id=agent.id,
+                    asset=_STARTING_ASSET,
+                    available=agent_starting,
+                    locked=Decimal("0"),
+                )
+                self._session.add(fresh_balance)
+                await self._session.flush()
+
+                # 3c. Open a new trading session scoped to this agent.
+                new_session = TradingSession(
+                    account_id=account_id,
+                    agent_id=agent.id,
+                    starting_balance=agent_starting,
+                    status="active",
+                )
+                self._session.add(new_session)
+                await self._session.flush()
+                await self._session.refresh(new_session)
+
+                if first_new_session is None:
+                    first_new_session = new_session
+
+                log.info(
+                    "account.reset.agent",
+                    account_id=str(account_id),
+                    agent_id=str(agent.id),
+                    new_session_id=str(new_session.id),
+                    starting_balance=str(agent_starting),
+                )
+
+            # Edge case: account has no agents yet (should not happen in
+            # normal operation since registration always creates a default
+            # agent, but handled defensively).
+            if first_new_session is None:
+                log.warning("account.reset.no_agents", account_id=str(account_id))
+                # Return a sentinel session without agent_id is not possible
+                # (NOT NULL constraint).  Raise a clear error so the caller
+                # knows why the reset did not produce a session.
+                raise DatabaseError(
+                    "Cannot reset account: no agents found. "
+                    "Create at least one agent before resetting."
+                )
 
             log.info(
                 "account.reset",
                 account_id=str(account_id),
-                new_session_id=str(new_session.id),
-                starting_balance=str(starting),
+                agent_count=len(agents),
             )
-            return new_session
+            return first_new_session
 
-        except (AccountNotFoundError, AccountSuspendedError):
+        except (AccountNotFoundError, AccountSuspendedError, DatabaseError):
             raise
         except SQLAlchemyError as exc:
             await self._session.rollback()

@@ -31,7 +31,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 # ---------------------------------------------------------------------------
 # Shared config base
@@ -112,9 +112,11 @@ class OrderRequest(_BaseSchema):
     price: Decimal | None = Field(
         default=None,
         gt=Decimal("0"),
+        validation_alias=AliasChoices("price", "stop_price"),
         description=(
             "Target/trigger price. Required for 'limit', 'stop_loss', "
-            "'take_profit' orders. Must be omitted for 'market' orders."
+            "'take_profit' orders. Must be omitted for 'market' orders. "
+            "Also accepts 'stop_price' as an alias."
         ),
         examples=["63000.00"],
     )

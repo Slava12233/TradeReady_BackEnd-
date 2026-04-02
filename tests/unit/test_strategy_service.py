@@ -96,12 +96,25 @@ async def test_create_strategy_success():
 
 
 async def test_create_strategy_invalid_definition():
-    """Creating a strategy with invalid definition raises ValidationError."""
-    from pydantic import ValidationError  # noqa: PLC0415
-
+    """Invalid definition is translated to InputValidationError (HTTP 422), not a raw pydantic error."""
     service = _make_service()
-    with pytest.raises(ValidationError):
+    with pytest.raises(InputValidationError) as exc_info:
         await service.create_strategy(uuid4(), "Test", None, {"pairs": []})
+    assert "validation error" in exc_info.value.message.lower()
+    assert "errors" in exc_info.value.details
+
+
+async def test_create_strategy_missing_pairs():
+    """Empty definition dict (missing required 'pairs') returns InputValidationError with error details."""
+    service = _make_service()
+    with pytest.raises(InputValidationError) as exc_info:
+        await service.create_strategy(uuid4(), "Test", None, {})
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert exc_info.value.http_status == 422
+    errors = exc_info.value.details.get("errors", [])
+    # At least one error must reference the missing 'pairs' field
+    field_names = [str(e.get("loc", "")) for e in errors]
+    assert any("pairs" in loc for loc in field_names)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +253,24 @@ async def test_create_version_auto_increment():
     call_args = repo.create_version.call_args
     assert call_args.kwargs["version_num"] == 4
     assert call_args.kwargs["parent_version"] == 3
+
+
+async def test_create_version_invalid_definition():
+    """Invalid definition on create_version raises InputValidationError with error details."""
+    account_id = uuid4()
+    strategy_id = uuid4()
+    strategy = _make_strategy(account_id=account_id, strategy_id=strategy_id)
+    repo = AsyncMock()
+    repo.get_by_id.return_value = strategy
+    service = _make_service(repo)
+
+    with pytest.raises(InputValidationError) as exc_info:
+        await service.create_version(account_id, strategy_id, {})
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    assert exc_info.value.http_status == 422
+    assert "errors" in exc_info.value.details
+    # Repo should never be called when definition is invalid
+    repo.create_version.assert_not_called()
 
 
 async def test_get_versions():

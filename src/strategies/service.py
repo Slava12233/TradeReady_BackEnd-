@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 import structlog
 
 from src.database.models import Strategy, StrategyTestRun, StrategyVersion
@@ -59,8 +60,19 @@ class StrategyService:
         Returns:
             The created Strategy.
         """
-        # Validate definition
-        StrategyDefinition(**definition)
+        # Validate definition against the strategy schema before persisting
+        try:
+            StrategyDefinition(**definition)
+        except ValidationError as exc:
+            logger.warning(
+                "strategy.create.invalid_definition",
+                account_id=str(account_id),
+                error_count=exc.error_count(),
+            )
+            raise InputValidationError(
+                f"Invalid strategy definition: {exc.error_count()} validation error(s)",
+                details={"errors": exc.errors()},
+            ) from exc
         return await self._repo.create(account_id, name, description, definition)
 
     async def get_strategy(self, account_id: UUID, strategy_id: UUID) -> Strategy:
@@ -167,8 +179,20 @@ class StrategyService:
             The new StrategyVersion.
         """
         await self.get_strategy(account_id, strategy_id)  # ownership check
-        # Validate definition
-        StrategyDefinition(**definition)
+        # Validate definition against the strategy schema before persisting
+        try:
+            StrategyDefinition(**definition)
+        except ValidationError as exc:
+            logger.warning(
+                "strategy.version.invalid_definition",
+                account_id=str(account_id),
+                strategy_id=str(strategy_id),
+                error_count=exc.error_count(),
+            )
+            raise InputValidationError(
+                f"Invalid strategy definition: {exc.error_count()} validation error(s)",
+                details={"errors": exc.errors()},
+            ) from exc
 
         max_version = await self._repo.get_max_version(strategy_id)
         new_version = max_version + 1

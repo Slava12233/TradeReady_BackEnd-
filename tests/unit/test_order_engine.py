@@ -419,3 +419,107 @@ async def test_execute_pending_order_zero_price_raises():
 
     with pytest.raises(PriceNotAvailableError):
         await engine.execute_pending_order(uuid4(), Decimal("0"))
+
+
+# ---------------------------------------------------------------------------
+# BUG-011: realized_pnl fee-inclusive calculation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sell_realized_pnl_subtracts_fee():
+    """Sell trade realized_pnl is net of sell fee (BUG-011 regression test).
+
+    With a buy at 60 000 (fee=60) and a sell at 66 000 (fee=66) for qty=1:
+      avg_entry = (60_000 + 60) / 1 = 60_060  (cost basis includes buy fee)
+      gross_pnl = (66_000 - 60_060) * 1 = 5_940
+      net_pnl   = 5_940 - 66 (sell fee) = 5_874
+    """
+    from src.database.models import Position
+
+    account_id = uuid4()
+    agent_id = uuid4()
+    # First: buy fills, creating a position with fee-inclusive cost basis.
+    buy_slippage = _make_slippage(exec_price="60000", fee="60")
+    buy_settlement = _make_settlement(fee="60", quote_amount="60000", exec_price="60000")
+
+    engine, mocks = _build_engine(
+        account_id=account_id,
+        slippage=buy_slippage,
+        settlement=buy_settlement,
+    )
+    buy_req = _make_order_request(side="buy", type_="market", quantity="1")
+    await engine.place_order(account_id, buy_req, agent_id=agent_id)
+
+    # Capture the Position that was added to the session.
+    pos_added: Position = mocks["session"].add.call_args[0][0]
+    # avg_entry_price should include the buy fee: (60_000 * 1 + 60) / 1 = 60_060
+    assert pos_added.avg_entry_price == Decimal("60060")
+    assert pos_added.total_cost == Decimal("60060")
+
+    # Second: sell fills, closing the position.  The session.execute for
+    # _upsert_position must now return the existing position.
+    sell_slippage = _make_slippage(exec_price="66000", fee="66")
+    sell_settlement = _make_settlement(fee="66", quote_amount="66000", exec_price="66000")
+
+    # Wire the existing position into the mock so _upsert_position finds it.
+    existing_pos = MagicMock(spec=Position)
+    existing_pos.quantity = Decimal("1")
+    existing_pos.avg_entry_price = Decimal("60060")  # fee-inclusive cost basis
+    existing_pos.total_cost = Decimal("60060")
+    existing_pos.realized_pnl = Decimal("0")
+
+    exec_result = MagicMock()
+    exec_result.scalar_one_or_none.return_value = existing_pos
+    mocks["session"].execute = AsyncMock(return_value=exec_result)
+    mocks["slippage_calc"].calculate = AsyncMock(return_value=sell_slippage)
+    mocks["balance_mgr"].execute_trade = AsyncMock(return_value=sell_settlement)
+
+    sell_req = _make_order_request(side="sell", type_="market", quantity="1")
+    await engine.place_order(account_id, sell_req, agent_id=agent_id)
+
+    # The Trade object has realized_pnl set in place (on the ORM instance).
+    # trade_repo.create is called with a Trade whose realized_pnl is set.
+    # We verify through the position's accumulated realized_pnl.
+    # gross = (66_000 - 60_060) * 1 = 5_940; net = 5_940 - 66 = 5_874
+    expected_rpnl = Decimal("5874")
+    assert existing_pos.realized_pnl == expected_rpnl
+
+
+@pytest.mark.asyncio
+async def test_sell_at_same_price_as_buy_reports_negative_pnl_due_to_fees():
+    """Round-trip with no price movement yields negative PnL equal to sum of fees.
+
+    Buy at 60_000 (fee=60), sell at 60_000 (fee=60):
+      avg_entry = (60_000 + 60) / 1 = 60_060
+      gross_pnl = (60_000 - 60_060) * 1 = -60
+      net_pnl   = -60 - 60 = -120
+    This is correct economic behaviour: fees are real costs.
+    """
+    from src.database.models import Position
+
+    account_id = uuid4()
+    flat_slippage = _make_slippage(exec_price="60000", fee="60")
+    flat_settlement = _make_settlement(fee="60", quote_amount="60000", exec_price="60000")
+
+    engine, mocks = _build_engine(
+        account_id=account_id,
+        slippage=flat_slippage,
+        settlement=flat_settlement,
+    )
+
+    existing_pos = MagicMock(spec=Position)
+    existing_pos.quantity = Decimal("1")
+    existing_pos.avg_entry_price = Decimal("60060")  # fee-inclusive cost basis
+    existing_pos.total_cost = Decimal("60060")
+    existing_pos.realized_pnl = Decimal("0")
+
+    exec_result = MagicMock()
+    exec_result.scalar_one_or_none.return_value = existing_pos
+    mocks["session"].execute = AsyncMock(return_value=exec_result)
+
+    sell_req = _make_order_request(side="sell", type_="market", quantity="1")
+    await engine.place_order(account_id, sell_req)
+
+    # gross = (60_000 - 60_060) * 1 = -60; net = -60 - 60 = -120
+    assert existing_pos.realized_pnl == Decimal("-120")

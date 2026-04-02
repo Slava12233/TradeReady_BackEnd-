@@ -796,7 +796,12 @@ class RiskManager:
                 total_equity=str(total_equity),
             )
             return RiskCheckResult.reject(
-                "position_limit_exceeded",
+                f"position_limit_exceeded: {symbol} position would be "
+                f"{new_position_pct:.1f}% of equity "
+                f"(limit: {limits.max_position_size_pct}%). "
+                f"Current: {existing_position_value:.2f} USDT, "
+                f"Requested: {estimated_value:.2f} USDT, "
+                f"Equity: {total_equity:.2f} USDT",
                 new_position_pct=str(new_position_pct),
                 max_position_size_pct=str(limits.max_position_size_pct),
                 symbol=symbol,

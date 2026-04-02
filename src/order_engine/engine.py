@@ -489,6 +489,7 @@ class OrderEngine:
             side=order.side,
             fill_qty=Decimal(str(order.quantity)),
             fill_price=slippage.execution_price,
+            fee=settlement.fee_charged,
             agent_id=order.agent_id,
         )
         if rpnl is not None:
@@ -644,6 +645,7 @@ class OrderEngine:
             side=order.side,
             fill_qty=order.quantity,
             fill_price=slippage.execution_price,
+            fee=settlement.fee_charged,
             agent_id=agent_id,
         )
         if rpnl is not None:
@@ -800,16 +802,29 @@ class OrderEngine:
         side: str,
         fill_qty: Decimal,
         fill_price: Decimal,
+        fee: Decimal,
         *,
         agent_id: UUID | None = None,
     ) -> Decimal | None:
         """Create or update the Position row for *account_id* / *symbol* after a fill.
 
-        For buy fills the weighted-average entry price is recalculated and the
-        quantity is increased.  For sell fills the quantity is reduced and the
-        realised PnL portion for the closed quantity is accumulated.  Positions
-        with ``quantity <= 0`` are zeroed out rather than deleted so that the
-        realised-PnL history is preserved on the row.
+        For buy fills the weighted-average entry price is recalculated using the
+        fee-inclusive total cost so that ``avg_entry_price`` represents the true
+        cost-per-unit (execution price + proportional buy fee).  The quantity is
+        increased accordingly.
+
+        For sell fills the quantity is reduced and the realised PnL for the
+        closed portion is accumulated.  Realised PnL is computed net of both the
+        buy-side fee (already embedded in ``avg_entry_price``) and the sell-side
+        fee passed as *fee*:
+
+            realised_pnl = (fill_price - avg_entry_price) * fill_qty - sell_fee
+
+        This gives the true economic profit that the account can observe as an
+        increase in available USDT balance.
+
+        Positions with ``quantity <= 0`` are zeroed out rather than deleted so
+        that the realised-PnL history is preserved on the row.
 
         This method must be called **before** the surrounding transaction
         commits so that the position update is atomic with the balance and
@@ -821,10 +836,13 @@ class OrderEngine:
             side:       ``"buy"`` or ``"sell"``.
             fill_qty:   Quantity filled in base asset.
             fill_price: Effective execution price (post-slippage).
+            fee:        Trading fee charged for this fill in the quote asset.
+                        For buys this is added to the cost basis; for sells it
+                        is subtracted from the realised PnL.
             agent_id:   Owning agent UUID for per-agent position isolation.
 
         Returns:
-            The realized PnL for this fill (sell side only), or ``None``
+            The net realized PnL for this fill (sell side only), or ``None``
             for buy fills and sells with no existing position.
         """
         filters = [
@@ -838,24 +856,27 @@ class OrderEngine:
         pos: Position | None = result.scalar_one_or_none()
 
         if side == "buy":
+            # Include the buy fee in the cost basis so that avg_entry_price
+            # represents the true cost-per-unit (price + fee/qty).
+            fill_cost_with_fee = fill_qty * fill_price + fee
             if pos is None:
+                avg_entry_price = fill_cost_with_fee / fill_qty if fill_qty else fill_price
                 pos = Position(
                     account_id=account_id,
                     agent_id=agent_id,
                     symbol=symbol,
                     side="long",
                     quantity=fill_qty,
-                    avg_entry_price=fill_price,
-                    total_cost=fill_qty * fill_price,
+                    avg_entry_price=avg_entry_price,
+                    total_cost=fill_cost_with_fee,
                     realized_pnl=Decimal("0"),
                 )
                 self._session.add(pos)
             else:
                 old_qty = Decimal(str(pos.quantity))
                 old_cost = Decimal(str(pos.total_cost))
-                fill_cost = fill_qty * fill_price
                 new_qty = old_qty + fill_qty
-                new_total_cost = old_cost + fill_cost
+                new_total_cost = old_cost + fill_cost_with_fee
                 new_avg_entry = new_total_cost / new_qty if new_qty else fill_price
                 pos.quantity = new_qty
                 pos.avg_entry_price = new_avg_entry
@@ -870,7 +891,11 @@ class OrderEngine:
                 return None
             old_qty = Decimal(str(pos.quantity))
             avg_entry = Decimal(str(pos.avg_entry_price))
-            realised_increment = (fill_price - avg_entry) * fill_qty
+            # Gross PnL for the closed portion.
+            gross_pnl = (fill_price - avg_entry) * fill_qty
+            # Subtract the sell fee to get the true net PnL that the account
+            # realises as extra USDT after the trade settles.
+            realised_increment = gross_pnl - fee
             new_qty = old_qty - fill_qty
             new_qty = max(new_qty, Decimal("0"))
             new_total_cost = new_qty * avg_entry

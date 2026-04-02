@@ -34,7 +34,7 @@ The order engine is the single authoritative path for placing, executing, and ca
 - **Session isolation in matcher**: `LimitOrderMatcher` opens a fresh DB session per order execution so one failure never rolls back others.
 - **Keyset pagination**: The matcher uses `WHERE id > last_seen_id` (not OFFSET) to avoid the shifting-offset problem when orders are inserted mid-sweep.
 - **Fund locking**: Queued buy orders lock `quantity * limit_price * 1.001` (including 0.1% fee estimate) in the quote asset. Sell orders lock the base asset quantity. Cancellation mirrors this exactly.
-- **Position tracking**: `_upsert_position()` maintains a single `Position` row per (account, symbol, agent). Buys recalculate weighted-average entry price; sells compute realized PnL as `(fill_price - avg_entry) * fill_qty`. Positions are zeroed out (not deleted) to preserve PnL history.
+- **Position tracking**: `_upsert_position()` maintains a single `Position` row per (account, symbol, agent). Buys recalculate weighted-average entry price using the fee-inclusive cost basis (`fill_qty * fill_price + fee`) so `avg_entry_price` represents the true per-unit cost. Sells compute net realized PnL as `(fill_price - avg_entry) * fill_qty - sell_fee`. Positions are zeroed out (not deleted) to preserve PnL history.
 
 ## Public API / Interfaces
 
@@ -176,4 +176,5 @@ await matcher.start(interval_seconds=1.0)  # loops forever with exponential back
 
 ## Recent Changes
 
+- `2026-04-01` (BUG-011) -- Fixed `realized_pnl` calculation in `_upsert_position()`. Buy fills now include the trading fee in `total_cost` so `avg_entry_price` is the true fee-inclusive cost basis. Sell fills now subtract the sell fee from `realised_increment` before setting `trade.realized_pnl`. This ensures win/loss classification in `PerformanceMetrics` reflects true economic P&L, not just gross price movement. Both callers (`execute_pending_order` and `_execute_market_order`) pass `settlement.fee_charged` to `_upsert_position`.
 - `2026-03-17` -- Initial CLAUDE.md created

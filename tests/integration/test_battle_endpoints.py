@@ -671,9 +671,9 @@ class TestBattleLifecycle:
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.post(f"/api/v1/battles/{battle_id}/start")
 
-        # BattleInvalidStateError from service.py is a plain Exception (not TradingPlatformError),
-        # so it will be caught by the generic exception handler as 500.
-        assert resp.status_code == 500
+        # BattleInvalidStateError is a TradingPlatformError subclass → HTTP 409 Conflict.
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "BATTLE_INVALID_STATE"
 
     def test_pause_agent(self) -> None:
         """POST /battles/{id}/pause/{agent_id} returns 200."""
@@ -898,9 +898,9 @@ class TestHistoricalBattle:
         client = _build_client(battle_service=mock_svc, mock_account=account)
         resp = client.post(f"/api/v1/battles/{battle.id}/step")
 
-        # The route imports BattleInvalidStateError from src.battles.service (plain Exception),
-        # which is caught by the generic handler -> 500
-        assert resp.status_code == 500
+        # The route raises BattleInvalidStateError (a TradingPlatformError) → HTTP 409 Conflict.
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "BATTLE_INVALID_STATE"
 
     def test_step_batch_historical(self) -> None:
         """POST /battles/{id}/step/batch returns 200."""

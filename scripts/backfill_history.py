@@ -198,10 +198,11 @@ async def _backfill_symbol(
                     "trade_count": int(k[8]),
                 })
 
-            if not dry_run and len(batch) >= BATCH_INSERT_SIZE:
-                async with session_factory() as session:
-                    await session.execute(_UPSERT_SQL, batch)
-                    await session.commit()
+            if len(batch) >= BATCH_INSERT_SIZE:
+                if not dry_run:
+                    async with session_factory() as session:
+                        await session.execute(_UPSERT_SQL, batch)
+                        await session.commit()
                 total_candles += len(batch)
                 batch.clear()
 
@@ -209,14 +210,14 @@ async def _backfill_symbol(
             last_open_ms = klines[-1][0]
             start_ms = last_open_ms + 1
 
-            # Progress
+            # Progress (done/total tracks pages fetched, not symbols)
             progress["done"] += 1
             elapsed = time.monotonic() - progress["wall_start"]
             elapsed_str = _fmt_duration(elapsed)
             logger.info(
-                "[%d/%d] %s %s: %d candles (page %d) | Elapsed: %s",
-                progress["done"], progress["total"], symbol, interval,
-                total_candles + len(batch), page, elapsed_str,
+                "[page %d | sym %d/%d] %s %s: %d candles | Elapsed: %s",
+                page, progress["done"], progress["total"], symbol, interval,
+                total_candles + len(batch), elapsed_str,
             )
 
             # Rate limit
@@ -225,15 +226,13 @@ async def _backfill_symbol(
             if len(klines) < MAX_CANDLES_PER_REQUEST:
                 break
 
-        # Flush remaining batch
-        if batch and not dry_run:
-            async with session_factory() as session:
-                await session.execute(_UPSERT_SQL, batch)
-                await session.commit()
+        # Flush remaining batch (tail that did not reach BATCH_INSERT_SIZE)
+        if batch:
+            if not dry_run:
+                async with session_factory() as session:
+                    await session.execute(_UPSERT_SQL, batch)
+                    await session.commit()
             total_candles += len(batch)
-
-        if dry_run:
-            total_candles = len(batch) + total_candles
 
         return total_candles
 
@@ -464,7 +463,10 @@ async def main() -> None:
                         sys.exit(1)
                     symbols = sorted(our_pairs)
 
-                logger.info("Daily backfill: %d symbols from %s (%s)", len(symbols), DEFAULT_DAILY_START.date(), exchange_id)
+                logger.info(
+                    "Daily backfill: %d symbols from %s (%s)",
+                    len(symbols), DEFAULT_DAILY_START.date(), exchange_id,
+                )
 
                 ok, failed, candles = await run_backfill(
                     symbols, "1d", DEFAULT_DAILY_START, now,

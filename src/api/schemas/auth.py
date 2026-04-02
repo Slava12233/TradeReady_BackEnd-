@@ -91,13 +91,24 @@ class RegisterResponse(_BaseSchema):
     The ``api_secret`` is returned **once only**.  The caller must store it
     securely; it cannot be recovered after registration.
 
+    A default agent is automatically created during registration.  Use
+    ``agent_api_key`` as the ``X-API-Key`` header value for all trading
+    endpoints so requests are correctly scoped to the agent's balance.
+
     Attributes:
         account_id:       UUID of the newly created account.
-        api_key:          Plaintext API key with ``ak_live_`` prefix.
+        api_key:          Plaintext account-level API key with ``ak_live_``
+                          prefix.  Use for account-management endpoints.
         api_secret:       Plaintext API secret with ``sk_live_`` prefix — shown
                           once and never stored in plaintext.
         display_name:     The registered display name.
         starting_balance: Virtual USDT balance the account was seeded with.
+        agent_id:         UUID of the default agent created automatically at
+                          registration.  ``None`` if agent creation failed (non-
+                          fatal; create an agent manually via ``POST /agents``).
+        agent_api_key:    Plaintext API key for the default agent.  Use this
+                          key for all trading requests.  Shown once only.
+                          ``None`` when ``agent_id`` is ``None``.
         message:          Advisory message reminding the caller to save the secret.
     """
 
@@ -108,7 +119,7 @@ class RegisterResponse(_BaseSchema):
     )
     api_key: str = Field(
         ...,
-        description="Plaintext API key (ak_live_ prefix). Use in X-API-Key header.",
+        description="Plaintext account-level API key (ak_live_ prefix).",
         examples=["ak_live_EXAMPLE_KEY_REPLACE_ME"],
     )
     api_secret: str = Field(
@@ -125,6 +136,22 @@ class RegisterResponse(_BaseSchema):
         ...,
         description="Initial virtual USDT balance.",
         examples=["10000.00"],
+    )
+    agent_id: UUID | None = Field(
+        default=None,
+        description=(
+            "UUID of the default agent created automatically at registration. "
+            "None if agent creation failed."
+        ),
+        examples=["7f3c8a00-e29b-41d4-a716-446655440001"],
+    )
+    agent_api_key: str | None = Field(
+        default=None,
+        description=(
+            "Plaintext API key for the default agent (ak_live_ prefix). "
+            "Use this key in X-API-Key for trading endpoints. Shown once only."
+        ),
+        examples=["ak_live_AGENT_KEY_REPLACE_ME"],
     )
     message: str = Field(
         default="Save your API secret now. It will not be shown again.",

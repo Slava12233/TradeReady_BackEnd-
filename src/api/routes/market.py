@@ -336,28 +336,34 @@ _MAX_BATCH_SYMBOLS = 100
     description=(
         "Returns rolling 24-hour OHLCV statistics for up to 100 symbols in a single "
         "request. Symbols with no cached ticker data are silently omitted from the "
-        "response. Accepts a comma-separated ``symbols`` query parameter."
+        "response. When ``symbols`` is omitted all available tickers are returned "
+        "(up to 100). Pass a comma-separated ``symbols`` list to filter."
     ),
 )
 async def get_tickers_batch(
+    cache: PriceCacheDep,
     symbols: Annotated[
-        str,
+        str | None,
         Query(
-            description="Comma-separated list of uppercase trading pair symbols (max 100).",
+            description=(
+                "Comma-separated list of uppercase trading pair symbols (max 100). "
+                "Omit to return all available tickers."
+            ),
             examples=["BTCUSDT,ETHUSDT,BNBUSDT"],
         ),
-    ],
-    cache: PriceCacheDep,
+    ] = None,
 ) -> BatchTickersResponse:
     """Return 24h rolling tickers for a batch of symbols from Redis.
 
-    Fetches all symbol tickers **concurrently** using ``asyncio.gather``,
-    so the round-trip is bounded by the slowest single Redis call rather
-    than the sum of all calls.
+    When *symbols* is omitted the full set of symbols available in the price
+    cache is used as the target list.  Fetches all symbol tickers
+    **concurrently** using ``asyncio.gather``, so the round-trip is bounded
+    by the slowest single Redis call rather than the sum of all calls.
 
     Args:
-        symbols: Comma-separated symbol list, e.g. ``"BTCUSDT,ETHUSDT"``.
         cache:   Injected :class:`~src.cache.price_cache.PriceCache`.
+        symbols: Optional comma-separated symbol list, e.g. ``"BTCUSDT,ETHUSDT"``.
+                 When ``None`` all cached symbols are targeted (capped at 100).
 
     Returns:
         :class:`~src.api.schemas.market.BatchTickersResponse` with a dict
@@ -365,10 +371,15 @@ async def get_tickers_batch(
 
     Example::
 
+        GET /api/v1/market/tickers
         GET /api/v1/market/tickers?symbols=BTCUSDT,ETHUSDT,BNBUSDT
     """
-    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    symbol_list = symbol_list[:_MAX_BATCH_SYMBOLS]
+    if symbols is None:
+        all_prices: dict[str, Decimal] = await cache.get_all_prices()
+        symbol_list = list(all_prices.keys())[:_MAX_BATCH_SYMBOLS]
+    else:
+        symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        symbol_list = symbol_list[:_MAX_BATCH_SYMBOLS]
 
     results = await asyncio.gather(
         *(cache.get_ticker(s) for s in symbol_list),

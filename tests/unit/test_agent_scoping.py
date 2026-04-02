@@ -127,12 +127,15 @@ class TestUpsertPositionAgentScoping:
         session = _make_session()
         engine, _ = _make_engine(session)
 
+        # BUG-011: _upsert_position now requires a positional `fee` argument
+        # (fee-inclusive cost basis for avg_entry_price on buy fills).
         await engine._upsert_position(
             account_id=ACCOUNT_ID,
             symbol="BTCUSDT",
             side="buy",
             fill_qty=Decimal("1"),
             fill_price=Decimal("60000"),
+            fee=Decimal("60"),  # 0.1% of 60000
             agent_id=AGENT_A,
         )
 
@@ -147,12 +150,14 @@ class TestUpsertPositionAgentScoping:
         session = _make_session()
         engine, _ = _make_engine(session)
 
+        # BUG-011: _upsert_position now requires a positional `fee` argument.
         await engine._upsert_position(
             account_id=ACCOUNT_ID,
             symbol="BTCUSDT",
             side="buy",
             fill_qty=Decimal("1"),
             fill_price=Decimal("60000"),
+            fee=Decimal("60"),  # 0.1% of 60000
             agent_id=AGENT_A,
         )
 

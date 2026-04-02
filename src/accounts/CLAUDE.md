@@ -1,6 +1,6 @@
 # Accounts Module
 
-<!-- last-updated: 2026-04-01 -->
+<!-- last-updated: 2026-04-01 (BUG-001 fix) -->
 
 > Authentication, balance management, and account lifecycle for the AI trading platform.
 
@@ -57,7 +57,7 @@ This module handles three core responsibilities: (1) cryptographic operations fo
 
 | Method | Purpose |
 |--------|---------|
-| `register(display_name, email=None, starting_balance=None, password=None)` | Registration: Account + credentials only (does NOT create TradingSession — agent_id required for that) |
+| `register(display_name, email=None, starting_balance=None, password=None)` | Registration: Account + auto-creates a default agent (which creates agent-scoped Balance). Returns `AccountCredentials` with `agent_id` and `agent_api_key`. |
 | `authenticate(api_key)` | API key auth; checks active status |
 | `authenticate_with_password(email, password)` | Email/password auth; checks active status |
 | `get_account(account_id)` | Fetch account by UUID |
@@ -116,10 +116,13 @@ This module handles three core responsibilities: (1) cryptographic operations fo
 - **Balance row auto-creation**: The `BalanceRepository` auto-creates a zero-balance row if one doesn't exist when `credit` is called. But `debit`/`lock` on a non-existent row will fail.
 - **`lru_cache` on `get_settings()`**: In tests, you must patch `src.config.get_settings` BEFORE the cached instance is created, or the real config will be used.
 - **Agent ID transition**: All `BalanceManager` methods have `agent_id=None` as optional. When `None`, they use legacy `account_id`-scoped repo methods. New code should always pass `agent_id`.
-- **Registration no longer creates balances**: `AccountService.register()` does NOT create the initial USDT balance row. Balance creation is handled by `AgentService.create_agent()`, which creates agent-scoped balances (`Balance.agent_id` is NOT NULL).
-- **Registration does NOT create TradingSession**: As of 2026-04-01, `register()` no longer creates a `TradingSession`. `TradingSession.agent_id` is `NOT NULL`, but registration has no `agent_id` yet. Creating it in `register()` caused every registration to fail with `IntegrityError` (misreported as `DuplicateAccountError`). TradingSession is created later, when an agent is assigned.
+- **Registration auto-creates a default agent**: `AccountService.register()` lazy-imports `AgentService` after persisting the `Account` row and calls `create_agent()`. This creates the agent-scoped `Balance` row immediately. The returned `AccountCredentials` includes `agent_id` and `agent_api_key`. Agent creation failure is non-fatal (both fields are `None`); the caller can create an agent manually.
+- **Agent API key is the trading key**: Use `agent_api_key` (from `RegisterResponse`) as `X-API-Key` for all trading endpoints. The account-level `api_key` works only for account-management endpoints.
+- **Registration does NOT create TradingSession**: `register()` does not create a `TradingSession`. `TradingSession.agent_id` is `NOT NULL`, and no agent exists at account-creation time. TradingSession is created by `AgentService.create_agent()` when needed.
 
 ## Recent Changes
 
+- `2026-04-02` (BUG-002) -- `reset_account()` rewritten to be fully agent-aware. `AccountService.__init__` now instantiates `AgentRepository`. `reset_account()` fetches all non-archived agents, cancels orders and closes sessions at the account level (bulk UPDATE), then for each agent wipes that agent's balances and re-creates both the `Balance` (with `agent_id`) and the `TradingSession` (with `agent_id`) satisfying the `NOT NULL` constraints. Works correctly for accounts with multiple agents.
+- `2026-04-01` (BUG-001) -- `register()` now auto-creates a default agent via lazy `AgentService` import. `AccountCredentials` gained `agent_id: UUID | None` and `agent_api_key: str | None`. `RegisterResponse` schema gained matching optional fields. Callers should use `agent_api_key` for trading endpoints.
 - `2026-04-01` -- Removed TradingSession creation from `register()` to fix registration IntegrityError bug; updated `register()` docstring/signature entry above
 - `2026-03-17` -- Initial CLAUDE.md created

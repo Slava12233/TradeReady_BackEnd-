@@ -122,6 +122,8 @@ async def register(
         api_secret=creds.api_secret,
         display_name=creds.display_name,
         starting_balance=creds.starting_balance,
+        agent_id=creds.agent_id,
+        agent_api_key=creds.agent_api_key,
     )
 
 

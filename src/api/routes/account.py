@@ -68,7 +68,7 @@ from src.api.schemas.account import (
     RiskProfileInfo,
     SessionInfo,
 )
-from src.database.models import Account, Agent, TradingSession
+from src.database.models import Account, Agent, Position, TradingSession
 from src.dependencies import (
     AccountRepoDep,
     AccountServiceDep,
@@ -96,19 +96,20 @@ _DEFAULT_MAX_OPEN_ORDERS = 50
 # ---------------------------------------------------------------------------
 
 
-def _position_view_to_item(view: PositionView) -> PositionItem:
+def _position_view_to_item(
+    view: PositionView,
+    opened_at: datetime | None = None,
+) -> PositionItem:
     """Convert a :class:`~src.portfolio.tracker.PositionView` to :class:`PositionItem`.
 
     Args:
-        view: The portfolio tracker position view.
+        view:      The portfolio tracker position view.
+        opened_at: The real ``opened_at`` timestamp from the ``positions`` table.
+                   Falls back to the current UTC time when ``None``.
 
     Returns:
         A :class:`PositionItem` suitable for inclusion in API responses.
     """
-    # opened_at is not available on PositionView; use epoch as a sentinel.
-    # In production the Position ORM row's opened_at would be fetched separately
-    # if needed, but the schema requires it so we use a reasonable default.
-    opened_at = datetime.fromtimestamp(0, tz=UTC)
     return PositionItem(
         symbol=view.symbol,
         asset=view.asset,
@@ -118,8 +119,34 @@ def _position_view_to_item(view: PositionView) -> PositionItem:
         market_value=view.market_value,
         unrealized_pnl=view.unrealized_pnl,
         unrealized_pnl_pct=view.unrealized_pnl_pct,
-        opened_at=opened_at,
+        opened_at=opened_at if opened_at is not None else datetime.now(tz=UTC),
     )
+
+
+async def _build_opened_at_map(
+    agent_id: UUID | None,
+    account_id: UUID,
+    db: AsyncSession,
+) -> dict[str, datetime]:
+    """Fetch ``opened_at`` timestamps for all open positions.
+
+    Queries the ``positions`` table and returns a mapping of symbol to
+    ``opened_at`` so callers can attach real timestamps to position views.
+
+    Args:
+        agent_id:   Agent UUID when using agent-scoped auth; ``None`` for
+                    account-level lookups.
+        account_id: Account UUID used as the fallback scope.
+        db:         Async database session.
+
+    Returns:
+        Dictionary mapping symbol strings to their ``opened_at`` datetimes.
+    """
+    stmt = select(Position.symbol, Position.opened_at).where(
+        Position.agent_id == agent_id if agent_id is not None else Position.account_id == account_id
+    )
+    result = await db.execute(stmt)
+    return {row.symbol: row.opened_at for row in result}
 
 
 def _build_risk_profile_info(
@@ -389,6 +416,7 @@ async def get_positions(
     account: CurrentAccountDep,
     agent: CurrentAgentDep,
     tracker: PortfolioTrackerDep,
+    db: DbSessionDep,
 ) -> PositionsResponse:
     """Return all open positions valued at current market prices.
 
@@ -396,6 +424,7 @@ async def get_positions(
         account: Injected authenticated account.
         agent:   Injected authenticated agent (may be None).
         tracker: Injected :class:`~src.portfolio.tracker.PortfolioTracker`.
+        db:      Injected async database session (used to fetch ``opened_at``).
 
     Returns:
         :class:`~src.api.schemas.account.PositionsResponse` with the list of
@@ -418,8 +447,9 @@ async def get_positions(
     """
     agent_id = agent.id if agent is not None else None
     positions = await tracker.get_positions(account.id, agent_id=agent_id)
+    opened_at_map = await _build_opened_at_map(agent_id, account.id, db)
 
-    position_items = [_position_view_to_item(p) for p in positions]
+    position_items = [_position_view_to_item(p, opened_at_map.get(p.symbol)) for p in positions]
     total_unrealized_pnl = sum(
         (p.unrealized_pnl for p in positions),
         Decimal("0"),
@@ -459,6 +489,7 @@ async def get_portfolio(
     account: CurrentAccountDep,
     agent: CurrentAgentDep,
     tracker: PortfolioTrackerDep,
+    db: DbSessionDep,
 ) -> PortfolioResponse:
     """Return a full real-time portfolio snapshot for the authenticated account.
 
@@ -466,6 +497,7 @@ async def get_portfolio(
         account: Injected authenticated account.
         agent:   Injected authenticated agent (may be None).
         tracker: Injected :class:`~src.portfolio.tracker.PortfolioTracker`.
+        db:      Injected async database session (used to fetch ``opened_at``).
 
     Returns:
         :class:`~src.api.schemas.account.PortfolioResponse` with equity,
@@ -493,8 +525,9 @@ async def get_portfolio(
     """
     agent_id = agent.id if agent is not None else None
     summary = await tracker.get_portfolio(account.id, agent_id=agent_id)
+    opened_at_map = await _build_opened_at_map(agent_id, account.id, db)
 
-    position_items = [_position_view_to_item(p) for p in summary.positions]
+    position_items = [_position_view_to_item(p, opened_at_map.get(p.symbol)) for p in summary.positions]
 
     logger.info(
         "account.get_portfolio",

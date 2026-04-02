@@ -191,9 +191,21 @@ class TestResetAccount:
     async def test_reset_cancels_orders_and_recredits(self):
         account = _make_account()
         session = AsyncMock()
+        # session.delete must be awaitable (the reset flow calls await session.delete(bal))
+        session.delete = AsyncMock()
         svc = _make_service(session=session)
         svc._account_repo.get_by_id = AsyncMock(return_value=account)
-        svc._balance_repo.get_all = AsyncMock(return_value=[MagicMock()])
+
+        # BUG-002: reset_account now fetches agents and resets per-agent. Mock
+        # one agent so the per-agent loop executes at least once.
+        mock_agent = MagicMock()
+        mock_agent.id = uuid4()
+        mock_agent.starting_balance = Decimal("10000")
+        svc._agent_repo.list_by_account = AsyncMock(return_value=[mock_agent])
+
+        # Balance repo: get_all_by_agent returns one balance row so the delete
+        # path is exercised.
+        svc._balance_repo.get_all_by_agent = AsyncMock(return_value=[MagicMock()])
 
         await svc.reset_account(account.id)
 

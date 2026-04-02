@@ -18,17 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 from src.database.models import Battle, BattleParticipant, BattleSnapshot
-from src.utils.exceptions import DatabaseError
+from src.utils.exceptions import BattleNotFoundError, DatabaseError
 
 logger = structlog.get_logger(__name__)
 
 
-class BattleNotFoundError(Exception):
-    """Raised when a battle cannot be found."""
-
-    def __init__(self, message: str = "Battle not found.", *, battle_id: UUID | None = None) -> None:
-        self.battle_id = battle_id
-        super().__init__(message)
+# Re-export for callers that import BattleNotFoundError from this module.
+__all__ = ["BattleNotFoundError", "BattleRepository"]
 
 
 class BattleRepository:
@@ -59,6 +55,14 @@ class BattleRepository:
             await self._session.rollback()
             logger.exception("battle.create.db_error", error=str(exc))
             raise DatabaseError("Failed to create battle.") from exc
+        except (TypeError, ValueError) as exc:
+            # asyncpg raises TypeError/ValueError when JSONB fields contain
+            # non-JSON-serializable Python objects (e.g. Decimal, datetime,
+            # UUID).  These do NOT subclass SQLAlchemyError so they would
+            # otherwise escape as plain exceptions → INTERNAL_ERROR 500.
+            await self._session.rollback()
+            logger.exception("battle.create.serialization_error", error=str(exc))
+            raise DatabaseError(f"Battle config contains non-serializable value: {exc}") from exc
 
     async def get_battle(self, battle_id: UUID) -> Battle:
         """Fetch a battle by ID."""
