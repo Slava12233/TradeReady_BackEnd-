@@ -139,10 +139,7 @@ class RegisterResponse(_BaseSchema):
     )
     agent_id: UUID | None = Field(
         default=None,
-        description=(
-            "UUID of the default agent created automatically at registration. "
-            "None if agent creation failed."
-        ),
+        description=("UUID of the default agent created automatically at registration. None if agent creation failed."),
         examples=["7f3c8a00-e29b-41d4-a716-446655440001"],
     )
     agent_api_key: str | None = Field(

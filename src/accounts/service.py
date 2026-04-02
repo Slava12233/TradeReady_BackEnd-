@@ -538,8 +538,7 @@ class AccountService:
                 # (NOT NULL constraint).  Raise a clear error so the caller
                 # knows why the reset did not produce a session.
                 raise DatabaseError(
-                    "Cannot reset account: no agents found. "
-                    "Create at least one agent before resetting."
+                    "Cannot reset account: no agents found. Create at least one agent before resetting."
                 )
 
             log.info(
