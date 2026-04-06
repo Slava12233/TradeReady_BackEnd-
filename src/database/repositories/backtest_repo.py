@@ -189,12 +189,14 @@ class BacktestRepository:
 
             _jsonb_metrics = {"sharpe_ratio", "sortino_ratio", "max_drawdown_pct", "win_rate", "profit_factor"}
             if metric in _jsonb_metrics:
-                from sqlalchemy import Numeric, cast
+                from sqlalchemy import Numeric, cast  # noqa: PLC0415
 
-                sort_expr = cast(BacktestSession.metrics[metric].astext, Numeric)
+                stmt = stmt.order_by(
+                    cast(BacktestSession.metrics[metric].astext, Numeric).desc().nullslast(),
+                ).limit(1)
             else:
-                sort_expr = getattr(BacktestSession, metric, BacktestSession.roi_pct)
-            stmt = stmt.order_by(sort_expr.desc().nullslast()).limit(1)
+                sort_col = getattr(BacktestSession, metric, BacktestSession.roi_pct)
+                stmt = stmt.order_by(sort_col.desc().nullslast()).limit(1)
 
             result = await self._session.execute(stmt)
             return result.scalars().first()

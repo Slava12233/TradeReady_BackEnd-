@@ -40,7 +40,7 @@ class BacktestMetrics:
 
     def to_dict(self, per_pair: list[Any] | None = None) -> dict[str, Any]:
         """Serialise to JSON-safe dict."""
-        result = {
+        result: dict[str, Any] = {
             "sharpe_ratio": str(self.sharpe_ratio) if self.sharpe_ratio is not None else None,
             "sortino_ratio": str(self.sortino_ratio) if self.sortino_ratio is not None else None,
             "max_drawdown_pct": str(self.max_drawdown_pct),
