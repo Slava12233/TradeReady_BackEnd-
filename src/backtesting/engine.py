@@ -635,6 +635,7 @@ class BacktestEngine:
                     slippage_pct=t.slippage_pct,
                     realized_pnl=t.realized_pnl,
                     simulated_at=t.simulated_at,
+                    stop_price=t.stop_price,
                 )
             )
 

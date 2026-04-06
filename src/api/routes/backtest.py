@@ -706,6 +706,7 @@ async def get_backtest_trades(
                 "fee": str(t.fee),
                 "slippage_pct": str(t.slippage_pct),
                 "realized_pnl": str(t.realized_pnl) if t.realized_pnl else "0",
+                "stop_price": str(t.stop_price) if t.stop_price else None,
                 "simulated_at": t.simulated_at.isoformat(),
             }
             for t in trades

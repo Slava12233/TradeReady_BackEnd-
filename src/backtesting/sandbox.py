@@ -87,6 +87,7 @@ class SandboxTrade:
     slippage_pct: Decimal
     realized_pnl: Decimal | None
     simulated_at: datetime
+    stop_price: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -633,7 +634,14 @@ class BacktestSandbox:
 
         self._cumulative_fees += fee
 
-        # Record trade
+        # Update order record — preserve stop_price from original pending order
+        original = None
+        for o in self._orders:
+            if o.id == order_id:
+                original = o
+                break
+
+        # Record trade (carry stop_price from original order for persistence)
         trade = SandboxTrade(
             id=str(uuid.uuid4()),
             symbol=symbol,
@@ -646,15 +654,9 @@ class BacktestSandbox:
             slippage_pct=slippage_pct,
             realized_pnl=realized_pnl,
             simulated_at=virtual_time,
+            stop_price=original.stop_price if original else None,
         )
         self._trades.append(trade)
-
-        # Update order record — preserve stop_price from original pending order
-        original = None
-        for o in self._orders:
-            if o.id == order_id:
-                original = o
-                break
 
         filled_order = SandboxOrder(
             id=order_id,

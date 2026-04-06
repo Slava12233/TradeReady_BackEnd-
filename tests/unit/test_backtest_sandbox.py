@@ -609,3 +609,75 @@ def test_locked_cost_used_for_unlock(sandbox: BacktestSandbox, vtime: datetime) 
     assert usdt_after.locked == Decimal("0"), "Locked USDT should be zero after cancel"
     # Available should be back to starting balance (no fee charged for pending orders)
     assert usdt_after.available == Decimal("10000")
+
+
+# ── stop_price persistence tests ────────────────────────────────────────
+
+
+def test_stop_loss_trade_carries_stop_price(sandbox, prices, vtime):
+    """Stop-loss fill should carry stop_price on the resulting SandboxTrade."""
+    # Buy first so we have a position to stop-loss
+    sandbox.place_order("BTCUSDT", "buy", "market", Decimal("0.1"), None, prices, vtime)
+
+    # Place stop-loss sell at 45000
+    sl = sandbox.place_order(
+        "BTCUSDT", "sell", "stop_loss", Decimal("0.1"),
+        Decimal("45000"), prices, vtime,
+    )
+    assert sl.status == "pending"
+
+    # Price drops below stop → trigger
+    drop_prices = {"BTCUSDT": Decimal("44000"), "ETHUSDT": Decimal("3000")}
+    filled = sandbox.check_pending_orders(drop_prices, vtime)
+    assert len(filled) == 1
+
+    # The trade record must carry stop_price
+    trades = sandbox.get_trades()
+    sl_trade = [t for t in trades if t.type == "stop_loss"]
+    assert len(sl_trade) == 1
+    assert sl_trade[0].stop_price == Decimal("45000")
+
+
+def test_take_profit_trade_carries_stop_price(sandbox, prices, vtime):
+    """Take-profit fill should carry stop_price on the resulting SandboxTrade."""
+    sandbox.place_order("BTCUSDT", "buy", "market", Decimal("0.1"), None, prices, vtime)
+
+    tp = sandbox.place_order(
+        "BTCUSDT", "sell", "take_profit", Decimal("0.1"),
+        Decimal("55000"), prices, vtime,
+    )
+    assert tp.status == "pending"
+
+    rise_prices = {"BTCUSDT": Decimal("56000"), "ETHUSDT": Decimal("3000")}
+    filled = sandbox.check_pending_orders(rise_prices, vtime)
+    assert len(filled) == 1
+
+    trades = sandbox.get_trades()
+    tp_trade = [t for t in trades if t.type == "take_profit"]
+    assert len(tp_trade) == 1
+    assert tp_trade[0].stop_price == Decimal("55000")
+
+
+def test_market_order_trade_has_no_stop_price(sandbox, prices, vtime):
+    """Market orders should have stop_price=None on the trade record."""
+    sandbox.place_order("BTCUSDT", "buy", "market", Decimal("0.1"), None, prices, vtime)
+    trades = sandbox.get_trades()
+    assert len(trades) == 1
+    assert trades[0].stop_price is None
+
+
+def test_limit_order_trade_has_no_stop_price(sandbox, prices, vtime):
+    """Limit orders should have stop_price=None on the trade record."""
+    sandbox.place_order(
+        "BTCUSDT", "buy", "limit", Decimal("0.1"),
+        Decimal("49000"), prices, vtime,
+    )
+    # Trigger the limit
+    low_prices = {"BTCUSDT": Decimal("48000"), "ETHUSDT": Decimal("3000")}
+    filled = sandbox.check_pending_orders(low_prices, vtime)
+    assert len(filled) == 1
+
+    trades = sandbox.get_trades()
+    limit_trade = [t for t in trades if t.type == "limit"]
+    assert len(limit_trade) == 1
+    assert limit_trade[0].stop_price is None

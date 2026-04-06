@@ -1438,6 +1438,10 @@ class BacktestTrade(Base):
         TIMESTAMP(timezone=True),
         nullable=False,
     )
+    stop_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
 
     session: Mapped[BacktestSession] = relationship("BacktestSession", back_populates="backtest_trades")
 
