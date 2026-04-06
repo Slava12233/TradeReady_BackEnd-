@@ -1,6 +1,6 @@
 # API Routes
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-04-02 -->
 
 > FastAPI route modules implementing all REST endpoints for the AI Agent Crypto Trading Platform.
 
@@ -296,6 +296,11 @@ Follow the pattern in `backtest.py`: call `engine._get_active(session_id)` to ge
 
 ## Recent Changes
 
+- `2026-04-02` (BUG-017) — `account.py`: `/account/positions` now fetches `opened_at` from the `Position` table directly via a separate query, replacing the epoch sentinel (`1970-01-01`) that was previously returned. Also fixed `asyncio.gather` on a shared DB session (caused `IllegalStateChangeError`); positions and portfolio queries now run sequentially.
+- `2026-04-02` (BUG-012) — `market.py`: `GET /market/tickers` `symbols` query parameter is now optional; when omitted all cached tickers are returned. Previously required, causing 422 errors for clients that expected bulk fetch behavior.
+- `2026-04-02` (BUG-003) — `battles.py`: `_battle_to_response()` now checks SQLAlchemy `inspect(battle).attrs.participants.loaded_value` state before accessing the relationship, preventing `MissingGreenlet` errors when participants are not eagerly loaded.
+- `2026-04-02` (BUG-015) — `trading.py` schema: `OrderRequest.price` now accepts `stop_price` as an alias via `AliasChoices`, so stop-loss/take-profit orders submitted with `stop_price` field are correctly parsed.
+- `2026-04-02` — `auth.py`: `POST /auth/register` response now includes `agent_id` and `agent_api_key` (both nullable). Clients should use `agent_api_key` as `X-API-Key` for all trading endpoints.
 - `2026-03-21` — `agents.py` gained 3 new endpoints: `GET /decisions/trace/{trace_id}` (distributed trace lookup), `GET /decisions/analyze` (decision pattern analysis), `PATCH /feedback/{feedback_id}` (feedback lifecycle management). Total agents.py endpoints: 14 → 17.
 - `2026-03-20` — `backtest.py` `/backtest/create` interval parameter now accepts string shorthand (`"1h"`, `"5m"`) in addition to raw seconds integers, via `parse_interval()` from `src/utils/helpers.py`.
 - `2026-03-17` — Initial CLAUDE.md created

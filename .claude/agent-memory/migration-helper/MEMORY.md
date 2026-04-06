@@ -4,8 +4,8 @@
 
 ## Current State
 
-- **Head migration:** `019` (feedback lifecycle columns)
-- **Next revision number:** `020`
+- **Head migration:** `021` (fix cascade delete on agent FK constraints)
+- **Next revision number:** `022`
 - **Chain gap:** Migration `011` is missing (intentional). Chain goes `010 → 012`.
 - **File naming:** `alembic.ini` template = `%%(rev)s_%%(slug)s` → e.g., `017_my_description.py`
 
@@ -20,7 +20,7 @@
 | 005 | Backtest tables, `current_mode`/`active_strategy_label` on accounts |
 | 006 | `candles_backfill` hypertable |
 | 007 | `agents` table |
-| 008 | Nullable `agent_id` FK on trading tables (phase 1 of 2-phase NOT NULL) |
+| 008 | Nullable `agent_id` FK on trading tables with `SET NULL` (phase 1 of 2-phase NOT NULL) |
 | 009 | `agent_id` NOT NULL enforcement on trading tables (phase 2) |
 | 010 | Battle tables: `battles`, `battle_participants`, `battle_snapshots` (hypertable) |
 | 012 | Agent-scoped unique constraints on `balances`/`positions` |
@@ -31,6 +31,8 @@
 | 017 | Agent ecosystem tables (10 tables: sessions, messages, decisions, journal, learnings, feedback, permissions, budgets, performance, observations hypertable) |
 | 018 | Agent logging tables: `agent_api_calls`, `agent_strategy_signals`; `trace_id` column on `agent_decisions` |
 | 019 | Feedback lifecycle columns on agent tables |
+| 020 | `agent_audit_log` table (no FK to agents — intentional, records outlive agents) |
+| 021 | Fix BUG-004: change `agent_id` FK on 6 trading tables from SET NULL → CASCADE |
 
 ## Hypertable Rules
 
@@ -88,7 +90,21 @@ docker exec aitradingagent-api-1 bash -c "cd /app && alembic current"
 docker cp alembic/versions/017_*.py aitradingagent-api-1:/app/alembic/versions/
 ```
 
-**Live database state as of 2026-03-23:** All 19 migrations applied, head at `019`.
+**Live database state as of 2026-04-01:** All 21 migrations applied, head at `021`.
+
+## FK CASCADE vs SET NULL — Agent Scoping History
+
+Migration 008 added `agent_id` with `ondelete="SET NULL"` to trading tables. Migration 009 later enforced NOT NULL. This created an impossible constraint (PostgreSQL can't SET NULL on a NOT NULL column) which caused `DELETE /agents/{id}` to fail with DATABASE_ERROR. Fixed in migration 021.
+
+**Constraint names for the 6 affected trading tables:**
+- `balances_agent_id_fkey` — was SET NULL, now CASCADE
+- `orders_agent_id_fkey` — was SET NULL, now CASCADE
+- `trades_agent_id_fkey` — was SET NULL, now CASCADE
+- `positions_agent_id_fkey` — was SET NULL, now CASCADE
+- `trading_sessions_agent_id_fkey` — was SET NULL, now CASCADE
+- `portfolio_snapshots_agent_id_fkey` — was SET NULL, now CASCADE (hypertable: use `DROP CONSTRAINT … CASCADE` to also drop from chunks)
+
+**All agent ecosystem tables (017/018) already had CASCADE — no change needed.**
 
 ## Critical Gotchas
 

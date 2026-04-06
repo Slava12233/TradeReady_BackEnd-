@@ -1,6 +1,6 @@
 # .claude/agent-memory/ — Agent Memory Storage
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Persistent cross-session memory for all 16 sub-agents. Each subdirectory stores one agent's MEMORY.md plus any typed memory files.
 

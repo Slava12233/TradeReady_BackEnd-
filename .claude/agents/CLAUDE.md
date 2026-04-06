@@ -1,6 +1,6 @@
 # .claude/agents/ — Sub-Agent Definitions
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-04-06 -->
 
 > 16 specialized sub-agents delegated to by the orchestrating Claude conversation for specific tasks.
 

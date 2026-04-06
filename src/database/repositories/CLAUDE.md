@@ -1,6 +1,6 @@
 # Database Repositories
 
-<!-- last-updated: 2026-03-24 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Async repository layer providing typed CRUD methods for all database models; the sole interface between service code and SQLAlchemy/TimescaleDB.
 
@@ -29,6 +29,16 @@ Every database table has a corresponding repository class that encapsulates all 
 | `agent_api_call_repo.py` | `AgentApiCallRepository` -- insert and query `agent_api_calls` rows: bulk save, list by agent/trace_id, aggregate latency/cost stats |
 | `agent_strategy_signal_repo.py` | `AgentStrategySignalRepository` -- insert and query `agent_strategy_signals` rows: bulk save, list by agent/source/action, daily attribution query |
 | `agent_audit_log_repo.py` | `AgentAuditLogRepository` -- insert and query `agent_audit_log` rows: permission check outcomes (allow + deny), by agent/action/time range |
+| `agent_budget_repo.py` | `AgentBudgetRepository` -- CRUD for agent budget tracking (LLM token/cost budgets) |
+| `agent_observation_repo.py` | `AgentObservationRepository` -- CRUD for agent market observations stored during trading loops |
+| `agent_performance_repo.py` | `AgentPerformanceRepository` -- CRUD for agent performance snapshots and metric history |
+| `agent_permission_repo.py` | `AgentPermissionRepository` -- CRUD for agent role/capability assignments |
+| `agent_session_repo.py` | `AgentSessionRepository` -- CRUD for conversation sessions (agent ecosystem) |
+| `agent_message_repo.py` | `AgentMessageRepository` -- CRUD for conversation message history |
+| `agent_decision_repo.py` | `AgentDecisionRepository` -- CRUD for agent trading decisions with trace_id and outcome tracking |
+| `agent_journal_repo.py` | `AgentJournalRepository` -- CRUD for agent trade journal entries |
+| `agent_learning_repo.py` | `AgentLearningRepository` -- CRUD for agent memory/learning records |
+| `agent_feedback_repo.py` | `AgentFeedbackRepository` -- CRUD for agent feedback lifecycle (status/resolution columns) |
 
 ## Architecture & Patterns
 
@@ -191,7 +201,7 @@ Repositories are instantiated by FastAPI dependency functions in `src/dependenci
 
 - **Never commit in a repository.** The caller (typically a service or route handler) owns the transaction boundary. Committing inside a repo method would break atomicity when multiple repo calls need to happen in a single transaction.
 - **`__init__.py` is incomplete.** It only re-exports the 6 original repositories. `AgentRepository`, `BacktestRepository`, `BattleRepository`, and `WaitlistRepository` are **not** in `__all__` and must be imported directly from their modules.
-- **`AgentNotFoundError` and `BattleNotFoundError` are defined locally** in their respective repo modules, not in `src/utils/exceptions.py`. If you need to catch these in service code, import from the repo module (e.g., `from src.database.repositories.agent_repo import AgentNotFoundError`).
+- **`AgentNotFoundError` is defined locally** in `agent_repo.py`, not in `src/utils/exceptions.py`. If you need to catch it in service code, import from the repo module. `BattleNotFoundError` was previously local to `battle_repo.py` but was replaced in the 2026-04-02 fix (BUG-003) — the repo now raises `TradingPlatformError` subclasses from `src/utils/exceptions.py` for consistency.
 - **`BalanceRepository` uses CHECK constraints** (`available >= 0`, `locked >= 0`) to enforce non-negative balances. An `IntegrityError` from these constraints is caught and re-raised as `InsufficientBalanceError`. Do not rely on application-level validation alone.
 - **`BalanceRepository._get_or_create_zero()` uses savepoints** (`begin_nested()`) to handle race conditions. This means nested transactions are in play during `atomic_execute_buy` and `atomic_execute_sell`.
 - **`TickRepository` is read-only.** Ticks are written by the price ingestion service via raw asyncpg `COPY`, bypassing SQLAlchemy entirely. There are no write methods in this repo.
@@ -202,5 +212,7 @@ Repositories are instantiated by FastAPI dependency functions in `src/dependenci
 
 ## Recent Changes
 
+- `2026-04-06` — Added 10 missing agent ecosystem repo files to Key Files inventory: `agent_budget_repo.py`, `agent_observation_repo.py`, `agent_performance_repo.py`, `agent_permission_repo.py`, `agent_session_repo.py`, `agent_message_repo.py`, `agent_decision_repo.py`, `agent_journal_repo.py`, `agent_learning_repo.py`, `agent_feedback_repo.py`.
+- `2026-04-02` (BUG-003) — `battle_repo.py`: Removed locally-defined `BattleNotFoundError` class. `get_battle()` and other methods now raise `TradingPlatformError` subclasses from `src/utils/exceptions.py`. This fixes the `MissingGreenlet` error path where the local exception class was not recognized by the global exception handler.
 - `2026-03-21` — Added `AgentApiCallRepository` (`agent_api_call_repo.py`) and `AgentStrategySignalRepository` (`agent_strategy_signal_repo.py`) for the Agent Logging System. Both support bulk save (used by `LogBatchWriter`) and analytics queries (used by Celery attribution tasks).
 - `2026-03-17` -- Initial CLAUDE.md created

@@ -1,6 +1,6 @@
 # API Schemas
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-02 -->
 
 > Pydantic v2 request/response schemas for every REST API endpoint, with strict Decimal-as-string serialization and consistent validation patterns.
 
@@ -206,4 +206,6 @@ There are no re-exports from `__init__.py`. Each file is imported individually.
 
 ## Recent Changes
 
+- `2026-04-02` (BUG-015) — `trading.py`: `OrderRequest.price` field now uses `AliasChoices(["price", "stop_price"])` so stop-loss/take-profit orders submitted with the `stop_price` key are accepted without a 422 validation error.
+- `2026-04-02` (BUG-001) — `auth.py`: `RegisterResponse` gained two new optional fields: `agent_id: UUID | None` and `agent_api_key: str | None`. These are populated by `AccountService.register()` when the auto-created default agent succeeds. Clients should use `agent_api_key` as `X-API-Key` for all trading endpoints going forward.
 - `2026-03-17` -- Initial CLAUDE.md created

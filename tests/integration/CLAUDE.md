@@ -1,6 +1,6 @@
 # Integration Tests
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-04-06 -->
 
 > End-to-end and API-level tests for every REST endpoint, WebSocket, and the backtesting/battle engines, using either mocked infrastructure or real Docker services.
 
@@ -39,8 +39,10 @@ Integration tests verify the full request-response cycle through the FastAPI app
 | `test_trading_endpoints.py` | 87 | All trading endpoints: place order (market/limit/stop/TP), get/list/cancel orders, trade history, validation, error codes |
 | `test_real_user_scenario_e2e.py` | 52 | Full realistic user scenario: register, create agents, place trades, backtests, battles, analytics, account management (Docker) |
 | `test_websocket.py` | 49 | WebSocket connect/disconnect, subscribe/unsubscribe, ticker/candle/order/portfolio channels, heartbeat, subscription cap, Redis bridge |
+| `test_agent_ecosystem_phase1.py` | 28 | Agent ecosystem Phase 1 E2E: session creation, memory store, conversation history, context assembly, intent routing, DB persistence |
+| `test_agent_ecosystem_phase2.py` | 22 | Agent ecosystem Phase 2 E2E: permissions enforcement, budget limits, capability grants, audit logging, trading loop integration |
 
-**Total: ~504 test functions across 24 files.**
+**Total: ~554 test functions across 26 files.**
 
 ## Setup & Dependencies
 
@@ -178,4 +180,5 @@ pytest tests/integration/ -v -m "not slow"
 - `2026-03-18` -- Updated battle exception gotcha (duplicate class removed). Fixed lint: E402 in test_auth_endpoints, N801 suppressed in test_real_user_scenario_e2e.
 - `2026-03-18` -- Added `test_real_user_scenario_e2e.py` (52 tests) to inventory table. Total remains ~504 tests across 24 files (table sum verified).
 - `2026-03-19` -- Synced with codebase: confirmed 24 test files, 504 test functions (grep verified). All inventory entries match files on disk.
+- `2026-04-06` — Added `test_agent_ecosystem_phase1.py` (28 tests) and `test_agent_ecosystem_phase2.py` (22 tests) for agent ecosystem integration. File count: 24 → 26. Total: ~554 tests.
 - `2026-03-20` — Verified: still 24 test files on disk. No new integration test files added this session.

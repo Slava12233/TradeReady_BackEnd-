@@ -1,6 +1,6 @@
 # Risk Management
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-02 -->
 
 > Enforces trading limits and daily-loss circuit-breaker logic to prevent agents from unrealistic or destructive trading behaviour.
 
@@ -153,4 +153,5 @@ await cb.reset_all()  # deletes all circuit_breaker:* keys
 
 ## Recent Changes
 
+- `2026-04-02` (BUG-016) — `manager.py`: Step 6 (`position_limit_exceeded`) rejection message now includes the full calculation: current position value, projected position value, max allowed value (% of equity), and current total equity. Previously returned a bare rejection code with no numbers, making it hard for agents to calibrate order sizes.
 - `2026-03-17` -- Initial CLAUDE.md created

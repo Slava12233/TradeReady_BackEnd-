@@ -1,6 +1,6 @@
 # Agents Module
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Multi-agent creation, lifecycle management, and deterministic avatar generation for the trading platform.
 
@@ -85,4 +85,5 @@ Returned by `create_agent()` and `clone_agent()`:
 
 ## Recent Changes
 
+- `2026-04-02` (BUG-002) — `service.py`: `reset_agent()` now cancels all pending orders and closes any open trading sessions for the agent before wiping balances and re-creating the USDT balance row and a new `TradingSession`. Called from `AccountService.reset_account()` for each active agent when a full account reset is performed.
 - `2026-03-17` — Initial CLAUDE.md created

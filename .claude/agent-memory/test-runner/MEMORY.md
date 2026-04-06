@@ -46,9 +46,21 @@ When testing `src/tasks/*.py` from `agent/tests/`, Celery is NOT installed. Use 
 
 `compare_training_runs` validates each run_id as a UUID. Use real UUIDs (e.g. `"550e8400-e29b-41d4-a716-446655440001"`) in tests, not short strings like `"run-1"`.
 
-## Test Counts (last verified 2026-03-22)
+## Test Counts (last verified 2026-04-06)
 
-- Unit tests: 72 files, 1203 tests (`tests/unit/`) — added `test_agent_api_call_repo.py` (9 tests), `test_agent_strategy_signal_repo.py` (10 tests)
+- Unit tests: 74 files, 1751 tests (`tests/unit/`) — added `test_backtest_schemas.py` (9 tests), 6 sandbox tests to `test_backtest_sandbox.py`, 2 results tests to `test_backtest_results.py`
+
+## QA Bugfix Sprint Patterns (2026-04-01)
+
+Two recurring test breakage patterns introduced by the QA bugfix sprint:
+
+**Pattern A — `reset_account` BUG-002 agent-awareness**: `AccountService.reset_account()` now fetches agents via `self._agent_repo.list_by_account()` before the write path. Tests calling `reset_account()` must mock:
+1. `svc._agent_repo.list_by_account = AsyncMock(return_value=[mock_agent])` — where `mock_agent` has `.id` and `.starting_balance`
+2. `svc._balance_repo.get_all_by_agent = AsyncMock(return_value=[...])` — replaces old `get_all`
+3. `session.delete = AsyncMock()` — the loop calls `await session.delete(bal)` per balance row
+Old pattern (`svc._balance_repo.get_all = AsyncMock(...)`) no longer works.
+
+**Pattern B — `_upsert_position` BUG-011 fee argument**: `OrderEngine._upsert_position()` signature changed from `(account_id, symbol, side, fill_qty, fill_price, *, agent_id)` to `(account_id, symbol, side, fill_qty, fill_price, fee, *, agent_id)`. The `fee` is now a required positional argument. Tests must pass `fee=Decimal("60")` (or appropriate value) — missing it gives `TypeError: missing 1 required positional argument: 'fee'`.
 - Integration tests: 24 files, 504 tests (`tests/integration/`)
 - Frontend tests: 207 unit tests (`Frontend/tests/`)
 - Agent package tests: 37 files (`agent/tests/`) — added `test_retrain_celery.py` (29 tests, 2026-03-23); previously added `test_redis_memory_cache.py`, `test_server_writer_wiring.py`, `test_server_handlers.py`, `test_security_regressions.py`

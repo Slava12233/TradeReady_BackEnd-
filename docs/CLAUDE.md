@@ -1,6 +1,6 @@
 # Documentation
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Public-facing documentation for the AgentExchange platform: API reference, guides, tutorials, and framework integrations for AI agent developers.
 

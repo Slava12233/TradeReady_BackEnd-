@@ -1,12 +1,22 @@
 # CLAUDE.md
 
-<!-- last-updated: 2026-03-22 (all 37 trading agent master plan tasks complete, battle frontend, 2200+ agent tests) -->
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > **First step rule:** At the start of every conversation, read `development/context.md` before doing anything else. It contains a rolling summary of all development activity, decisions, and current state.
 
 > **Self-maintenance rule:** When modifying code in any folder, update that folder's `CLAUDE.md` if behavior, files, or patterns changed. Update the `<!-- last-updated -->` timestamp when you do.
+
+## Rules Organization
+
+Domain-specific instructions are in `.claude/rules/` (loaded on-demand when matching files are opened):
+
+- **agents-and-pipelines.md** — 16 sub-agents, execution pipelines, mandatory agent rules
+- **architecture.md** — Core components, data flows, multi-agent architecture, middleware order
+- **dependency-injection.md** — FastAPI Depends aliases, settings, exception hierarchy
+- **backend-code-standards.md** — Python style, security, naming, API design conventions
+- **frontend.md** — Next.js/React/Tailwind commands, SDK references
+- **obsidian-vault.md** — development/ vault structure, frontmatter, wikilinks, file ownership
+- **environment.md** — Docker setup, all environment variables
 
 ## CLAUDE.md Index
 
@@ -60,7 +70,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `Frontend/src/components/alerts/CLAUDE.md` | Price alert management — create dialog, alert sections |
 | `Frontend/src/components/analytics/CLAUDE.md` | Analytics charts — equity, drawdown, PnL, heatmaps |
 | `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
-| `Frontend/src/components/battles/CLAUDE.md` | Battle UI — 9 components, 3 routes, 2 hooks, 14 API functions, 15 types (complete as of 2026-03-22) |
+| `Frontend/src/components/battles/CLAUDE.md` | Battle UI — 9 components, 3 routes, 2 hooks, 14 API functions, 15 types |
 | `Frontend/src/components/coin/CLAUDE.md` | Coin detail — TradingView chart, order book, stats |
 | `Frontend/src/components/docs/CLAUDE.md` | Documentation components — docs viewer, search |
 | `Frontend/src/components/dashboard/CLAUDE.md` | Dashboard — portfolio, equity chart, positions, orders |
@@ -88,207 +98,49 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 |------|-------------|
 | `alembic/CLAUDE.md` | Migration workflow, async env, naming convention, inventory |
 | `sdk/CLAUDE.md` | Python SDK — sync/async clients, WebSocket client |
-| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows, 4 tool integrations, 2200+ tests; sub-files in `agent/models/`, `agent/tools/`, `agent/prompts/`, `agent/workflows/`, `agent/tests/`, `agent/strategies/`, `agent/conversation/`, `agent/memory/`, `agent/permissions/`, `agent/trading/` |
-| `agent/conversation/CLAUDE.md` | Session management, message history, LLM context assembly, intent routing — `AgentSession`, `ConversationHistory`, `ContextBuilder`, `IntentRouter` |
-| `agent/memory/CLAUDE.md` | Memory store (abstract + Postgres + Redis), scored retrieval — `MemoryStore`, `PostgresMemoryStore`, `RedisMemoryCache`, `MemoryRetriever` |
-| `agent/permissions/CLAUDE.md` | Roles, capabilities, budget limits, enforcement — `AgentRole`, `CapabilityManager`, `BudgetManager`, `PermissionEnforcer` |
-| `agent/trading/CLAUDE.md` | Trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing, pair selector, WS manager — `TradingLoop`, `TradeExecutor`, `TradingJournal`, `ABTestRunner`, `PairSelector`, `WSManager` |
-| `agent/strategies/CLAUDE.md` | 5-strategy agent trading system — PPO RL, genetic algorithm, market regime detection, risk overlay, ensemble combiner; file inventory, CLI commands, dependencies |
-| `agent/strategies/rl/CLAUDE.md` | PPO RL strategy — `RLConfig`, `train()`, `ModelEvaluator`, `PPODeployBridge`; CLI commands, SB3 gotchas |
-| `agent/strategies/evolutionary/CLAUDE.md` | Genetic algorithm strategy — `StrategyGenome` (12 params), `Population`, `BattleRunner`; GA operators, fitness formula, CLI |
-| `agent/strategies/regime/CLAUDE.md` | Market regime detection — `RegimeClassifier` (XGBoost/RF), `RegimeSwitcher` (cooldown+confidence), 4 pre-built strategy dicts |
-| `agent/strategies/risk/CLAUDE.md` | Risk management overlay — `RiskAgent` (drawdown profiles/tiers), `VetoPipeline` (6 gates + correlation), `DynamicSizer` (Kelly/Hybrid/standard), `RiskMiddleware`, `RecoveryManager` (3-state FSM) |
-| `agent/strategies/ensemble/CLAUDE.md` | Ensemble combiner — `MetaLearner` (weighted voting + dynamic weights), `EnsembleRunner` (7-stage pipeline), `StrategyCircuitBreaker` (Redis-backed, 3 triggers), `AttributionLoader`, weight optimiser CLI |
-| `scripts/CLAUDE.md` | Available scripts, when to run each, dependencies |
-| `docs/CLAUDE.md` | Documentation inventory, audience for each doc |
-| `development/CLAUDE.md` | Development planning docs, Obsidian vault structure, progress tracking, archived phase plans |
-| `development/code-reviews/CLAUDE.md` | Code review reports from code-reviewer agent |
-| `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 6 rewards including CompositeReward, 3 wrappers) for agent training |
-| `monitoring/CLAUDE.md` | 6 Grafana dashboards + 11 Prometheus alert rules for agent ecosystem observability |
-| `.claude/agents/CLAUDE.md` | 16 sub-agent definitions — inventory, config fields, memory, pipelines |
-| `.claude/skills/CLAUDE.md` | 7 slash-command skill workflows — inventory, patterns, gotchas |
-| `.claude/agent-memory/CLAUDE.md` | Agent memory storage — 16 per-agent MEMORY.md directories, file format |
-
----
-
-## Sub-Agents (`.claude/agents/`)
-
-<!-- last-updated: 2026-03-21 -->
-
-16 specialized agents that can be delegated to for specific tasks. Organized by role category. All agents have `memory: project` enabled — see `.claude/agent-memory/` for their MEMORY.md files.
-
-### Agent Inventory
-
-#### Quality Gate Agents (run after every change)
-
-| Agent | Purpose | Tools | Model | Mode | When to Use |
-|-------|---------|-------|-------|------|-------------|
-| `code-reviewer` | Reviews code against project standards documented in CLAUDE.md files. Saves reports to `development/code-reviews/` | Read, Write, Grep, Glob, Bash | sonnet | report + write | **After every code change** (step 1 of post-change pipeline) |
-| `test-runner` | Maps changed files → relevant tests, runs them, writes missing tests per `tests/CLAUDE.md` standards | Read, Write, Edit, Grep, Glob, Bash | sonnet | run + write | **After every code change** (step 2, after code-reviewer) |
-| `context-manager` | Maintains `development/context.md` and syncs/creates CLAUDE.md navigation files across all directories | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | **After every task completes** (mandatory final step) |
-
-#### Security Agents (run for auth, input handling, sensitive changes)
-
-| Agent | Purpose | Tools | Model | Mode | When to Use |
-|-------|---------|-------|-------|------|-------------|
-| `security-auditor` | Read-only audit for auth bypasses, injection risks, secret exposure, agent isolation violations, missing rate limits, XSS | Read, Grep, Glob, Bash | sonnet | read-only | After any security-sensitive change (auth, middleware, agent scoping) |
-| `security-reviewer` | Vulnerability detection AND remediation. Can fix CRITICAL issues directly. OWASP Top 10, secrets, SSRF, injection, unsafe crypto | Read, Write, Edit, Bash, Grep, Glob | sonnet | read + fix | **PROACTIVELY** after writing code that handles user input, auth, API endpoints, or sensitive data |
-
-> **Key difference:** `security-auditor` is read-only and reports findings. `security-reviewer` can also fix CRITICAL vulnerabilities directly. Use auditor for routine checks, reviewer when you suspect real issues.
-
-#### Infrastructure Agents (run before deploys, migrations, API changes)
-
-| Agent | Purpose | Tools | Model | Mode | When to Use |
-|-------|---------|-------|-------|------|-------------|
-| `migration-helper` | Generates and validates Alembic migrations. Checks destructive ops, two-phase NOT NULL, hypertable PK rules, rollback paths | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | **Before** creating or running any migration |
-| `api-sync-checker` | Compares Pydantic schemas vs TypeScript types, verifies `api-client.ts` routes match backend endpoints, checks WebSocket message shapes | Read, Grep, Glob, Bash | sonnet | read-only | After changing API routes, schemas, or frontend API code |
-| `deploy-checker` | Full A-Z deployment readiness: lint, types, tests, migrations, Docker builds, env vars, security, API health, frontend build, GitHub Actions CI/CD | Read, Write, Edit, Grep, Glob, Bash | sonnet | report + write | Before deploying to production or merging to `main` |
-| `doc-updater` | Syncs `docs/skill.md`, `docs/api_reference.md`, module CLAUDE.md files, and SDK docs with actual code | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | After API, schema, or module changes |
-| `perf-checker` | Detects N+1 queries, blocking async calls, missing indexes, unbounded growth, React render issues, bundle bloat | Read, Grep, Glob, Bash | sonnet | read-only | After changes to DB queries, async code, caching, hot paths, or frontend components |
-
-#### Development Agents (run when building features)
-
-| Agent | Purpose | Tools | Model | Mode | When to Use |
-|-------|---------|-------|-------|------|-------------|
-| `backend-developer` | Writes production-quality async Python 3.12+ modules, services, tools, integrations following project conventions | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When creating new Python packages, implementing business logic, or building integrations |
-| `frontend-developer` | Implements Next.js 16 / React 19 / Tailwind v4 components, hooks, pages, and features per `Frontend/CLAUDE.md` | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When implementing frontend features, components, pages, or UI changes |
-| `ml-engineer` | RL training pipelines, genetic algorithms, regime classifiers, ensemble systems. Integrates with `tradeready-gym/` environments | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When implementing Gymnasium RL agents, evolutionary optimization, or ML classifiers |
-| `e2e-tester` | Runs live E2E scenarios against the running platform — creates accounts, agents, trades, backtests, battles. Returns credentials for UI verification | Read, Write, Edit, Grep, Glob, Bash | sonnet | write | When you need to populate realistic data, validate the full stack, or demo the platform |
-
-#### Research & Planning Agents (run before implementing)
-
-| Agent | Purpose | Tools | Model | Mode | When to Use |
-|-------|---------|-------|-------|------|-------------|
-| `planner` | Creates detailed, phased implementation plans with file paths, risks, dependencies, and testing strategies | Read, Grep, Glob | **opus** | read-only | **PROACTIVELY** when users request feature implementation, architectural changes, or complex refactoring |
-| `codebase-researcher` | Investigates the codebase to answer questions, find patterns, trace data flows, locate implementations | Read, Grep, Glob, Bash | sonnet | read-only | When you need to understand how something works before making changes |
-
-### Agent Pipelines (Execution Order)
-
-Agents are not independent — they form pipelines that must be followed in order:
-
-#### Standard Post-Change Pipeline (every code change)
-```
-code-reviewer → test-runner → context-manager
-     │               │              │
-  report          run tests     update context.md
-  violations      fix gaps      sync CLAUDE.md files
-```
-
-#### API/Schema Change Pipeline
-```
-[make changes] → api-sync-checker → doc-updater → code-reviewer → test-runner → context-manager
-```
-
-#### Security-Sensitive Change Pipeline
-```
-[make changes] → security-reviewer (fix CRITICALs) → security-auditor (verify) → code-reviewer → test-runner → context-manager
-```
-
-#### Performance-Sensitive Change Pipeline
-```
-[make changes] → perf-checker → code-reviewer → test-runner → context-manager
-```
-
-#### Database Migration Pipeline
-```
-migration-helper (validate/generate) → [apply migration] → deploy-checker → context-manager
-```
-
-#### Feature Implementation Pipeline
-```
-planner → codebase-researcher → backend-developer / frontend-developer / ml-engineer → code-reviewer → test-runner → context-manager
-```
-
-### Mandatory Agent Rules
-
-1. **After ANY code change**, run the standard pipeline: `code-reviewer` → `test-runner` → `context-manager`. Never skip.
-2. **Before ANY migration**, delegate to `migration-helper` to validate or generate the migration safely.
-3. **After API/schema changes**, delegate to `api-sync-checker` then `doc-updater` before the standard pipeline.
-4. **For security-sensitive changes** (auth, middleware, agent scoping, input handling), run the security pipeline.
-5. **For performance-sensitive changes** (DB queries, async code, caching, ingestion), run `perf-checker` before the standard pipeline.
-6. If `test-runner` identifies missing coverage, it writes new tests following `tests/CLAUDE.md` standards.
-7. If tests fail, fix the code (or tests if behavior intentionally changed), then re-run via `test-runner` until all pass.
-8. **`context-manager` is ALWAYS the final step** of every task. It updates `development/context.md`, syncs all CLAUDE.md files, and appends to today's daily note (`development/daily/YYYY-MM-DD.md`). Not optional.
-9. **At the end of every task**, include an **Agent Activity Report** in your final response to the user. Format:
-
-```
-## Agent Activity Report
-
-| Agent | Task | Result |
-|-------|------|--------|
-| `agent-name` | What it was asked to do | Outcome (files changed, issues found, tests passed, etc.) |
-| ... | ... | ... |
-
-**Pipeline:** agent1 → agent2 → agent3
-**Total agents used:** N
-```
-
-This report gives the CTO visibility into which agents ran, what they accomplished, and the pipeline flow. Always include it — even for simple tasks with just 1 agent.
-
-### Agent Configuration Reference
-
-All agents use YAML frontmatter with these fields:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | yes | Lowercase with hyphens (e.g., `code-reviewer`) |
-| `description` | yes | When to delegate — include "Use proactively" for auto-trigger |
-| `tools` | yes | Allowlist: `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` |
-| `model` | no | `sonnet` (default), `opus` (for planning), `haiku` (for fast tasks) |
-
-Advanced fields available but not yet used:
-- `memory` — `project` / `user` / `local` — enables cross-session learning
-- `effort` — `low` / `medium` / `high` / `max` — controls reasoning depth
-- `isolation` — `worktree` — runs in isolated git worktree copy
-- `maxTurns` — limits agentic turns before stopping
-- `hooks` — `PreToolUse` / `PostToolUse` / `Stop` lifecycle hooks for conditional validation
-
-### Keeping Agents Up to Date
-
-Agents are only as effective as their instructions. When the project evolves:
-- **New modules/patterns**: Update relevant agent `.md` files with new context loading paths
-- **Renamed files**: Update file paths referenced in agent workflows
-- **New conventions**: Add rules to agents that enforce them
-- **Test count changes**: Update `test-runner` and module CLAUDE.md test inventories
-- **Track changes**: When you modify an agent, note what changed and why in `development/context.md`
-
-### Agent Improvement Checklist
-
-When reviewing or improving an agent, verify:
-- [ ] Description clearly states when to delegate (includes trigger phrases)
-- [ ] Tools are minimal — only what the agent actually needs (read-only agents should NOT have Write/Edit)
-- [ ] Context loading section lists specific CLAUDE.md files to read first
-- [ ] Workflow has numbered steps with concrete actions
-- [ ] Output format is specified (report structure, file paths, severity ratings)
-- [ ] Rules section has hard constraints and non-negotiable practices
-- [ ] Model choice matches complexity (opus for planning, sonnet for most tasks)
-- [ ] Advanced features applied where beneficial (memory, effort, isolation)
+| `agent/CLAUDE.md` | TradeReady Platform Testing Agent — Pydantic AI + OpenRouter, 4 workflows |
+| `agent/conversation/CLAUDE.md` | Session management, message history, context assembly |
+| `agent/memory/CLAUDE.md` | Memory store (Postgres + Redis), scored retrieval |
+| `agent/permissions/CLAUDE.md` | Roles, capabilities, budget limits, enforcement |
+| `agent/trading/CLAUDE.md` | Trading loop, executor, journal, strategy manager, A/B testing |
+| `agent/strategies/CLAUDE.md` | 5-strategy system — PPO RL, genetic, regime, risk, ensemble |
+| `agent/strategies/rl/CLAUDE.md` | PPO RL strategy |
+| `agent/strategies/evolutionary/CLAUDE.md` | Genetic algorithm strategy |
+| `agent/strategies/regime/CLAUDE.md` | Market regime detection |
+| `agent/strategies/risk/CLAUDE.md` | Risk management overlay |
+| `agent/strategies/ensemble/CLAUDE.md` | Ensemble combiner |
+| `scripts/CLAUDE.md` | Available scripts |
+| `docs/CLAUDE.md` | Documentation inventory |
+| `development/CLAUDE.md` | Development planning, Obsidian vault |
+| `development/code-reviews/CLAUDE.md` | Code review reports |
+| `tradeready-gym/CLAUDE.md` | Gymnasium RL environments (7 envs, 6 rewards, 3 wrappers) |
+| `monitoring/CLAUDE.md` | 6 Grafana dashboards + 11 Prometheus alert rules |
+| `.claude/agents/CLAUDE.md` | 16 sub-agent definitions |
+| `.claude/skills/CLAUDE.md` | 7 slash-command skill workflows |
+| `.claude/agent-memory/CLAUDE.md` | Agent memory storage |
 
 ---
 
 ## Skills (`.claude/skills/`)
 
-Reusable slash-command workflows invoked with `/skill-name`:
-
 | Skill | Command | Description |
 |-------|---------|-------------|
-| `commit` | `/commit` | Smart commit: stages, generates conventional message (`type(scope): desc`), runs ruff check, commits |
-| `review-changes` | `/review-changes` | Full post-change pipeline: detects pipeline type, runs agents in order (code-reviewer → test-runner → context-manager + extras). Includes feedback capture. |
-| `run-checks` | `/run-checks` | Quick quality gate: ruff + mypy + pytest on changed files only. Fast feedback, no agent delegation |
-| `sync-context` | `/sync-context` | Scan all CLAUDE.md files, fix stale inventories, create missing ones, update development/context.md |
-| `plan-to-tasks` | `/plan-to-tasks <file>` | Read a plan file, discover agents, match tasks to agents, create task files in `development/tasks/` |
-| `analyze-agents` | `/analyze-agents` | Analyze agent activity logs and memory files to generate improvement report in `development/agent-analysis/` |
-| `c-level-report` | `/c-level-report` | C-level executive report: gathers project metrics A-Z, generates rich report with KPIs, risk, roadmap. Saves to `development/C-level_reports/` |
+| `commit` | `/commit` | Smart commit: stages, generates conventional message, runs ruff, commits |
+| `review-changes` | `/review-changes` | Full post-change pipeline with agent delegation |
+| `run-checks` | `/run-checks` | Quick quality gate: ruff + mypy + pytest on changed files |
+| `sync-context` | `/sync-context` | Scan/fix all CLAUDE.md files, update context.md |
+| `plan-to-tasks` | `/plan-to-tasks <file>` | Read plan, match tasks to agents, create task files |
+| `analyze-agents` | `/analyze-agents` | Analyze agent activity logs, generate improvement report |
+| `c-level-report` | `/c-level-report` | C-level executive report with KPIs, risk, roadmap |
 
 ## Configuration (`.claude/settings.json`)
 
-Shared team configuration (committed to git). Defines:
-- **Permissions**: Pattern-based allow/deny rules for all tools (Bash, Read, Edit, etc.)
+- **Permissions**: Pattern-based allow/deny rules for all tools
 - **Env vars**: `PYTHONPATH=.`, `PYTHONDONTWRITEBYTECODE=1`
-- **Hooks**: PostToolUse reminder after Write/Edit to run the quality pipeline
+- **Hooks**: PostToolUse reminder after Write/Edit to run quality pipeline
 - **Denied**: Destructive operations (`rm -rf /`, `git push --force`, `DROP TABLE`)
 
-Personal overrides go in `.claude/settings.local.json` (gitignored).
+Personal overrides: `.claude/settings.local.json` (gitignored).
 
 ---
 
@@ -302,301 +154,52 @@ This platform is **deployed in production with CI/CD pipelines**. Every change m
 3. Run `ruff check` and `mypy` on affected files before committing
 
 ### After ANY Change
-1. **Tests pass**: Run `pytest` for affected areas — fix broken tests or update them if behavior intentionally changed
+1. **Tests pass**: Run `pytest` for affected areas — fix broken tests or update if behavior changed
 2. **Lint clean**: `ruff check src/ tests/` must pass with zero errors
 3. **Type safe**: `mypy src/` must pass
-4. **No regressions**: If changing an API endpoint, verify the response shape hasn't broken consumers
-5. **Migration safe**: New DB changes need Alembic migrations that work on the live database (no destructive ALTER without a plan)
+4. **No regressions**: Verify API response shapes haven't broken consumers
+5. **Migration safe**: DB changes need Alembic migrations that work on live database
 
 ### Test Quality Standards
-- Tests must cover the actual behavior, not just exist for coverage numbers
-- When modifying code, update tests to match — stale tests that pass on wrong behavior are worse than no tests
-- Integration tests must use the app factory: `from src.main import create_app; app = create_app()`
-- New features need tests before merging. Bug fixes should include a regression test.
-
-### Historical Development Files
-Original planning docs are archived in `development/` for reference. These are **reference only** — do not update them. The source of truth is the code itself.
-
-## Obsidian Knowledge Vault
-
-The `development/` directory doubles as an **Obsidian vault** for human knowledge management. Agents and humans share this space with clear ownership rules.
-
-### Vault Structure
-
-```
-development/                  ← Obsidian vault root
-  .obsidian/                  ← Vault config (3 plugins: Dataview, Templater, Git)
-  _moc/                       ← Map of Content navigation hubs (Home.md is the entry point)
-  _templates/                 ← Obsidian Templater templates (code-review, task, daily-note, plan, research-report)
-  _dashboards/                ← Dataview query dashboards (project-health, agent-activity)
-  _attachments/               ← Image/file attachments
-  daily/                      ← Daily development log (YYYY-MM-DD.md, shared between humans and agents)
-  code-reviews/               ← Agent code review reports (with frontmatter)
-  tasks/                      ← Task boards (with frontmatter)
-  context.md                  ← Rolling dev context (agent-owned)
-  VAULT-SETUP.md              ← One-time Obsidian setup instructions
-```
-
-### Frontmatter Convention
-
-All markdown files in `development/` have YAML frontmatter with at minimum:
-
-```yaml
----
-type: code-review | task | task-board | plan | research-report | daily-note | context-log | moc | dashboard
-tags:
-  - relevant-tags
----
-```
-
-**When creating files in `development/`**, always include appropriate frontmatter. This enables Obsidian Dataview queries to aggregate and display data across the vault.
-
-### Wikilink Rules
-
-- **Use `[[wikilinks]]` only in `development/` files** — for cross-referencing plans, tasks, reviews, and daily notes
-- **NEVER add wikilinks to CLAUDE.md files** — these use standard markdown and serve as agent navigation
-- **NEVER add wikilinks to source code** — reference files as inline code: `` `src/path/file.py` ``
-- See `development/_moc/wikilink-conventions.md` for the full linking standard
-
-### Daily Notes
-
-The `development/daily/` directory contains daily development log notes:
-
-- **Humans** write observations, decisions, and plans in the "Human Notes" section
-- **Agents** (via context-manager) append changes, decisions, and issues to the "Agent Activity" section
-- New daily notes can be created by Obsidian Templater or by running: `bash scripts/create-daily-note.sh`
-- Daily notes link to `[[context]]` and to previous/next days
-
-### File Ownership
-
-| Files | Owner | Rule |
-|-------|-------|------|
-| `daily/*.md` | Shared | Humans write "Human Notes", agents append "Agent Activity" |
-| `context.md` | Agent (context-manager) | Humans read only |
-| `code-reviews/*.md` | Agent (code-reviewer) | Humans read only |
-| `tasks/**/*.md` | Agent (plan-to-tasks, etc.) | Humans read only |
-| `_moc/*.md`, `_dashboards/*.md` | Human | Agents don't modify |
-| Archived planning docs | Frozen | Neither edits |
-
-### Agent Output Format
-
-When agents create new files in `development/`:
-
-1. **Code reviews** — include frontmatter with `type: code-review`, `date`, `reviewer`, `verdict`, `scope`, `tags`
-2. **Task files** — include frontmatter with `type: task`, `board`, `tags` (in addition to existing `task_id`, `title`, `agent`, etc.)
-3. **Context-manager** — after updating `context.md`, also append to today's daily note in `development/daily/YYYY-MM-DD.md`
+- Tests must cover actual behavior, not just exist for coverage numbers
+- Integration tests must use: `from src.main import create_app; app = create_app()`
+- New features need tests before merging. Bug fixes need regression tests.
+- **Gotcha:** `get_settings()` uses `lru_cache` — tests must patch before cached instance
 
 ## Running the Platform
 
 ```bash
-# Start all services (requires Docker)
+# All services (Docker)
 docker compose up -d
 
-# Start the platform testing agent (opt-in profile; reads agent/.env)
-docker compose --profile agent up agent
-
-# API server (local dev, no Docker)
+# API server (local dev)
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
-# Price ingestion service
+# Price ingestion
 python -m src.price_ingestion.service
 
-# MCP server (stdio transport — for Claude Desktop / MCP clients)
-MCP_API_KEY=ak_live_... python -m src.mcp.server
-# With JWT for authenticated endpoints:
-MCP_API_KEY=ak_live_... MCP_JWT_TOKEN=eyJ... python -m src.mcp.server
-
-# Celery worker
+# Celery worker + beat
 celery -A src.tasks.celery_app worker --loglevel=info
-
-# Celery beat (scheduler)
 celery -A src.tasks.celery_app beat --loglevel=info
 
-# Platform Testing Agent (autonomous E2E tester — requires agent/.env)
-python -m agent.main smoke               # 10-step connectivity validation (no LLM)
-python -m agent.main trade               # Full trading lifecycle with LLM
-python -m agent.main backtest            # 7-day MA-crossover backtest with LLM analysis
-python -m agent.main strategy            # Strategy create → test → improve → compare cycle
-python -m agent.main all                 # Run all four workflows; writes platform-validation-*.json
-python -m agent.main trade --model openrouter:anthropic/claude-opus-4-5  # Override model
+# Platform Testing Agent
+python -m agent.main smoke|trade|backtest|strategy|all
 ```
 
-Access points: API `http://localhost:8000`, Swagger docs `http://localhost:8000/docs`, Prometheus metrics `http://localhost:8000/metrics`, Grafana `http://localhost:3000`, Prometheus `http://localhost:9090`, WebSocket `ws://localhost:8000/ws/v1?api_key=...`
+Access: API `http://localhost:8000`, Docs `http://localhost:8000/docs`, Grafana `http://localhost:3000`, WS `ws://localhost:8000/ws/v1?api_key=...`
 
-## Testing
+## Testing & Linting
 
 ```bash
 pytest --cov=src --cov-report=html      # All tests with coverage
-pytest tests/unit/                       # Unit tests only (mock external deps)
-pytest tests/integration/                # Integration tests (requires Docker services)
-pytest tests/unit/test_order_engine.py  # Single test file
-pytest tests/unit/test_order_engine.py::test_market_buy_fills  # Single test
-locust -f tests/load/locustfile.py --host=http://localhost:8000
+pytest tests/unit/                       # Unit tests only
+pytest tests/integration/                # Integration tests (needs Docker)
+ruff check src/ tests/                   # Lint
+ruff check --fix src/                    # Auto-fix
+mypy src/                                # Type check
+alembic revision --autogenerate -m "desc"  # Create migration
+alembic upgrade head                       # Apply migrations
 ```
-
-- `asyncio_mode = "auto"` in pyproject.toml — no need for `@pytest.mark.asyncio` on async tests
-- In tests, instantiate the app via `from src.main import create_app; app = create_app()` — do not import `app` directly
-- **Gotcha:** `get_settings()` uses `lru_cache` — tests must patch it before the cached instance is created
-
-See `tests/CLAUDE.md` for full fixture inventory, mock patterns, and test-specific gotchas.
-
-## Linting, Type Checking, Migrations
-
-```bash
-ruff check src/ tests/     # Lint (config in pyproject.toml: line-length=120, Python 3.12)
-ruff check --fix src/      # Auto-fix lint issues
-mypy src/                  # Type check (strict mode; asyncpg/celery/locust have ignore_missing_imports)
-
-alembic revision --autogenerate -m "description"   # Create migration
-alembic upgrade head                                # Apply migrations
-alembic downgrade -1                                # Rollback one
-
-python scripts/seed_pairs.py       # Seed Binance USDT pairs
-python scripts/backfill_history.py # Backfill Binance historical klines into candles_backfill
-bash scripts/create-daily-note.sh  # Create today's Obsidian daily note (if not exists)
-```
-
-## Architecture Overview
-
-This is a simulated crypto exchange where AI agents trade **virtual USDT** against **real Binance market data**. Supports 600+ USDT pairs with real-time price feeds, order execution, risk controls, and portfolio tracking.
-
-### Core Components
-
-| # | Component | Module |
-|---|-----------|--------|
-| 1 | **Exchange Abstraction** — CCXT adapter for 110+ exchanges, symbol mapper | `src/exchange/` |
-| 2 | **Price Ingestion** — Exchange WS (CCXT or legacy Binance) → Redis + TimescaleDB | `src/price_ingestion/` |
-| 3 | **Redis Cache** — sub-ms price lookups, rate limiting, pub/sub | `src/cache/` |
-| 4 | **TimescaleDB** — tick history, OHLCV candles, trades | `src/database/` |
-| 5 | **Order Engine** — Market/Limit/Stop-Loss/Take-Profit | `src/order_engine/` |
-| 6 | **Account Management** — registration, auth, API keys, balances | `src/accounts/` |
-| 7 | **Portfolio Tracker** — real-time PnL, Sharpe, drawdown | `src/portfolio/` |
-| 8 | **Risk Management** — position limits, daily loss circuit breaker | `src/risk/` |
-| 9 | **API Gateway** — REST + WebSocket, middleware | `src/api/` |
-| 10 | **Monitoring** — Prometheus metrics, health checks, structured logs | `src/monitoring/` |
-| 11 | **Backtesting Engine** — historical replay, sandbox trading, metrics | `src/backtesting/` |
-| 12 | **Agent Management** — multi-agent CRUD, per-agent wallets, API keys | `src/agents/` |
-| 13 | **Battle System** — agent vs agent competitions with rankings, replays | `src/battles/` |
-| 14 | **Unified Metrics** — shared calculator for backtests & battles | `src/metrics/` |
-
-### Multi-Agent Architecture
-
-Each account can own multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. Trading tables (`balances`, `orders`, `trades`, `positions`) are keyed by `agent_id`.
-
-- **API key auth** (`X-API-Key`): tries agents table first, falls back to legacy accounts table
-- **JWT auth** (`Authorization: Bearer`): resolves account from JWT, agent context via `X-Agent-Id` header
-- All core services accept `agent_id` for scoping (balances, orders, risk, portfolio, backtests)
-
-See `src/agents/CLAUDE.md` and `src/api/middleware/CLAUDE.md` for full details.
-
-### Battle System
-
-Agent vs agent trading competitions with live monitoring, replay, and rankings. Supports both `"live"` and `"historical"` modes.
-
-**State machine:** `draft → pending → active → completed` (with `cancelled` and `paused` branches)
-
-See `src/battles/CLAUDE.md` for full architecture, and `src/api/routes/CLAUDE.md` for the 20 battle endpoints.
-
-### Backtesting Engine
-
-Agent-driven historical replay with in-memory sandbox trading. The UI is read-only observation.
-
-**Critical invariant**: `DataReplayer` filters `WHERE bucket <= virtual_clock` — no look-ahead bias possible.
-
-See `src/backtesting/CLAUDE.md` for full lifecycle, performance optimizations, and sandbox details.
-
-### Dependency Direction (strict)
-```
-Routes → Schemas + Services
-Services → Repositories + Cache + External clients
-Repositories → Models + Session
-```
-Never import upward in this chain.
-
-### Middleware Execution Order
-Starlette adds middleware LIFO. Registration order in `create_app()`:
-```
-RateLimitMiddleware → AuthMiddleware → LoggingMiddleware → route handler
-```
-`AuthMiddleware` must run before `RateLimitMiddleware` so `request.state.account` is populated before rate-limit checks.
-
-### Key Data Flows
-
-**Price ingestion:** Exchange WebSocket (via CCXT adapter or legacy Binance client) → update Redis `HSET prices {SYMBOL} {price}` → buffer ticks in memory → periodic flush to TimescaleDB via asyncpg COPY → broadcast on Redis pub/sub for WebSocket clients. The exchange is configurable via `EXCHANGE_ID` env var (default: `binance`). All CCXT calls go through the `ExchangeAdapter` interface in `src/exchange/`.
-
-**Order execution:** `POST /api/v1/trade/order` → RiskManager (8-step validation) → fetch price from Redis → market orders fill immediately with slippage; limit/stop orders queue as pending and are matched by background Celery task.
-
-**Backtesting:** `POST /backtest/create` → `/start` (bulk preloads candle data) → agent calls `/step` or `/step/batch` in a loop → engine auto-completes on last step → `GET /results` returns metrics.
-
-### API Authentication
-All REST endpoints accept either:
-- `X-API-Key: ak_live_...` header
-- `Authorization: Bearer <jwt>` header
-
-WebSocket authenticates via `?api_key=ak_live_...` query param (close code 4401 on failure).
-
-### Database
-- All DB access through repository classes in `src/database/repositories/`
-- All write operations must be atomic (SQLAlchemy transactions)
-- `NUMERIC(20,8)` for all price/quantity/balance columns
-- TimescaleDB hypertables for time-series only (`ticks`, `portfolio_snapshots`, `backtest_snapshots`)
-
-### Redis Key Patterns
-- Current prices: `HSET prices {SYMBOL} {price}`
-- Rate limits: `INCR rate_limit:{api_key}:{endpoint}:{minute}` + `EXPIRE 60`
-- Circuit breaker: `HSET circuit_breaker:{account_id} daily_pnl {value}`
-
-## Dependency Injection & Configuration
-
-### FastAPI Dependencies (`src/dependencies.py`)
-All service/repo instantiation goes through `src/dependencies.py` using FastAPI's `Depends()`. Pre-defined typed aliases exist for concise route signatures:
-```python
-# Use the typed aliases — NOT raw Annotated[Type, Depends(get_function)]
-async def handler(db: DbSessionDep, cache: PriceCacheDep, settings: SettingsDep):
-```
-Available aliases: `DbSessionDep`, `RedisDep`, `PriceCacheDep`, `SettingsDep`, `AccountRepoDep`, `BalanceRepoDep`, `OrderRepoDep`, `TradeRepoDep`, `TickRepoDep`, `SnapshotRepoDep`, `BalanceManagerDep`, `AccountServiceDep`, `SlippageCalcDep`, `OrderEngineDep`, `RiskManagerDep`, `CircuitBreakerRedisDep`, `PortfolioTrackerDep`, `PerformanceMetricsDep`, `SnapshotServiceDep`, `BacktestEngineDep`, `BacktestRepoDep`, `BattleRepoDep`, `BattleServiceDep`, `AgentRepoDep`, `AgentServiceDep`, `StrategyRepoDep`, `StrategyServiceDep`, `TestRunRepoDep`, `TestOrchestratorDep`, `TrainingRunRepoDep`, `TrainingRunServiceDep`.
-
-Key patterns:
-- **Lazy imports** inside dependency functions (`# noqa: PLC0415`) to avoid circular imports — do not move these to module level
-- **Per-request lifecycle** for DB sessions (auto-commit on success, rollback on exception); Redis uses a shared pool (never closed per-request)
-- **CircuitBreaker is account-scoped**, not a singleton — construct it per-account with `starting_balance` and `daily_loss_limit_pct`
-- **BacktestEngine is a singleton** — held in a module-level `_backtest_engine_instance` global
-
-### Settings (`src/config.py`)
-- `Settings` extends Pydantic v2 `BaseSettings` with `SettingsConfigDict(env_file=".env", case_sensitive=False)`
-- `get_settings()` is decorated with `@lru_cache(maxsize=1)` — reads `.env` exactly once per process
-- Field validators enforce: `DATABASE_URL` must use `postgresql+asyncpg://` scheme, `JWT_SECRET` must be 32+ chars
-- In tests, patch `src.config.get_settings` BEFORE the cached instance is created, or it will use the real config
-
-### Exception Hierarchy (`src/utils/exceptions.py`)
-All exceptions inherit `TradingPlatformError` which provides:
-- `code` (string) and `http_status` (int) class attributes as defaults
-- `.to_dict()` → `{"error": {"code": ..., "message": ..., "details": ...}}`
-
-The global exception handler in `src/main.py` auto-serializes any `TradingPlatformError` subclass. See `src/utils/CLAUDE.md` for the full hierarchy.
-
-## Code Standards
-
-- **Python 3.12+**, fully typed, `async/await` for all I/O
-- **Pydantic v2** for all data models; **`Decimal`** (never `float`) for money/prices
-- **Google-style docstrings** on every public class and function
-- Custom exceptions from `src/utils/exceptions.py`; never bare `except:`
-- All external calls (Redis, DB, Binance WS) wrapped in try/except with logging; fail closed on errors
-- Import order: stdlib → third-party → local (enforced by ruff isort with `known-first-party = ["src", "sdk"]`)
-
-### Security
-- API keys generated via `secrets.token_urlsafe(48)` with `ak_live_` / `sk_live_` prefixes
-- Store password/secret hashes (bcrypt), never plaintext
-- Parameterized queries only (SQLAlchemy handles this — never use raw f-strings in SQL)
-- All secrets via environment variables; see `.env.example`
-
-### Naming
-- Files: `snake_case.py`, Classes: `PascalCase`, Functions: `snake_case`, Constants: `UPPER_SNAKE_CASE`, Private: `_prefix`
-
-### API Design
-- All routes under `/api/v1/` prefix
-- Error format: `{"error": {"code": "...", "message": "..."}}`
-- Rate limit headers on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 
 ## Git Commit Format
 
@@ -605,53 +208,3 @@ type(scope): description
 ```
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
 Scope: component name (e.g., `ingestion`, `order-engine`, `api`)
-
-## SDK & Frontend
-
-**Python SDK** (`sdk/`): `AgentExchangeClient` (sync), `AsyncAgentExchangeClient` (async), `AgentExchangeWS` (streaming). Install locally: `pip install -e sdk/`. See `sdk/CLAUDE.md`.
-
-**MCP Server** (`src/mcp/`): 58 trading tools over stdio transport. See `src/mcp/CLAUDE.md`.
-
-**Frontend** (`Frontend/`): Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm. See `Frontend/CLAUDE.md`.
-
-### Frontend Commands
-
-```bash
-cd Frontend
-pnpm dev              # Dev server at http://localhost:3000
-pnpm build            # Production build (zero TS/lint errors required)
-pnpm test             # Unit tests (vitest)
-pnpm test:e2e         # Playwright E2E tests
-pnpm dlx shadcn@latest add <component-name>  # Add shadcn/ui component
-```
-
-## Docker
-
-- `docker-compose.yml` — production setup with all services
-- `docker-compose.dev.yml` — development overrides (hot reload, debug ports)
-- Healthchecks and resource limits defined for all containers
-
-## Environment Variables
-
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | TimescaleDB async connection string |
-| `REDIS_URL` | Redis connection string |
-| `BINANCE_WS_URL` | Binance WebSocket base URL (legacy fallback) |
-| `EXCHANGE_ID` | Primary exchange for CCXT (default `binance`; e.g. `okx`, `bybit`) |
-| `EXCHANGE_API_KEY` | Exchange API key for live trading (Phase 8, optional) |
-| `EXCHANGE_SECRET` | Exchange API secret for live trading (Phase 8, optional) |
-| `ADDITIONAL_EXCHANGES` | Comma-separated extra exchange IDs for multi-exchange ingestion |
-| `JWT_SECRET` | JWT signing secret (64+ chars) |
-| `TRADING_FEE_PCT` | Simulated fee (default 0.1%) |
-| `DEFAULT_STARTING_BALANCE` | New account balance (default 10000 USDT) |
-| `DEFAULT_SLIPPAGE_FACTOR` | Base slippage factor (default 0.1) |
-| `CELERY_BROKER_URL` | Celery broker (defaults to `REDIS_URL`) |
-| `CELERY_RESULT_BACKEND` | Celery results (defaults to `REDIS_URL`) |
-| `TICK_FLUSH_INTERVAL` | Tick buffer flush interval in seconds (default 1.0) |
-| `TICK_BUFFER_MAX_SIZE` | Max ticks buffered before forced flush (default 5000) |
-| `NEXT_PUBLIC_API_BASE_URL` | Frontend: backend REST API base URL |
-| `NEXT_PUBLIC_WS_URL` | Frontend: backend WebSocket URL |
-| `OPENROUTER_API_KEY` | Testing agent: OpenRouter API key (required; stored in `agent/.env`) |
-| `AGENT_MODEL` | Testing agent: primary LLM model ID (default `openrouter:anthropic/claude-sonnet-4-5`) |
-| `AGENT_CHEAP_MODEL` | Testing agent: cheap model for low-stakes tasks (default `openrouter:google/gemini-2.0-flash-001`) |

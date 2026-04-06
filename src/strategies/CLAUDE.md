@@ -1,6 +1,6 @@
 # Strategies Module
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-02 -->
 
 > Strategy registry — CRUD, versioning, testing, and deployment for trading strategies.
 
@@ -91,3 +91,8 @@ Stored as JSONB in `strategy_versions.definition`. Validated against `StrategyDe
 - `StrategyVersion` is immutable after creation — update by creating a new version
 - Archiving a deployed strategy requires undeploying first
 - Ownership checks are enforced in `StrategyService`, not in the repository
+- `StrategyService.create_strategy()` catches `pydantic.ValidationError` on the strategy `definition` body and re-raises as HTTP 400 (`InputValidationError`). This prevents a 500 on malformed strategy definitions.
+
+## Recent Changes
+
+- `2026-04-02` (BUG-005) — `service.py`: `create_strategy()` now wraps Pydantic model validation in `try/except ValidationError` and raises `InputValidationError` (HTTP 400) with the Pydantic error messages. Previously, bad strategy definitions caused an unhandled 500.

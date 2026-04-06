@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-04-01 -->
+<!-- last-updated: 2026-04-02 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -178,7 +178,8 @@ celery -A src.tasks.celery_app beat --loglevel=info
 
 ## Recent Changes
 
-- `2026-04-01` — Production fix: `celery_app.py` `agent.tasks` detection changed from `import` to `importlib.util.find_spec()` to avoid circular ImportError (`agent/tasks.py` → `celery_app.app` → not yet defined). Also fixes Celery startup on deployments without the optional agent package.
+- `2026-04-02` (BUG-018) — `celery_app.py`: Wrapped `importlib.util.find_spec("agent.tasks")` call in `try/except ModuleNotFoundError`. `find_spec()` itself can raise `ModuleNotFoundError` when the `agent/` directory exists on disk but is not installed as a Python package (no `__init__.py` or `pyproject.toml` in path). This fixes Celery startup crash in the non-agent Docker profile.
+- `2026-04-01` — Production fix: `celery_app.py` `agent.tasks` detection changed from direct `import` to `importlib.util.find_spec()` to avoid circular ImportError (`agent/tasks.py` → `celery_app.app` → not yet defined).
 - `2026-03-23` — Added `retrain_tasks.py` with 5 ML retraining Celery tasks (`run_retraining_cycle`, `retrain_ensemble`, `retrain_regime`, `retrain_genome`, `retrain_rl`). All tasks route to new `ml_training` queue, use `asyncio.run()` bridge to `RetrainOrchestrator`, and have `soft_time_limit=3600` / `time_limit=3900`. Beat entry `run-retraining-cycle` runs every 8h. Beat schedule count: 15 → 16.
 - `2026-03-22` — Added `settle_agent_decisions` task to `agent_analytics.py` (every 5 min). Closes the feedback loop from trade outcome to agent learning: finds unresolved `AgentDecision` rows, checks if the linked order is filled, computes `realized_pnl` from `Trade` rows, writes back `outcome_pnl` + `outcome_recorded_at`. Beat schedule count: 14 → 15.
 - `2026-03-21` — Added `agent_analytics.py` with 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC — queries `agent_strategy_signals` to compute per-strategy PnL attribution), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC — measures memory retrieval hit rate), `agent_platform_health_report` (daily 06:00 UTC — aggregates agent API call latency and error rates). Beat schedule count: 11 → 14.

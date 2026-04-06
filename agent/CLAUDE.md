@@ -1,6 +1,6 @@
 # agent/ — TradeReady Platform Testing Agent
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Autonomous AI agent for end-to-end testing of the AiTradingAgent platform using Pydantic AI + OpenRouter.
 
@@ -31,6 +31,7 @@ agent/
 ├── models/
 │   ├── __init__.py          # Re-exports all 6 public models
 │   ├── analysis.py          # MarketAnalysis, BacktestAnalysis
+│   ├── ecosystem.py         # Agent ecosystem models — AgentState, EcosystemSnapshot, AgentHealthStatus
 │   ├── report.py            # WorkflowResult, PlatformValidationReport
 │   └── trade_signal.py      # SignalType (enum), TradeSignal
 ├── prompts/
@@ -455,6 +456,7 @@ Each subdirectory has its own `CLAUDE.md` with full details. Read the local file
 
 ## Recent Changes
 
+- `2026-04-06` — Synced file inventory: added `models/ecosystem.py` to directory structure. Updated timestamp.
 - `2026-03-23` — C-level recommendations (39 tasks): 0 HIGH security issues remaining. ADMIN role checks added to `grant_capability`/`set_role`/`revoke_capability`. `BudgetManager.close()` added. `AgentAuditLog` model + migration 020. DriftDetector wired into `TradingLoop`. `retrain_tasks.py` Celery tasks wired (5 tasks, `ml_training` queue). Regime classifier trained (99.92% accuracy). `retraining.json` Grafana dashboard (7th). Checksum strict mode. 49 new tests (20 security regression + 29 retrain integration). Updated total: 2300+ tests, 52 files.
 - `2026-03-20` — Initial CLAUDE.md created.
 - `2026-03-20` — Added Sub-CLAUDE.md Index with references to all 5 sub-module files.

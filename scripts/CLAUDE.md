@@ -1,6 +1,6 @@
 # Scripts
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Standalone scripts for database seeding, data migration, backfill operations, testing, and platform validation.
 

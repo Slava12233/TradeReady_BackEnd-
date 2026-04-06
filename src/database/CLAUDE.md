@@ -1,6 +1,6 @@
 # Database Layer
 
-<!-- last-updated: 2026-03-23 -->
+<!-- last-updated: 2026-04-06 -->
 
 > SQLAlchemy ORM models, async session management, and repository pattern for TimescaleDB/PostgreSQL.
 
@@ -157,6 +157,7 @@ Tests use mocked sessions from `tests/conftest.py`. The `get_async_session` depe
 
 ## Recent Changes
 
+- `2026-04-02` — Migration 021: fixed CASCADE DELETE on agent foreign keys (`orders`, `trades`, `positions`, `balances`, `trading_sessions`, `portfolio_snapshots`). No new tables; enforces correct cascade behavior so deleting an agent removes all associated rows. Alembic head: 020 → 021.
 - `2026-03-23` — Migration 020: added `AgentAuditLog` model (`agent_audit_log` table) for durable, complete permission audit trail (all outcomes, not just denials). 3 indexes on `agent_id`, `created_at`, and `(agent_id, created_at)` composite. Model count: 26 → 27. Alembic head: 020.
 - `2026-03-21` — Migration 018: added `AgentApiCall` and `AgentStrategySignal` tables; added `trace_id` column to `agent_decisions`. Migration 019: added `status`/`resolution` lifecycle columns to `agent_feedback` with CHECK constraint. Model count: 24 → 26.
 - `2026-03-17` -- Initial CLAUDE.md created

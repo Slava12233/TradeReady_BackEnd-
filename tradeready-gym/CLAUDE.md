@@ -1,6 +1,6 @@
 # tradeready-gym/ — Gymnasium RL Environments
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Standalone Python package providing OpenAI Gymnasium-compatible trading environments backed by the TradeReady backtest REST API, for training RL agents on real crypto market data.
 

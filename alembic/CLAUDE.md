@@ -1,6 +1,6 @@
 # Alembic Migrations
 
-<!-- last-updated: 2026-03-23 -->
+<!-- last-updated: 2026-04-02 -->
 
 > Async Alembic migrations for TimescaleDB/PostgreSQL schema management.
 
@@ -41,10 +41,11 @@ Manages all database schema changes for the AI Agent Crypto Trading Platform. Mi
 | 018 | `018_add_agent_logging_tables.py` | Agent logging: `agent_api_calls`, `agent_strategy_signals`; adds `trace_id` column to `agent_decisions` |
 | 019 | `019_add_feedback_lifecycle_columns.py` | `agent_feedback.status` CHECK constraint + default; adds `agent_feedback.resolution` column |
 | 020 | `020_add_agent_audit_log.py` | `agent_audit_log` table for complete permission audit trail (all outcomes); 3 indexes on agent_id, created_at, and composite |
+| 021 | `021_fix_cascade_delete_agent_fks.py` | Add `ON DELETE CASCADE` to 6 FK constraints on `balances`, `orders`, `trades`, `positions`, `trading_sessions`, `portfolio_snapshots` that reference the `agents` table. Allows `DELETE FROM agents` to cleanly cascade without FK violations. |
 
-**Current head:** `020`
+**Current head:** `021`
 
-**Note:** Migration `011` (drop legacy account trading columns) is missing from the versions directory but is referenced in the chain. The chain skips from `010` directly to `012` via `down_revision`.
+**Note:** Migration `011` (drop legacy account trading columns) is missing from the versions directory but is referenced in the chain. The chain skips from `010` directly to `012` via `down_revision`. Total migration files on disk: 17 (001-021, no 011).
 
 ## Architecture & Patterns
 
@@ -135,9 +136,8 @@ alembic downgrade 010      # Roll back to specific revision
 
 ## Recent Changes
 
+- `2026-04-02` — Migration 021 added: `ON DELETE CASCADE` for 6 FK constraints on agent-scoped trading tables (`balances`, `orders`, `trades`, `positions`, `trading_sessions`, `portfolio_snapshots`). Fixes BUG-004 where deleting an agent raised FK violation errors. Head: 020 → 021. Applied to production.
 - `2026-03-23` — Migration 020 added: `agent_audit_log` table for durable permission audit trail (allow + deny outcomes). Head: 019 → 020. 16 numbered migration files on disk (001-020, no 011).
-- `2026-03-17` -- Migrations 013-015 added: agent-scoped backtests and historical battle support
-- `2026-03-17` -- Initial CLAUDE.md created
-- `2026-03-18` -- Migration 016 added: strategy and training tables (strategies, strategy_versions, strategy_test_runs, strategy_test_episodes, training_runs, training_episodes)
 - `2026-03-21` — Migrations 018-019 added: agent_api_calls + agent_strategy_signals tables; trace_id on agent_decisions; feedback lifecycle columns. Head: 016 → 019.
-- `2026-03-19` -- Synced with codebase: confirmed 15 numbered migration files (001-016, no 011), head at 016. All inventory entries match files on disk.
+- `2026-03-18` -- Migration 016 added: strategy and training tables.
+- `2026-03-17` -- Initial CLAUDE.md created

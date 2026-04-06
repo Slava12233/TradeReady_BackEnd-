@@ -128,3 +128,4 @@
 - [feedback_celery_task_patterns.md](feedback_celery_task_patterns.md) — Celery analytics task gotchas: N806 on in-function frozensets, dual-session mock split, beat entry naming conventions (Task 30)
 - [feedback_rest_tools_pattern.md](feedback_rest_tools_pattern.md) — REST tools: use self._client.<verb> directly (not helpers) for structured methods; domain-prefix tool names to avoid collisions; update both count and name-set tests (Task 33)
 - [feedback_memory_learning_loop.md](feedback_memory_learning_loop.md) — MemoryStore.save() takes full Memory object; dedup-reinforce pattern for procedurals; ContextBuilder dedup via added_ids set; test ordering failures in full suite are pre-existing (Task 32)
+- [feedback_battle_not_found_error.md](feedback_battle_not_found_error.md) — BUG-003 fix: local BattleNotFoundError(Exception) in battle_repo.py caused INTERNAL_ERROR 500; fix: import from src.utils.exceptions instead

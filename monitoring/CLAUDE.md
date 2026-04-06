@@ -1,6 +1,6 @@
 # monitoring/ — Grafana Dashboards and Prometheus Alert Rules
 
-<!-- last-updated: 2026-03-23 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Infrastructure monitoring configuration: 7 Grafana dashboard JSON definitions and 11 Prometheus alert rules for the agent ecosystem.
 

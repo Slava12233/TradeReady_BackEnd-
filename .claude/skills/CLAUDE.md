@@ -1,6 +1,6 @@
 # .claude/skills/ — Reusable Skill Workflows
 
-<!-- last-updated: 2026-03-23 -->
+<!-- last-updated: 2026-04-06 -->
 
 > Slash-command workflows invoked with `/skill-name` to run multi-step tasks.
 
@@ -20,6 +20,16 @@ Contains skill subdirectories, each with a `SKILL.md` file that defines a reusab
 | `analyze-agents` | `/analyze-agents` | `analyze-agents/SKILL.md` | Analyze agent activity logs and memory files to generate improvement report in `development/agent-analysis/` |
 | `c-level-report` | `/c-level-report` | `c-level-report/SKILL.md` | Generates comprehensive C-level executive reports with real-time metrics (KPIs, risk, roadmap). Saves to `development/C-level_reports/` |
 
+### External / System Skills (installed, not project-specific)
+
+| Skill | Command | File | Purpose |
+|-------|---------|------|---------|
+| `agent-browser` | `/agent-browser` | `agent-browser/SKILL.md` | Browser automation via CLI — navigate, click, fill forms, screenshot, scrape web pages |
+| `agent-ui` | `/agent-ui` | `agent-ui/SKILL.md` | Drop-in React/Next.js agent UI component with streaming, approvals, and widgets (ui.inference.sh) |
+| `find-skills` | `/find-skills` | `find-skills/SKILL.md` | Helps users discover and install agent skills for unknown capabilities |
+| `frontend-design` | `/frontend-design` | `frontend-design/SKILL.md` | Creates production-grade frontend UI with high design quality — components, pages, dashboards |
+| `prompt-engineering-patterns` | `/prompt-engineering-patterns` | `prompt-engineering-patterns/SKILL.md` | Advanced prompt engineering techniques for production LLM reliability |
+
 ## Patterns
 
 - Skills are stored as subdirectories, not flat files — each has its own `SKILL.md`
@@ -36,6 +46,7 @@ Contains skill subdirectories, each with a `SKILL.md` file that defines a reusab
 
 ## Recent Changes
 
+- `2026-04-06` — Added 5 external/system skills to inventory: `agent-browser`, `agent-ui`, `find-skills`, `frontend-design`, `prompt-engineering-patterns`. Total skills: 7 project + 5 external.
 - `2026-03-23` — `/c-level-report` skill created. Files: `SKILL.md`, `templates/report-template.md`, `examples/sample-report.md`. Tools: Read, Write, Grep, Glob, Bash. Output: `development/C-level_reports/report-YYYY-MM-DD.md`
 - `2026-03-21` — `/analyze-agents` skill created (Task 13 of Agent Memory & Learning System)
 - `2026-03-21` — `/review-changes` updated with feedback capture (Task 14 of Agent Memory & Learning System)

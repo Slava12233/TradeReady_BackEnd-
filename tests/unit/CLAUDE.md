@@ -1,8 +1,8 @@
 # Unit Tests
 
-<!-- last-updated: 2026-03-22 -->
+<!-- last-updated: 2026-04-06 -->
 
-> 1219 unit tests across 73 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, and training.
+> 1734 unit tests across 87 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, agent ecosystem, and training.
 
 ## What This Module Does
 
@@ -85,6 +85,20 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_agent_api_call_repo.py` | 9 | `AgentApiCallRepository` — bulk save, list by trace_id, aggregate latency/cost stats |
 | `test_agent_strategy_signal_repo.py` | 10 | `AgentStrategySignalRepository` — bulk save, list by source/action, daily attribution query |
 | `test_task_agent_analytics.py` | 16 | `settle_agent_decisions` Celery task — settlement flows, pending-skip, missing-order, negative PnL, cancelled orders, beat schedule registration |
+| `test_ab_testing.py` | 59 | `ABTestRunner` — A/B test creation, variant assignment, statistical significance, result aggregation |
+| `test_agent_budget.py` | 21 | `BudgetManager` — daily trade limits, budget exhaustion, reset, Redis-backed state |
+| `test_agent_budget_repo.py` | 25 | `AgentBudgetRepository` — CRUD for budget limits and budget history |
+| `test_agent_decision_repo.py` | 20 | `AgentDecisionRepository` — decision persistence, query by session/status, settlement tracking |
+| `test_agent_learning_repo.py` | 25 | `AgentLearningRepository` — learning record CRUD, query by agent/strategy |
+| `test_agent_message_repo.py` | 17 | `AgentMessageRepository` — message store/retrieve for conversation history |
+| `test_agent_permissions.py` | 39 | `PermissionEnforcer`, `CapabilityManager` — role checks, capability grants, ADMIN enforcement |
+| `test_agent_session.py` | 33 | `AgentSession` — DB-backed session lifecycle, auto-summarisation, error handling |
+| `test_agent_session_repo.py` | 20 | `AgentSessionRepository` — session CRUD, list by agent/status |
+| `test_agent_tools.py` | 31 | Agent self-reflection and journal tools — feedback submission, memory query |
+| `test_context_builder.py` | 29 | `ContextBuilder` — 6-section LLM context assembly, symbol/regime scoping |
+| `test_intent_router.py` | 64 | `IntentRouter` — 3-layer classification, 7 intent types, routing to handlers |
+| `test_permission_enforcement.py` | 35 | `PermissionEnforcer` — action→capability mapping, TOCTOU safety, audit logging |
+| `test_strategy_manager.py` | 85 | `StrategyManager` — rolling windows, degradation detection, strategy adjustments, A/B wiring |
 
 ## Mock Patterns
 
@@ -188,4 +202,5 @@ pytest tests/unit/ --cov=src --cov-report=html                  # with coverage
 - `2026-03-18` — Removed duplicate inventory rows. Verified 70 files on disk match 70 entries in the table.
 - `2026-03-19` — Synced test count: 1194 → 1184 (actual grep count of `def test_` / `async def test_` functions). 70 files confirmed.
 - `2026-03-20` — Verified: still 70 test files on disk. No new unit test files added this session.
+- `2026-04-06` — Added 15 new test files from agent ecosystem phases (conversation, memory, permissions) and QA sprint fixes: `test_ab_testing.py`, `test_agent_budget.py`, `test_agent_budget_repo.py`, `test_agent_decision_repo.py`, `test_agent_learning_repo.py`, `test_agent_message_repo.py`, `test_agent_permissions.py`, `test_agent_session.py`, `test_agent_session_repo.py`, `test_agent_tools.py`, `test_context_builder.py`, `test_intent_router.py`, `test_permission_enforcement.py`, `test_strategy_manager.py`. File count: 72 → 87. Test count updated to 1734.
 - `2026-03-21` — Added `test_agent_api_call_repo.py` (9 tests) and `test_agent_strategy_signal_repo.py` (10 tests) for Agent Logging System. File count: 70 → 72. Test count: 1184 → 1203.
