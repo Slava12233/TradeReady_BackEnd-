@@ -63,11 +63,13 @@ class SandboxOrder:
     price: Decimal | None
     status: str
     created_at: datetime
+    stop_price: Decimal | None = None
     filled_at: datetime | None = None
     executed_price: Decimal | None = None
     executed_qty: Decimal | None = None
     slippage_pct: Decimal | None = None
     fee: Decimal | None = None
+    locked_cost: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,11 +237,16 @@ class BacktestSandbox:
 
         # Non-market: validate balance and queue
         self._validate_balance_for_order(symbol, side, quantity, ref_price)
+        locked_cost: Decimal | None = None
         if side == "buy":
             cost = quantity * ref_price
             self._lock_balance("USDT", cost)
+            locked_cost = cost
         else:
             self._lock_balance(symbol.replace("USDT", ""), quantity)
+
+        # For stop_loss/take_profit, store the trigger price in stop_price
+        stop_price = price if order_type in ("stop_loss", "take_profit") else None
 
         order = SandboxOrder(
             id=order_id,
@@ -250,6 +257,8 @@ class BacktestSandbox:
             price=price,
             status="pending",
             created_at=virtual_time,
+            stop_price=stop_price,
+            locked_cost=locked_cost,
         )
         self._orders.append(order)
         self._pending_orders[order_id] = order
@@ -265,10 +274,12 @@ class BacktestSandbox:
         if order is None:
             return False
 
-        # Unlock funds
-        if order.side == "buy" and order.price is not None:
-            cost = order.quantity * order.price
-            self._unlock_balance("USDT", cost)
+        # Unlock funds — use locked_cost for buy orders to avoid mismatch
+        if order.side == "buy":
+            if order.locked_cost is not None:
+                self._unlock_balance("USDT", order.locked_cost)
+            elif order.price is not None:
+                self._unlock_balance("USDT", order.quantity * order.price)
         elif order.side == "sell":
             base_asset = order.symbol.replace("USDT", "")
             self._unlock_balance(base_asset, order.quantity)
@@ -285,6 +296,7 @@ class BacktestSandbox:
                     price=o.price,
                     status="cancelled",
                     created_at=o.created_at,
+                    stop_price=o.stop_price,
                 )
                 break
         return True
@@ -322,9 +334,11 @@ class BacktestSandbox:
 
             if triggered:
                 # Unlock previously locked funds before execution
-                if order.side == "buy" and order.price is not None:
-                    cost = order.quantity * order.price
-                    self._unlock_balance("USDT", cost)
+                if order.side == "buy":
+                    if order.locked_cost is not None:
+                        self._unlock_balance("USDT", order.locked_cost)
+                    elif order.price is not None:
+                        self._unlock_balance("USDT", order.quantity * order.price)
                 elif order.side == "sell":
                     base_asset = order.symbol.replace("USDT", "")
                     self._unlock_balance(base_asset, order.quantity)
@@ -635,16 +649,23 @@ class BacktestSandbox:
         )
         self._trades.append(trade)
 
-        # Update order record
+        # Update order record — preserve stop_price from original pending order
+        original = None
+        for o in self._orders:
+            if o.id == order_id:
+                original = o
+                break
+
         filled_order = SandboxOrder(
             id=order_id,
             symbol=symbol,
             side=side,
             type=order_type,
             quantity=quantity,
-            price=None,
+            price=exec_price,
             status="filled",
-            created_at=virtual_time,
+            created_at=original.created_at if original else virtual_time,
+            stop_price=original.stop_price if original else None,
             filled_at=virtual_time,
             executed_price=exec_price,
             executed_qty=quantity,

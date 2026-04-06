@@ -34,7 +34,7 @@ from src.api.schemas.backtest import (
 from src.backtesting.data_replayer import DataReplayer
 from src.backtesting.engine import BacktestConfig
 from src.dependencies import BacktestEngineDep, BacktestRepoDep, DbSessionDep
-from src.utils.exceptions import BacktestNotFoundError
+from src.utils.exceptions import BacktestInvalidStateError, BacktestNotFoundError
 
 router = APIRouter(prefix="/api/v1", tags=["backtest"])
 
@@ -91,6 +91,19 @@ def _step_to_response(result: Any) -> StepResponse:  # noqa: ANN401
         is_complete=result.is_complete,
         remaining_steps=result.remaining_steps,
     )
+
+
+async def _raise_if_terminal(session_id: str, db: AsyncSession) -> None:
+    """If the session exists with a terminal status, raise a descriptive error."""
+    from src.database.repositories.backtest_repo import BacktestRepository  # noqa: PLC0415
+
+    repo = BacktestRepository(db)
+    session = await repo.get_session(UUID(session_id))
+    if session and session.status in ("completed", "failed", "cancelled"):
+        raise BacktestInvalidStateError(
+            f"Backtest session has already {session.status}.",
+            current_status=session.status,
+        )
 
 
 # ── BT-1.5.1: Data range (add to market) ────────────────────────────────────
@@ -181,7 +194,11 @@ async def step_backtest(
     db: DbSessionDep,
 ) -> StepResponse:
     """Advance one candle step."""
-    result = await engine.step(session_id, db)
+    try:
+        result = await engine.step(session_id, db)
+    except BacktestNotFoundError:
+        await _raise_if_terminal(session_id, db)
+        raise
     return _step_to_response(result)
 
 
@@ -194,7 +211,11 @@ async def step_batch_backtest(
     db: DbSessionDep,
 ) -> StepResponse:
     """Advance N candle steps."""
-    result = await engine.step_batch(session_id, body.steps, db)
+    try:
+        result = await engine.step_batch(session_id, body.steps, db)
+    except BacktestNotFoundError:
+        await _raise_if_terminal(session_id, db)
+        raise
     return _step_to_response(result)
 
 
@@ -262,6 +283,7 @@ async def backtest_list_orders(
                 "type": o.type,
                 "quantity": str(o.quantity),
                 "price": str(o.price) if o.price else None,
+                "stop_price": str(o.stop_price) if o.stop_price else None,
                 "status": o.status,
                 "executed_price": str(o.executed_price) if o.executed_price else None,
                 "fee": str(o.fee) if o.fee else None,
@@ -290,6 +312,7 @@ async def backtest_open_orders(
                 "type": o.type,
                 "quantity": str(o.quantity),
                 "price": str(o.price) if o.price else None,
+                "stop_price": str(o.stop_price) if o.stop_price else None,
                 "status": o.status,
             }
             for o in orders
@@ -528,9 +551,13 @@ async def get_backtest_status(
         from src.database.models import BacktestSession as BtModel
 
         now = _dt.now(tz=UTC)
-        stmt = sa_update(BtModel).where(BtModel.id == s.id).values(status="failed", completed_at=now)
+        stmt = sa_update(BtModel).where(BtModel.id == s.id).values(
+            status="failed",
+            completed_at=now,
+            final_equity=BtModel.starting_balance,
+        )
         await db.execute(stmt)
-        await db.commit()
+        await db.flush()
         # Re-fetch the updated session
         s = await repo.get_session(UUID(session_id), account_id)
         if s is None:
@@ -609,7 +636,11 @@ async def get_backtest_results(
             "strategy_label": session.strategy_label,
         },
         summary={
-            "final_equity": str(session.final_equity) if session.final_equity is not None else "0",
+            "final_equity": (
+                str(session.final_equity)
+                if session.final_equity is not None
+                else str(session.starting_balance or "0")
+            ),
             "total_pnl": str(session.total_pnl) if session.total_pnl is not None else "0",
             "roi_pct": str(session.roi_pct) if session.roi_pct is not None else "0",
             "total_trades": session.total_trades or 0,
@@ -617,7 +648,7 @@ async def get_backtest_results(
             "duration_real_sec": float(session.duration_real_sec) if session.duration_real_sec else 0,
         },
         metrics=metrics,
-        by_pair=[],
+        by_pair=raw_metrics.get("by_pair", []),
     )
 
 
@@ -715,9 +746,13 @@ async def list_backtests(
         from src.database.models import BacktestSession as BtModel
 
         now = _dt.now(tz=UTC)
-        stmt = sa_update(BtModel).where(BtModel.id.in_(orphan_ids)).values(status="failed", completed_at=now)
+        stmt = sa_update(BtModel).where(BtModel.id.in_(orphan_ids)).values(
+            status="failed",
+            completed_at=now,
+            final_equity=BtModel.starting_balance,
+        )
         await db.execute(stmt)
-        await db.commit()
+        await db.flush()
         # Re-fetch so the response reflects the updated status
         sessions = await repo.list_sessions(
             account_id,
@@ -768,7 +803,22 @@ async def compare_backtests(
 ) -> BacktestCompareResponse:
     """Compare multiple backtest sessions side-by-side."""
     session_ids = [UUID(s.strip()) for s in sessions.split(",") if s.strip()]
+
+    if len(session_ids) < 2:
+        from src.utils.exceptions import InputValidationError
+
+        raise InputValidationError(
+            field="sessions",
+            details={"message": "At least 2 session IDs required for comparison."},
+        )
+
     bt_sessions = await repo.get_sessions_for_compare(session_ids)
+
+    # Check for missing sessions
+    found_ids = {s.id for s in bt_sessions}
+    missing = [str(sid) for sid in session_ids if sid not in found_ids]
+    if missing:
+        raise BacktestNotFoundError(f"Sessions not found: {', '.join(missing)}")
 
     comparisons: list[dict[str, Any]] = []
     best_roi: tuple[str | None, Decimal] = (None, Decimal("-999999"))
@@ -777,8 +827,13 @@ async def compare_backtests(
 
     for s in bt_sessions:
         roi = s.roi_pct or Decimal("0")
-        sharpe = Decimal(s.metrics.get("sharpe_ratio", "0")) if s.metrics else Decimal("0")
-        dd = Decimal(s.metrics.get("max_drawdown_pct", "100")) if s.metrics else Decimal("100")
+        # Use None for non-completed sessions to avoid misleading defaults
+        if s.metrics and s.status == "completed":
+            sharpe = Decimal(s.metrics.get("sharpe_ratio", "0"))
+            dd = Decimal(s.metrics.get("max_drawdown_pct", "0"))
+        else:
+            sharpe = Decimal("0")
+            dd = Decimal("0")
 
         comp = {
             "session_id": str(s.id),
@@ -816,13 +871,35 @@ async def get_best_backtest(
     strategy_label: str | None = Query(default=None),
 ) -> BacktestBestResponse:
     """Find the best completed backtest by a metric."""
+    valid_metrics = {
+        "roi_pct", "sharpe_ratio", "sortino_ratio", "max_drawdown_pct",
+        "win_rate", "profit_factor", "total_trades", "total_pnl",
+    }
+    jsonb_metrics = {
+        "sharpe_ratio", "sortino_ratio", "max_drawdown_pct",
+        "win_rate", "profit_factor",
+    }
+
+    if metric not in valid_metrics:
+        from src.utils.exceptions import InputValidationError
+
+        raise InputValidationError(
+            field="metric",
+            details={"message": f"Invalid metric. Valid: {sorted(valid_metrics)}"},
+        )
+
     account_id = _get_account_id(request)
     session = await repo.get_best_session(account_id, metric, strategy_label)
 
     if session is None:
         raise BacktestNotFoundError("No completed backtests found for this account.")
 
-    value = str(getattr(session, metric, "N/A"))
+    # JSONB-stored metrics need to be read from session.metrics dict
+    if metric in jsonb_metrics:
+        value = str(session.metrics.get(metric, "N/A")) if session.metrics else "N/A"
+    else:
+        value = str(getattr(session, metric, "N/A"))
+
     return BacktestBestResponse(
         session_id=str(session.id),
         strategy_label=session.strategy_label,

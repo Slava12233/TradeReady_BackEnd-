@@ -224,3 +224,50 @@ def test_trades_per_day_calculation() -> None:
     # 10 trades over 7 days ≈ 1.43 trades/day
     assert metrics.trades_per_day is not None
     assert metrics.trades_per_day > Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# BacktestMetrics.to_dict() per_pair regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_metrics_to_dict_includes_by_pair() -> None:
+    """to_dict(per_pair=...) must include a 'by_pair' key with per-symbol data."""
+    trades = [
+        _trade("BTCUSDT", pnl=Decimal("100"), minutes_offset=0),
+        _trade("ETHUSDT", pnl=Decimal("-30"), minutes_offset=1),
+    ]
+    metrics = calculate_metrics(trades, [], Decimal("10000"), Decimal("1"))
+    per_pair = calculate_per_pair_stats(trades)
+
+    result = metrics.to_dict(per_pair=per_pair)
+
+    assert "by_pair" in result
+    assert isinstance(result["by_pair"], list)
+    assert len(result["by_pair"]) == 2
+
+    symbols = {entry["symbol"] for entry in result["by_pair"]}
+    assert symbols == {"BTCUSDT", "ETHUSDT"}
+
+    # Spot-check the structure of one entry
+    btc_entry = next(e for e in result["by_pair"] if e["symbol"] == "BTCUSDT")
+    assert "trades" in btc_entry
+    assert "wins" in btc_entry
+    assert "losses" in btc_entry
+    assert "win_rate" in btc_entry
+    assert "net_pnl" in btc_entry
+    assert "total_volume" in btc_entry
+
+
+def test_metrics_to_dict_without_per_pair() -> None:
+    """to_dict() called without per_pair must NOT include a 'by_pair' key."""
+    trades = [_trade(pnl=Decimal("100"), minutes_offset=0)]
+    metrics = calculate_metrics(trades, [], Decimal("10000"), Decimal("1"))
+
+    result = metrics.to_dict()
+
+    assert "by_pair" not in result
+    # Standard metric keys must still be present
+    assert "sharpe_ratio" in result
+    assert "win_rate" in result
+    assert "max_drawdown_pct" in result

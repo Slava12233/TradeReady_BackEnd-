@@ -187,8 +187,14 @@ class BacktestRepository:
             if strategy_label is not None:
                 stmt = stmt.where(BacktestSession.strategy_label == strategy_label)
 
-            sort_col = getattr(BacktestSession, metric, BacktestSession.roi_pct)
-            stmt = stmt.order_by(sort_col.desc().nullslast()).limit(1)
+            _jsonb_metrics = {"sharpe_ratio", "sortino_ratio", "max_drawdown_pct", "win_rate", "profit_factor"}
+            if metric in _jsonb_metrics:
+                from sqlalchemy import Numeric, cast
+
+                sort_expr = cast(BacktestSession.metrics[metric].astext, Numeric)
+            else:
+                sort_expr = getattr(BacktestSession, metric, BacktestSession.roi_pct)
+            stmt = stmt.order_by(sort_expr.desc().nullslast()).limit(1)
 
             result = await self._session.execute(stmt)
             return result.scalars().first()

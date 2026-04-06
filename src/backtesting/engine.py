@@ -165,6 +165,27 @@ class BacktestEngine:
                 details={"starting_balance": str(config.starting_balance)},
             )
 
+        # Validate date range (defense in depth — schema should catch this first)
+        if config.end_time <= config.start_time:
+            raise BacktestNoDataError(
+                "end_time must be after start_time.",
+                details={
+                    "start_time": config.start_time.isoformat(),
+                    "end_time": config.end_time.isoformat(),
+                },
+            )
+
+        # Validate agent exists if specified
+        if config.agent_id is not None:
+            from src.database.models import Agent
+
+            agent = await db.get(Agent, config.agent_id)
+            if agent is None:
+                raise BacktestNoDataError(
+                    f"Agent {config.agent_id} not found.",
+                    details={"agent_id": str(config.agent_id)},
+                )
+
         # Calculate total steps
         total_seconds = (config.end_time - config.start_time).total_seconds()
         total_steps = int(total_seconds // config.candle_interval)
@@ -593,7 +614,8 @@ class BacktestEngine:
         session.roi_pct = roi_pct
         session.total_trades = active.sandbox.total_trades
         session.total_fees = active.sandbox.total_fees
-        session.metrics = metrics.to_dict() if metrics else None
+        _per_pair_early = calculate_per_pair_stats(active.sandbox.trades)
+        session.metrics = metrics.to_dict(per_pair=_per_pair_early) if metrics else None
         session.virtual_clock = active.simulator.current_time
         session.current_step = active.simulator.current_step
         session.progress_pct = active.simulator.progress_pct
@@ -631,7 +653,7 @@ class BacktestEngine:
                 )
             )
 
-        await db.commit()
+        await db.flush()
 
         _per_pair = calculate_per_pair_stats(active.sandbox.trades)
 

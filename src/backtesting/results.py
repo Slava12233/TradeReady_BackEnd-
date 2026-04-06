@@ -38,9 +38,9 @@ class BacktestMetrics:
     avg_trade_duration_minutes: Decimal
     trades_per_day: Decimal
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, per_pair: list[Any] | None = None) -> dict[str, Any]:
         """Serialise to JSON-safe dict."""
-        return {
+        result = {
             "sharpe_ratio": str(self.sharpe_ratio) if self.sharpe_ratio is not None else None,
             "sortino_ratio": str(self.sortino_ratio) if self.sortino_ratio is not None else None,
             "max_drawdown_pct": str(self.max_drawdown_pct),
@@ -54,6 +54,20 @@ class BacktestMetrics:
             "avg_trade_duration_minutes": str(self.avg_trade_duration_minutes),
             "trades_per_day": str(self.trades_per_day),
         }
+        if per_pair is not None:
+            result["by_pair"] = [
+                {
+                    "symbol": ps.symbol,
+                    "trades": ps.trades,
+                    "wins": ps.wins,
+                    "losses": ps.losses,
+                    "win_rate": str(ps.win_rate),
+                    "net_pnl": str(ps.net_pnl),
+                    "total_volume": str(ps.total_volume),
+                }
+                for ps in per_pair
+            ]
+        return result
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+import re
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 # ── Base ─────────────────────────────────────────────────────────────────────
 
@@ -24,16 +25,23 @@ class _BaseSchema(BaseModel):
 # ── Requests ─────────────────────────────────────────────────────────────────
 
 
+_VALID_INTERVALS = {60, 300, 3600, 86400}
+_PAIR_PATTERN = re.compile(r"^[A-Z]{2,10}USDT$")
+
+
 class BacktestCreateRequest(_BaseSchema):
     """Request to create a new backtest session."""
 
     start_time: datetime
     end_time: datetime
-    starting_balance: Decimal = Field(ge=Decimal("1"))
+    starting_balance: Decimal = Field(ge=Decimal("1"), le=Decimal("10000000"))
     candle_interval: int = Field(default=60, ge=60)
     pairs: list[str] | None = None
     strategy_label: str = Field(default="default", max_length=100)
-    agent_id: str | None = None
+    agent_id: str | None = Field(
+        default=None,
+        description="Agent ID. If omitted, uses the agent from the authenticated API key.",
+    )
     exchange: str = Field(
         default="binance",
         max_length=20,
@@ -41,6 +49,30 @@ class BacktestCreateRequest(_BaseSchema):
         description="Exchange to use for historical data (e.g. binance, okx, bybit).",
         examples=["binance", "okx", "bybit"],
     )
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> Self:
+        """end_time must be after start_time."""
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        return self
+
+    @field_validator("candle_interval")
+    @classmethod
+    def validate_interval(cls, v: int) -> int:
+        if v not in _VALID_INTERVALS:
+            raise ValueError(f"candle_interval must be one of {sorted(_VALID_INTERVALS)}")
+        return v
+
+    @field_validator("pairs")
+    @classmethod
+    def validate_pairs(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        invalid = [p for p in v if not _PAIR_PATTERN.match(p)]
+        if invalid:
+            raise ValueError(f"Invalid trading pairs: {invalid}. Must match [A-Z]{{2,10}}USDT")
+        return v
 
     @field_serializer("starting_balance")
     def _ser_balance(self, v: Decimal) -> str:
