@@ -621,8 +621,13 @@ def test_stop_loss_trade_carries_stop_price(sandbox, prices, vtime):
 
     # Place stop-loss sell at 45000
     sl = sandbox.place_order(
-        "BTCUSDT", "sell", "stop_loss", Decimal("0.1"),
-        Decimal("45000"), prices, vtime,
+        "BTCUSDT",
+        "sell",
+        "stop_loss",
+        Decimal("0.1"),
+        Decimal("45000"),
+        prices,
+        vtime,
     )
     assert sl.status == "pending"
 
@@ -643,8 +648,13 @@ def test_take_profit_trade_carries_stop_price(sandbox, prices, vtime):
     sandbox.place_order("BTCUSDT", "buy", "market", Decimal("0.1"), None, prices, vtime)
 
     tp = sandbox.place_order(
-        "BTCUSDT", "sell", "take_profit", Decimal("0.1"),
-        Decimal("55000"), prices, vtime,
+        "BTCUSDT",
+        "sell",
+        "take_profit",
+        Decimal("0.1"),
+        Decimal("55000"),
+        prices,
+        vtime,
     )
     assert tp.status == "pending"
 
@@ -669,8 +679,13 @@ def test_market_order_trade_has_no_stop_price(sandbox, prices, vtime):
 def test_limit_order_trade_has_no_stop_price(sandbox, prices, vtime):
     """Limit orders should have stop_price=None on the trade record."""
     sandbox.place_order(
-        "BTCUSDT", "buy", "limit", Decimal("0.1"),
-        Decimal("49000"), prices, vtime,
+        "BTCUSDT",
+        "buy",
+        "limit",
+        Decimal("0.1"),
+        Decimal("49000"),
+        prices,
+        vtime,
     )
     # Trigger the limit
     low_prices = {"BTCUSDT": Decimal("48000"), "ETHUSDT": Decimal("3000")}
