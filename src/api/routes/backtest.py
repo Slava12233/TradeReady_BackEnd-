@@ -543,7 +543,7 @@ async def get_backtest_status(
         raise BacktestNotFoundError(session_id=UUID(session_id))
 
     # Detect orphaned session: DB says running but engine has no active session
-    if s.status in ("running", "created") and session_id not in engine._active:
+    if s.status == "running" and session_id not in engine._active:
         from datetime import datetime as _dt
 
         from sqlalchemy import update as sa_update
@@ -741,7 +741,7 @@ async def list_backtests(
     )
 
     # Mark orphaned sessions (running in DB but not in engine memory) as failed
-    orphan_ids = [s.id for s in sessions if s.status in ("running", "created") and str(s.id) not in engine._active]
+    orphan_ids = [s.id for s in sessions if s.status == "running" and str(s.id) not in engine._active]
     if orphan_ids:
         from sqlalchemy import update as sa_update
 
@@ -835,18 +835,18 @@ async def compare_backtests(
         roi = s.roi_pct or Decimal("0")
         # Use None for non-completed sessions to avoid misleading defaults
         if s.metrics and s.status == "completed":
-            sharpe = Decimal(s.metrics.get("sharpe_ratio", "0"))
-            dd = Decimal(s.metrics.get("max_drawdown_pct", "0"))
+            sharpe: Decimal | None = Decimal(s.metrics.get("sharpe_ratio", "0"))
+            dd: Decimal | None = Decimal(s.metrics.get("max_drawdown_pct", "0"))
         else:
-            sharpe = Decimal("0")
-            dd = Decimal("0")
+            sharpe = None
+            dd = None
 
         comp = {
             "session_id": str(s.id),
             "strategy_label": s.strategy_label,
             "roi_pct": str(roi),
-            "sharpe_ratio": str(sharpe),
-            "max_drawdown_pct": str(dd),
+            "sharpe_ratio": str(sharpe) if sharpe is not None else None,
+            "max_drawdown_pct": str(dd) if dd is not None else None,
             "total_trades": s.total_trades,
             "win_rate": s.metrics.get("win_rate") if s.metrics else None,
             "profit_factor": s.metrics.get("profit_factor") if s.metrics else None,
@@ -855,9 +855,9 @@ async def compare_backtests(
 
         if roi > best_roi[1]:
             best_roi = (str(s.id), roi)
-        if sharpe > best_sharpe[1]:
+        if sharpe is not None and sharpe > best_sharpe[1]:
             best_sharpe = (str(s.id), sharpe)
-        if dd < best_dd[1]:
+        if dd is not None and dd < best_dd[1]:
             best_dd = (str(s.id), dd)
 
     return BacktestCompareResponse(
