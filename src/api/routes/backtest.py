@@ -551,10 +551,14 @@ async def get_backtest_status(
         from src.database.models import BacktestSession as BtModel
 
         now = _dt.now(tz=UTC)
-        stmt = sa_update(BtModel).where(BtModel.id == s.id).values(
-            status="failed",
-            completed_at=now,
-            final_equity=BtModel.starting_balance,
+        stmt = (
+            sa_update(BtModel)
+            .where(BtModel.id == s.id)
+            .values(
+                status="failed",
+                completed_at=now,
+                final_equity=BtModel.starting_balance,
+            )
         )
         await db.execute(stmt)
         await db.flush()
@@ -637,9 +641,7 @@ async def get_backtest_results(
         },
         summary={
             "final_equity": (
-                str(session.final_equity)
-                if session.final_equity is not None
-                else str(session.starting_balance or "0")
+                str(session.final_equity) if session.final_equity is not None else str(session.starting_balance or "0")
             ),
             "total_pnl": str(session.total_pnl) if session.total_pnl is not None else "0",
             "roi_pct": str(session.roi_pct) if session.roi_pct is not None else "0",
@@ -746,10 +748,14 @@ async def list_backtests(
         from src.database.models import BacktestSession as BtModel
 
         now = _dt.now(tz=UTC)
-        stmt = sa_update(BtModel).where(BtModel.id.in_(orphan_ids)).values(
-            status="failed",
-            completed_at=now,
-            final_equity=BtModel.starting_balance,
+        stmt = (
+            sa_update(BtModel)
+            .where(BtModel.id.in_(orphan_ids))
+            .values(
+                status="failed",
+                completed_at=now,
+                final_equity=BtModel.starting_balance,
+            )
         )
         await db.execute(stmt)
         await db.flush()
@@ -872,12 +878,21 @@ async def get_best_backtest(
 ) -> BacktestBestResponse:
     """Find the best completed backtest by a metric."""
     valid_metrics = {
-        "roi_pct", "sharpe_ratio", "sortino_ratio", "max_drawdown_pct",
-        "win_rate", "profit_factor", "total_trades", "total_pnl",
+        "roi_pct",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "max_drawdown_pct",
+        "win_rate",
+        "profit_factor",
+        "total_trades",
+        "total_pnl",
     }
     jsonb_metrics = {
-        "sharpe_ratio", "sortino_ratio", "max_drawdown_pct",
-        "win_rate", "profit_factor",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "max_drawdown_pct",
+        "win_rate",
+        "profit_factor",
     }
 
     if metric not in valid_metrics:

@@ -466,9 +466,7 @@ def test_stop_loss_sell_triggers_on_price_drop(
     assert filled[0].status == "filled"
 
 
-def test_stop_price_preserved_on_fill(
-    sandbox: BacktestSandbox, prices: dict[str, Decimal], vtime: datetime
-) -> None:
+def test_stop_price_preserved_on_fill(sandbox: BacktestSandbox, prices: dict[str, Decimal], vtime: datetime) -> None:
     """After a stop-loss fills, the SandboxOrder record retains stop_price."""
     # Buy first so we have BTC to sell
     sandbox.place_order(
@@ -520,9 +518,7 @@ def test_filled_order_has_execution_price(
     assert result.executed_price > Decimal("0")
 
 
-def test_stop_price_in_pending_order(
-    sandbox: BacktestSandbox, prices: dict[str, Decimal], vtime: datetime
-) -> None:
+def test_stop_price_in_pending_order(sandbox: BacktestSandbox, prices: dict[str, Decimal], vtime: datetime) -> None:
     """A pending stop-loss order must have stop_price set on the SandboxOrder."""
     # Buy first so we hold BTC
     sandbox.place_order(
@@ -550,9 +546,7 @@ def test_stop_price_in_pending_order(
     assert pending_orders[0].stop_price == Decimal("48000")
 
 
-def test_cancel_preserves_stop_price(
-    sandbox: BacktestSandbox, prices: dict[str, Decimal], vtime: datetime
-) -> None:
+def test_cancel_preserves_stop_price(sandbox: BacktestSandbox, prices: dict[str, Decimal], vtime: datetime) -> None:
     """After cancelling a stop-loss order, the cancelled record keeps stop_price."""
     # Buy first so we hold BTC to sell
     sandbox.place_order(
@@ -584,9 +578,7 @@ def test_cancel_preserves_stop_price(
     assert stop_orders[0].stop_price == Decimal("48000")
 
 
-def test_locked_cost_used_for_unlock(
-    sandbox: BacktestSandbox, vtime: datetime
-) -> None:
+def test_locked_cost_used_for_unlock(sandbox: BacktestSandbox, vtime: datetime) -> None:
     """Buy-side pending order: USDT is locked at the ref price (locked_cost)
     and correctly unlocked when the order is cancelled."""
     entry_prices = {"BTCUSDT": Decimal("40000")}
