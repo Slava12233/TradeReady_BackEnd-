@@ -437,9 +437,7 @@ async def get_live_snapshot(
                 remaining = max(0.0, dur - elapsed)
 
     raw_participants = await battle_service.get_live_snapshot(battle_id)
-    participants = [
-        BattleLiveParticipantSchema.model_validate(p) for p in raw_participants
-    ]
+    participants = [BattleLiveParticipantSchema.model_validate(p) for p in raw_participants]
     return BattleLiveResponse(
         battle_id=battle_id,
         status=battle.status,

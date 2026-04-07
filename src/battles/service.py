@@ -735,9 +735,7 @@ class BattleService:
         # ── Pass 1: gather equity + agent data ──────────────────────────────
         # Store intermediate values keyed by participant to avoid repeating
         # async calls in the ranking pass.
-        participant_data: list[
-            tuple[_BattleParticipant, _Agent, Decimal, Decimal, Decimal, int, Decimal | None]
-        ] = []
+        participant_data: list[tuple[_BattleParticipant, _Agent, Decimal, Decimal, Decimal, int, Decimal | None]] = []
         for participant in participants:
             agent = await self._agent_repo.get_by_id(participant.agent_id)
             equity = await self._wallet_manager.get_agent_equity(participant.agent_id)
@@ -754,7 +752,8 @@ class BattleService:
                 since = battle.started_at
                 if since is not None:
                     total_trades, wins = await self._trade_repo.count_wins_and_total(
-                        participant.agent_id, since=since,
+                        participant.agent_id,
+                        since=since,
                     )
                     if total_trades > 0:
                         win_rate = Decimal(str(wins)) / Decimal(str(total_trades)) * 100
@@ -767,9 +766,7 @@ class BattleService:
                 total_trades = 0
                 win_rate = None
 
-            participant_data.append(
-                (participant, agent, equity, pnl, roi_pct, total_trades, win_rate)
-            )
+            participant_data.append((participant, agent, equity, pnl, roi_pct, total_trades, win_rate))
 
         # ── Pass 2: assign live ranks (highest equity = rank 1) ─────────────
         equity_rank: dict[str, int] = {}
