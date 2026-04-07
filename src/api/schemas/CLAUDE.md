@@ -1,6 +1,6 @@
 # API Schemas
 
-<!-- last-updated: 2026-04-02 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Pydantic v2 request/response schemas for every REST API endpoint, with strict Decimal-as-string serialization and consistent validation patterns.
 
@@ -113,7 +113,7 @@ Response schemas compose nested models for structured sub-objects:
 
 ### Loose-Typed Response Schemas
 
-Some schemas (primarily in `backtest.py` and `battles.py`) use `dict[str, Any]` or `dict[str, object]` for dynamic/variable-shape data (e.g., `metrics`, `config`, `participants` in live/results). This trades compile-time safety for flexibility where the shape depends on runtime state.
+Some schemas (primarily in `backtest.py`) use `dict[str, Any]` or `dict[str, object]` for dynamic/variable-shape data (e.g., `metrics`, `config`). This trades compile-time safety for flexibility where the shape depends on runtime state. Note: `battles.py` live endpoint previously used `dict[str, Any]` for participant data, which caused a frontend crash (2026-04-07) — the live participants are now typed via `BattleLiveParticipantSchema`.
 
 ## Public API / Interfaces
 
@@ -206,6 +206,7 @@ There are no re-exports from `__init__.py`. Each file is imported individually.
 
 ## Recent Changes
 
+- `2026-04-07` — `battles.py`: Added typed `BattleLiveParticipantSchema` (13 fields) and updated `BattleLiveResponse` with `elapsed_minutes`, `remaining_minutes`, and `updated_at`. Replaces previous `dict[str, Any]` participant list that had 6 fields with different names than the frontend expected. Fixes live battle UI crash ("Cannot read properties of undefined").
 - `2026-04-02` (BUG-015) — `trading.py`: `OrderRequest.price` field now uses `AliasChoices(["price", "stop_price"])` so stop-loss/take-profit orders submitted with the `stop_price` key are accepted without a 422 validation error.
 - `2026-04-02` (BUG-001) — `auth.py`: `RegisterResponse` gained two new optional fields: `agent_id: UUID | None` and `agent_api_key: str | None`. These are populated by `AccountService.register()` when the auto-created default agent succeeds. Clients should use `agent_api_key` as `X-API-Key` for all trading endpoints going forward.
 - `2026-03-17` -- Initial CLAUDE.md created

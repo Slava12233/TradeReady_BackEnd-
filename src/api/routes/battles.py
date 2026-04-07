@@ -40,6 +40,7 @@ from src.api.schemas.battles import (
     AddParticipantRequest,
     BattleCreate,
     BattleListResponse,
+    BattleLiveParticipantSchema,
     BattleLiveResponse,
     BattleParticipantResponse,
     BattlePresetResponse,
@@ -84,13 +85,21 @@ def _participant_to_response(p: BattleParticipant) -> BattleParticipantResponse:
 def _battle_to_response(battle: Battle, *, include_participants: bool = False) -> BattleResponse:
     """Convert an ORM Battle to a response schema."""
     from sqlalchemy import inspect as sa_inspect  # noqa: PLC0415
+    from sqlalchemy.exc import NoInspectionAvailable  # noqa: PLC0415
 
     participants: list[BattleParticipantResponse] | None = []
     participant_count = 0
     # Check if participants are already loaded (avoid lazy load in async context
-    # which causes MissingGreenlet error)
-    state = sa_inspect(battle)
-    if "participants" not in state.unloaded and battle.participants is not None:
+    # which causes MissingGreenlet error).  When the object is not a real ORM
+    # instance (e.g. a MagicMock in tests), sa_inspect raises
+    # NoInspectionAvailable — in that case we fall back to direct attribute access.
+    try:
+        state = sa_inspect(battle)
+        participants_loaded = "participants" not in state.unloaded
+    except NoInspectionAvailable:
+        participants_loaded = True  # non-ORM object: treat attrs as accessible
+
+    if participants_loaded and battle.participants is not None:
         participant_count = len(battle.participants)
         participants = [_participant_to_response(p) for p in battle.participants]
 
@@ -409,12 +418,35 @@ async def get_live_snapshot(
 
         raise PermissionDeniedError("You do not own this battle.")
 
-    participants = await battle_service.get_live_snapshot(battle_id)
+    elapsed: float | None = None
+    remaining: float | None = None
+    if battle.started_at:
+        now = datetime.now(UTC)
+        started = battle.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        elapsed_td = now - started
+        elapsed = elapsed_td.total_seconds() / 60.0
+        duration_minutes = battle.config.get("duration_minutes") if battle.config else None
+        if duration_minutes:
+            try:
+                dur = float(duration_minutes)
+            except (TypeError, ValueError):
+                dur = 0.0
+            if dur > 0:
+                remaining = max(0.0, dur - elapsed)
+
+    raw_participants = await battle_service.get_live_snapshot(battle_id)
+    participants = [
+        BattleLiveParticipantSchema.model_validate(p) for p in raw_participants
+    ]
     return BattleLiveResponse(
         battle_id=battle_id,
         status=battle.status,
-        timestamp=datetime.now(UTC),
+        elapsed_minutes=elapsed,
+        remaining_minutes=remaining,
         participants=participants,
+        updated_at=datetime.now(UTC),
     )
 
 

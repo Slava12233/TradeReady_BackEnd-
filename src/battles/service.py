@@ -702,25 +702,102 @@ class BattleService:
     # ------------------------------------------------------------------
 
     async def get_live_snapshot(self, battle_id: UUID) -> list[dict[str, object]]:
-        """Get live metrics for all participants in an active battle."""
-        await self._battle_repo.get_battle(battle_id)  # verify exists
+        """Get live metrics for all participants in an active battle.
+
+        Returns 13 fields per participant matching
+        :class:`~src.api.schemas.battles.BattleLiveParticipantSchema`:
+        ``agent_id``, ``display_name``, ``avatar_url``, ``color``,
+        ``current_equity``, ``total_pnl``, ``roi_pct``, ``total_trades``,
+        ``win_rate``, ``sharpe_ratio``, ``max_drawdown_pct``, ``rank``,
+        ``status``.
+
+        Ranks are assigned live by sorting participants by current equity
+        descending (rank 1 = highest equity).  ``sharpe_ratio`` and
+        ``max_drawdown_pct`` are ``None`` — they are only computed on battle
+        completion by :class:`~src.battles.ranking.RankingCalculator`.
+
+        Args:
+            battle_id: UUID of the battle to snapshot.
+
+        Returns:
+            List of participant metric dicts, one per participant.
+
+        Raises:
+            BattleNotFoundError: If no battle with ``battle_id`` exists.
+            DatabaseError: On any underlying database error.
+        """
+        from src.database.models import Agent as _Agent  # noqa: PLC0415
+        from src.database.models import BattleParticipant as _BattleParticipant  # noqa: PLC0415
+
+        battle = await self._battle_repo.get_battle(battle_id)
         participants = await self._battle_repo.get_participants(battle_id)
 
-        results: list[dict[str, object]] = []
+        # ── Pass 1: gather equity + agent data ──────────────────────────────
+        # Store intermediate values keyed by participant to avoid repeating
+        # async calls in the ranking pass.
+        participant_data: list[
+            tuple[_BattleParticipant, _Agent, Decimal, Decimal, Decimal, int, Decimal | None]
+        ] = []
         for participant in participants:
             agent = await self._agent_repo.get_by_id(participant.agent_id)
             equity = await self._wallet_manager.get_agent_equity(participant.agent_id)
             start = participant.snapshot_balance or Decimal(str(agent.starting_balance))
             pnl = equity - start
-            pnl_pct = (pnl / start * 100) if start > 0 else Decimal("0")
+            roi_pct = (pnl / start * 100) if start > 0 else Decimal("0")
 
+            # Count trades since battle start via the trade repository.
+            # Single query returns (total, wins).  Fail gracefully if the
+            # trade repo raises or the battle has not started yet.
+            total_trades: int = 0
+            win_rate: Decimal | None = None
+            try:
+                since = battle.started_at
+                if since is not None:
+                    total_trades, wins = await self._trade_repo.count_wins_and_total(
+                        participant.agent_id, since=since,
+                    )
+                    if total_trades > 0:
+                        win_rate = Decimal(str(wins)) / Decimal(str(total_trades)) * 100
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "agent.battle.snapshot.trade_count_failed",
+                    battle_id=str(battle_id),
+                    agent_id=str(participant.agent_id),
+                )
+                total_trades = 0
+                win_rate = None
+
+            participant_data.append(
+                (participant, agent, equity, pnl, roi_pct, total_trades, win_rate)
+            )
+
+        # ── Pass 2: assign live ranks (highest equity = rank 1) ─────────────
+        equity_rank: dict[str, int] = {}
+        sorted_by_equity = sorted(
+            participant_data,
+            key=lambda t: t[2],  # equity is index 2
+            reverse=True,
+        )
+        for rank_pos, (part, *_) in enumerate(sorted_by_equity, start=1):
+            equity_rank[str(part.agent_id)] = rank_pos
+
+        # ── Pass 3: build final result dicts ────────────────────────────────
+        results: list[dict[str, object]] = []
+        for participant, agent, equity, pnl, roi_pct, total_trades, win_rate in participant_data:
             results.append(
                 {
                     "agent_id": str(participant.agent_id),
                     "display_name": agent.display_name,
-                    "equity": str(equity),
-                    "pnl": str(pnl),
-                    "pnl_pct": str(round(pnl_pct, 2)),
+                    "avatar_url": getattr(agent, "avatar_url", None),
+                    "color": getattr(participant, "color", None),
+                    "current_equity": str(equity),
+                    "total_pnl": str(pnl),
+                    "roi_pct": str(round(roi_pct, 2)),
+                    "total_trades": total_trades,
+                    "win_rate": str(round(win_rate, 2)) if win_rate is not None else None,
+                    "sharpe_ratio": None,
+                    "max_drawdown_pct": None,
+                    "rank": equity_rank[str(participant.agent_id)],
                     "status": participant.status,
                 }
             )

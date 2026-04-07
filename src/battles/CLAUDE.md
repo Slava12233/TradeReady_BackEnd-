@@ -1,6 +1,6 @@
 # Battles Module
 
-<!-- last-updated: 2026-04-02 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Agent-vs-agent trading competitions with live monitoring, historical replay, wallet isolation, and ranking.
 
@@ -115,7 +115,7 @@ class BattleService:
     async def get_historical_prices(battle_id) -> tuple[dict[str, Decimal], datetime]
 
     # Results & replay
-    async def get_live_snapshot(battle_id) -> list[dict]
+    async def get_live_snapshot(battle_id) -> list[dict]        # returns 13-field dicts (see BattleLiveParticipantSchema)
     async def get_results(battle_id) -> dict                      # completed only
     async def get_replay_data(battle_id, *, limit, offset) -> Sequence
     async def replay_battle(battle_id, account_id, *, override_config, override_agents) -> Battle
@@ -243,6 +243,7 @@ The 5-second interval is configured in the Celery beat schedule (`src/tasks/batt
 
 ## Recent Changes
 
+- `2026-04-07` — `service.py`: `get_live_snapshot()` now returns all 13 fields per participant: `agent_id`, `agent_name`, `avatar_url`, `color`, `current_equity`, `roi_pct`, `total_pnl`, `total_trades`, `win_rate`, `rank` (live-computed), `sharpe_ratio` (null during live), `max_drawdown_pct` (null during live), `status`. Previously returned only 6 fields with different names (`equity`, `pnl`, `pnl_pct`), causing UI crash on the live battle page.
 - `2026-04-02` (BUG-003) — `src/api/routes/battles.py`: `_battle_to_response()` now checks SQLAlchemy inspect state (`inspect(battle).attrs.participants.loaded_value`) before accessing the `participants` relationship, preventing `MissingGreenlet` errors when participants are not eagerly loaded in async context. `src/database/repositories/battle_repo.py`: Removed local `BattleNotFoundError`; raises `TradingPlatformError` subclasses from `src/utils/exceptions.py`.
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Fixed battle creation 500: `model_dump(mode="json")` for datetime serialization in JSONB. Removed local `BattleInvalidStateError` class — now uses the correct one from `src.utils.exceptions` (maps to HTTP 409 instead of 500).

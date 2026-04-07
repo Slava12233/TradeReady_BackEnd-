@@ -1589,9 +1589,10 @@ class TestPhase6_Battles:
                     "agent_id": str(aid),
                     "display_name": name,
                     "current_equity": "10500",
-                    "pnl": "500",
+                    "total_pnl": "500",
                     "roi_pct": "5.0",
                     "total_trades": 10,
+                    "status": "active",
                 }
                 for aid, name in zip(AGENT_IDS, AGENT_NAMES, strict=False)
             ]

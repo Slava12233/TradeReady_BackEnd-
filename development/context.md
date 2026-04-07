@@ -17,9 +17,9 @@ tags:
 
 ## Current State
 
-**Active work:** Production stable. 17 QA bugs fixed and deployed. Market data ingestion running (legacy Binance WS, 447 prices).
-**Last session:** 2026-04-06 — CLAUDE.md sync: fixed 10 missing agent ecosystem repo files in `src/database/repositories/CLAUDE.md`; updated timestamps and recent-changes entries for `src/agents`, `src/database`, and `src/database/repositories`.
-**Previous session:** 2026-04-01/02 — QA bugfix sprint: 17 bugs fixed (3 P0, 6 P1, 5 P2, 3 P3). Migration 021 applied. Docker images rebuilt and deployed to production. 1,734 unit tests passing, 0 regressions.
+**Active work:** Production stable. Battle live UI crash fix deployed. 166 battle tests passing (161 passed, 5 skipped Docker-dependent).
+**Last session:** 2026-04-07 — Battle live crash fix: resolved "Cannot read properties of undefined (reading 'toFixed')" on `GET /battles/{id}/live`. Backend/frontend data shape was completely mismatched (6 vs 13 fields, different names). Fixed schema, route, service, and 3 frontend components. All tests updated.
+**Previous session:** 2026-04-06 — CLAUDE.md sync: fixed 10 missing agent ecosystem repo files in `src/database/repositories/CLAUDE.md`; updated timestamps and recent-changes entries for `src/agents`, `src/database`, and `src/database/repositories`.
 **Next steps:** (1) Monitor production stability. (2) Resume strategy search system: Build Module A (Feature Pipeline), Module B (Signal Interface), Module C (Deflated Sharpe). Implementation plan in `development/implementation-plan-a-to-z.md`.
 **Blocked:** Nothing.
 
@@ -149,6 +149,32 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 ---
 
 ## Recent Activity
+
+### 2026-04-07 — Battle Live Crash Fix (frontend/backend data shape mismatch)
+
+**Changes:**
+- `src/api/schemas/battles.py` — Added typed `BattleLiveParticipantSchema` (13 fields: agent_id, agent_name, avatar_url, color, current_equity, roi_pct, total_pnl, total_trades, win_rate, rank, sharpe_ratio, max_drawdown_pct, status). Updated `BattleLiveResponse` to include `elapsed_minutes`, `remaining_minutes`, and `updated_at` fields that were previously absent.
+- `src/api/routes/battles.py` — Added elapsed/remaining time computation in `GET /battles/{id}/live` handler. Added `model_validate()` conversion to enforce typed schema. Added `sa_inspect` error handling.
+- `src/battles/service.py` — Enriched `get_live_snapshot()` to return all 13 participant fields: avatar_url, color, current_equity, roi_pct, total_pnl, total_trades, win_rate, live-computed rank, sharpe_ratio/max_drawdown_pct (null during live battle, populated on completion).
+- `Frontend/src/components/battles/BattleDetail.tsx` — Fixed `!== null` to `!= null` (the primary crash fix — was not catching `undefined`). Added elapsed time badge display.
+- `Frontend/src/components/battles/AgentPerformanceCard.tsx` — Made `total_trades` display null-safe.
+- `Frontend/src/components/battles/BattleList.tsx` — Made leader ROI display null-safe.
+- `tests/integration/test_battle_endpoints.py` — Updated all mocks to use new field names (`current_equity`, `roi_pct`, `total_pnl` instead of `equity`, `pnl`, `pnl_pct`).
+- `tests/integration/test_real_user_scenario_e2e.py` — Updated mocks for new field names.
+
+**Decisions:**
+- Introduced typed `BattleLiveParticipantSchema` to replace the previous `dict[str, object]` for live participant data. This makes the mismatch between backend and frontend impossible going forward — the schema now documents the exact 13-field contract.
+- `elapsed_minutes` and `remaining_minutes` computed in the route handler (not the service), since they depend on `battle.started_at` and `battle.config["duration_minutes"]` which the service returns but the route assembles into a response object.
+- `sharpe_ratio` and `max_drawdown_pct` are null during a live battle and only populated in the results endpoint (`GET /battles/{id}/results`) after completion. This is intentional — rolling Sharpe during a live battle would be misleading with few data points.
+
+**Bugs fixed:**
+- **Battle live UI crash** — "Cannot read properties of undefined (reading 'toFixed')" — Root cause: frontend called `.toFixed()` on fields like `roi_pct` and `total_pnl` that were `undefined` because the backend used different field names (`pnl_pct`, `pnl`) than what the TypeScript types expected. The `!== null` guard didn't catch `undefined`. Primary crash fix was `!= null` in `BattleDetail.tsx`; full fix required aligning all 13 field names between backend schema and frontend types.
+
+**Learnings:**
+- `!== null` (strict) vs `!= null` (loose) is a significant distinction in TypeScript null-checking. Using `!= null` catches both `null` and `undefined`; `!== null` only catches `null`. For any field that could arrive as `undefined` from an API mismatch, the loose check is safer as a crash guard.
+- The `battles.py` schemas module had a comment: "Loose-Typed Response Schemas use `dict[str, Any]`" — this was the root of the mismatch. When a schema uses `dict[str, Any]`, there is no compile-time enforcement that the dict keys match what the frontend expects.
+
+---
 
 ### 2026-04-06 — CLAUDE.md Sync (src/ directories)
 

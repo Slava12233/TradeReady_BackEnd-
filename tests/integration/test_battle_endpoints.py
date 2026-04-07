@@ -751,9 +751,9 @@ class TestBattleData:
                 {
                     "agent_id": str(uuid4()),
                     "display_name": "Bot1",
-                    "equity": "10100",
-                    "pnl": "100",
-                    "pnl_pct": "1.00",
+                    "current_equity": "10100",
+                    "roi_pct": "1.00",
+                    "total_pnl": "100",
                     "status": "active",
                 }
             ]

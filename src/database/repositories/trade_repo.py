@@ -477,6 +477,44 @@ class TradeRepository:
     # Agent-scoped queries (multi-agent transition)
     # ------------------------------------------------------------------
 
+    async def count_wins_and_total(
+        self,
+        agent_id: UUID,
+        *,
+        since: datetime | None = None,
+    ) -> tuple[int, int]:
+        """Return ``(total_trades, winning_trades)`` for an agent.
+
+        A winning trade is one with ``realized_pnl > 0``.  Uses a single
+        ``SELECT`` with ``count(*) FILTER`` for efficiency.
+
+        Args:
+            agent_id: Agent whose trades to count.
+            since: If provided, only count trades created at or after this
+                timestamp.
+
+        Returns:
+            A ``(total, wins)`` tuple.  Both are ``0`` when no trades exist.
+        """
+        try:
+            filters = [Trade.agent_id == agent_id]
+            if since is not None:
+                filters.append(Trade.created_at >= since)
+
+            stmt = select(
+                sa_func.count().label("total"),
+                sa_func.count().filter(Trade.realized_pnl > 0).label("wins"),
+            ).where(*filters)
+            result = await self._session.execute(stmt)
+            row = result.one()
+            return int(row.total), int(row.wins)
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "trade.count_wins_and_total.db_error",
+                extra={"agent_id": str(agent_id)},
+            )
+            raise DatabaseError("Failed to count trades by agent.") from exc
+
     async def list_by_agent(
         self,
         agent_id: UUID,

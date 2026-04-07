@@ -117,13 +117,33 @@ class BattleListResponse(_BaseSchema):
     total: int
 
 
+class BattleLiveParticipantSchema(_BaseSchema):
+    """One participant's live metrics in an active battle."""
+
+    agent_id: UUID
+    display_name: str
+    avatar_url: str | None = None
+    color: str | None = None
+    current_equity: str
+    roi_pct: str
+    total_pnl: str
+    total_trades: int = 0
+    win_rate: str | None = None
+    sharpe_ratio: str | None = None
+    max_drawdown_pct: str | None = None
+    rank: int | None = None
+    status: str
+
+
 class BattleLiveResponse(_BaseSchema):
     """Response for ``GET /api/v1/battles/{battle_id}/live``."""
 
     battle_id: UUID
     status: str
-    timestamp: datetime
-    participants: list[dict[str, object]]
+    elapsed_minutes: float | None = None
+    remaining_minutes: float | None = None
+    participants: list[BattleLiveParticipantSchema]
+    updated_at: datetime
 
 
 class BattleResultsResponse(_BaseSchema):
