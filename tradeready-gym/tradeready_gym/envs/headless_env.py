@@ -212,9 +212,7 @@ class HeadlessTradingEnv(gym.Env):
         }
         return obs, info
 
-    def step(
-        self, action: Any
-    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(self, action: Any) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Advance the simulation by one candle and apply the trading action.
 
         Args:
@@ -230,9 +228,7 @@ class HeadlessTradingEnv(gym.Env):
     def render(self) -> str | None:
         """Render the current portfolio state as a text string."""
         equity = self._last_portfolio.get("total_equity", "?")
-        text = (
-            f"Step {self._step_count} | {self.symbol} | Equity: {equity} USDT"
-        )
+        text = f"Step {self._step_count} | {self.symbol} | Equity: {equity} USDT"
         if self.render_mode == "human":
             print(text)  # noqa: T201
         return text
@@ -312,7 +308,7 @@ class HeadlessTradingEnv(gym.Env):
             candle_interval=self._candle_interval,
             pairs=[self.symbol],
             strategy_label="headless_gym",
-            agent_id=None,
+            agent_id=uuid4(),  # synthetic agent for headless mode
         )
 
         async with self._session_factory() as db:
@@ -347,9 +343,7 @@ class HeadlessTradingEnv(gym.Env):
         assert self._session_id is not None  # noqa: S101
 
         async with self._session_factory() as db:
-            step_result: StepResult = await self._backtest_engine.step(
-                self._session_id, db
-            )
+            step_result: StepResult = await self._backtest_engine.step(self._session_id, db)
             await db.commit()
 
         self._current_prices = dict(step_result.prices)
@@ -373,9 +367,7 @@ class HeadlessTradingEnv(gym.Env):
         )
         self._last_candles = self._candles_to_dicts(candles)
 
-    async def _async_step(
-        self, action: int
-    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    async def _async_step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Async implementation of step()."""
         self._step_count += 1
 
@@ -392,10 +384,7 @@ class HeadlessTradingEnv(gym.Env):
         self._prev_equity = curr_equity
 
         terminated = self._is_done
-        truncated = (
-            self.episode_length is not None
-            and self._step_count >= self.episode_length
-        )
+        truncated = self.episode_length is not None and self._step_count >= self.episode_length
 
         obs = self._build_observation()
         info: dict[str, Any] = {
@@ -489,13 +478,15 @@ class HeadlessTradingEnv(gym.Env):
                 positions_out.append(p)
             else:
                 # SandboxPosition dataclass
-                positions_out.append({
-                    "symbol": getattr(p, "symbol", ""),
-                    "quantity": float(getattr(p, "quantity", 0)),
-                    "avg_entry_price": float(getattr(p, "avg_entry_price", 0)),
-                    "total_cost": float(getattr(p, "total_cost", 0)),
-                    "realized_pnl": float(getattr(p, "realized_pnl", 0)),
-                })
+                positions_out.append(
+                    {
+                        "symbol": getattr(p, "symbol", ""),
+                        "quantity": float(getattr(p, "quantity", 0)),
+                        "avg_entry_price": float(getattr(p, "avg_entry_price", 0)),
+                        "total_cost": float(getattr(p, "total_cost", 0)),
+                        "realized_pnl": float(getattr(p, "realized_pnl", 0)),
+                    }
+                )
 
         return {
             "total_equity": float(getattr(portfolio, "total_equity", 0)),
@@ -515,12 +506,14 @@ class HeadlessTradingEnv(gym.Env):
             if isinstance(c, dict):
                 result.append(c)
             else:
-                result.append({
-                    "open": float(getattr(c, "open", 0)),
-                    "high": float(getattr(c, "high", 0)),
-                    "low": float(getattr(c, "low", 0)),
-                    "close": float(getattr(c, "close", 0)),
-                    "volume": float(getattr(c, "volume", 0)),
-                    "bucket": str(getattr(c, "bucket", "")),
-                })
+                result.append(
+                    {
+                        "open": float(getattr(c, "open", 0)),
+                        "high": float(getattr(c, "high", 0)),
+                        "low": float(getattr(c, "low", 0)),
+                        "close": float(getattr(c, "close", 0)),
+                        "volume": float(getattr(c, "volume", 0)),
+                        "bucket": str(getattr(c, "bucket", "")),
+                    }
+                )
         return result

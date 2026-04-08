@@ -12,7 +12,7 @@ Training pipeline:
   4. Wrap with SB3 ``Monitor`` for episode logging.
   5. Train PPO for 500K timesteps with TensorBoard logging.
   6. Save model to ``models/ppo_btc_v1.zip``.
-  7. Run out-of-sample evaluation (2025-01-01 → 2025-03-01, 10 episodes).
+  7. Run out-of-sample evaluation (2025-01-01 -> 2025-03-01, 10 episodes).
   8. Compute summary metrics: avg reward, Sharpe ratio, max drawdown, win rate.
   9. Validate with the platform's Deflated Sharpe Ratio API.
 
@@ -80,7 +80,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # --- Time windows ---
-# Six months of training data (2024-07-01 → 2025-01-01) is the minimum
+# Six months of training data (2024-07-01 -> 2025-01-01) is the minimum
 # needed for PPO to see enough bull/bear/sideways regimes on 1h candles.
 TRAIN_START: str = "2024-07-01T00:00:00Z"
 TRAIN_END: str = "2025-01-01T00:00:00Z"
@@ -164,7 +164,7 @@ DEFAULT_BASE_URL: str = os.environ.get("TRADEREADY_API_URL", "http://localhost:8
 # A DSR p-value > 0.95 means the Sharpe is statistically significant.
 DSR_NUM_TRIALS: int = 1
 
-# Hourly candles → 8 760 periods per year.
+# Hourly candles -> 8 760 periods per year.
 ANNUALIZATION_FACTOR: int = 8_760
 
 # DSR significance threshold: p_value > 0.95 signals genuine skill.
@@ -180,7 +180,6 @@ def _make_env(
     db_url: str,
     start_time: str,
     end_time: str,
-    track_training: bool = False,
 ) -> gym.Env:
     """Build and wrap a ``TradeReady-BTC-Headless-v0`` environment.
 
@@ -195,8 +194,6 @@ def _make_env(
         db_url:         SQLAlchemy asyncpg connection string.
         start_time:     Backtest window start (ISO 8601).
         end_time:       Backtest window end (ISO 8601).
-        track_training: When ``True`` the env reports episodes to the
-                        platform's training API.  Disable for eval envs.
 
     Returns:
         Wrapped Gymnasium environment ready for SB3.
@@ -220,8 +217,6 @@ def _make_env(
         ),
         start_time=start_time,
         end_time=end_time,
-        track_training=track_training,
-        strategy_label="ppo_btc_v1",
     )
 
     env = BatchStepWrapper(env, n_steps=BATCH_HOLD_STEPS)
@@ -248,7 +243,7 @@ def train(env: gym.Env, total_timesteps: int) -> PPO:
     print(f"\nTraining PPO for {total_timesteps:,} timesteps...")
     print(f"  TensorBoard logs: {TENSORBOARD_LOG}")
     print(f"  Env: {ENV_ID} | {SYMBOL} | {TIMEFRAME}")
-    print(f"  Training window: {TRAIN_START} → {TRAIN_END}")
+    print(f"  Training window: {TRAIN_START} -> {TRAIN_END}")
     print(f"  Episode length: {EPISODE_LENGTH} candles ({EPISODE_LENGTH}h = 30 days)")
     print(f"  Batch hold steps: {BATCH_HOLD_STEPS}")
     print()
@@ -309,14 +304,13 @@ def evaluate(
         Dict with keys: ``avg_reward``, ``sharpe_ratio``, ``max_drawdown_pct``,
         ``win_rate``, ``episode_returns``.
     """
-    print(f"\nEvaluating policy on OOS data ({EVAL_START} → {EVAL_END})...")
+    print(f"\nEvaluating policy on OOS data ({EVAL_START} -> {EVAL_END})...")
     print(f"  Episodes: {n_episodes}")
 
     eval_env = _make_env(
         db_url=db_url,
         start_time=EVAL_START,
         end_time=EVAL_END,
-        track_training=False,
     )
 
     episode_rewards: list[float] = []
@@ -462,7 +456,7 @@ def _print_summary(
     print(f"\n{sep}")
     print("  OOS EVALUATION SUMMARY")
     print(sep)
-    print(f"  Eval period:       {EVAL_START} → {EVAL_END}")
+    print(f"  Eval period:       {EVAL_START} -> {EVAL_END}")
     print(f"  Episodes:          {len(eval_metrics['episode_returns'])}")
     print(f"  Avg reward:        {eval_metrics['avg_reward']:+.4f}")
     print(f"  Sharpe ratio:      {eval_metrics['sharpe_ratio']:+.4f}")
@@ -569,7 +563,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Run the full PPO training → OOS evaluation → DSR validation pipeline."""
+    """Run the full PPO training -> OOS evaluation -> DSR validation pipeline."""
     args = _parse_args()
 
     # --- Resolve DATABASE_URL ---
@@ -610,7 +604,6 @@ def main() -> None:
             db_url=db_url,
             start_time=TRAIN_START,
             end_time=TRAIN_END,
-            track_training=True,
         )
         try:
             model = train(env=train_env, total_timesteps=args.timesteps)
