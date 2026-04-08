@@ -193,9 +193,7 @@ class TestDeflatedSharpeResponseSchema:
             "skewness",
             "kurtosis",
         }
-        assert expected_fields.issubset(body.keys()), (
-            f"Missing fields: {expected_fields - body.keys()}"
-        )
+        assert expected_fields.issubset(body.keys()), f"Missing fields: {expected_fields - body.keys()}"
 
     def test_response_num_returns_matches_input_length(self):
         """num_returns in response must equal the number of returns supplied."""

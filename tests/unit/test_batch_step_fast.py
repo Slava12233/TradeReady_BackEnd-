@@ -74,9 +74,7 @@ async def _start_session(engine: BacktestEngine, session_id: str, mock_db: Async
     # After start(), the replayer is stored in the active session.
     # Wire load_prices on the stored replayer for subsequent calls.
     if session_id in engine._active:
-        engine._active[session_id].replayer.load_prices = AsyncMock(
-            return_value={"BTCUSDT": Decimal("50000")}
-        )
+        engine._active[session_id].replayer.load_prices = AsyncMock(return_value={"BTCUSDT": Decimal("50000")})
 
 
 # ---------------------------------------------------------------------------
@@ -232,43 +230,31 @@ class TestStepBatchFastCompletion:
 class TestStepBatchFastFillAccumulation:
     """Tests for include_intermediate_trades flag behaviour."""
 
-    async def test_orders_filled_without_accumulation_is_empty_list(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_orders_filled_without_accumulation_is_empty_list(self, engine, mock_db, mock_session_model):
         """With no orders placed, orders_filled is empty regardless of flag."""
         session_id = str(mock_session_model.id)
         await _start_session(engine, session_id, mock_db, mock_session_model)
 
-        result = await engine.step_batch_fast(
-            session_id, 3, mock_db, include_intermediate_trades=False
-        )
+        result = await engine.step_batch_fast(session_id, 3, mock_db, include_intermediate_trades=False)
 
         assert result.orders_filled == []
 
-    async def test_orders_filled_with_accumulation_is_empty_when_no_orders(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_orders_filled_with_accumulation_is_empty_when_no_orders(self, engine, mock_db, mock_session_model):
         """With no pending orders, accumulated fills list is also empty."""
         session_id = str(mock_session_model.id)
         await _start_session(engine, session_id, mock_db, mock_session_model)
 
-        result = await engine.step_batch_fast(
-            session_id, 3, mock_db, include_intermediate_trades=True
-        )
+        result = await engine.step_batch_fast(session_id, 3, mock_db, include_intermediate_trades=True)
 
         assert result.orders_filled == []
 
-    async def test_include_intermediate_trades_default_is_false(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_include_intermediate_trades_default_is_false(self, engine, mock_db, mock_session_model):
         """Default value of include_intermediate_trades is False."""
         session_id = str(mock_session_model.id)
         await _start_session(engine, session_id, mock_db, mock_session_model)
 
         # Place a market order that fills immediately
-        await engine.execute_order(
-            session_id, "BTCUSDT", "buy", "market", Decimal("0.01"), None
-        )
+        await engine.execute_order(session_id, "BTCUSDT", "buy", "market", Decimal("0.01"), None)
 
         # Step 1 — no fills (market order already filled at placement)
         # Step 2 — same; just check the default parameter works
@@ -277,9 +263,7 @@ class TestStepBatchFastFillAccumulation:
         # Default (no accumulation): result is the fills from the LAST step
         assert isinstance(result.orders_filled, list)
 
-    async def test_accumulation_true_collects_fills_across_steps(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_accumulation_true_collects_fills_across_steps(self, engine, mock_db, mock_session_model):
         """With accumulation enabled, fills from every step are collected.
 
         We inject a mock sandbox to control exactly when fills are returned.
@@ -306,17 +290,13 @@ class TestStepBatchFastFillAccumulation:
 
         engine._active[session_id].sandbox.check_pending_orders = _fake_check
 
-        result = await engine.step_batch_fast(
-            session_id, 3, mock_db, include_intermediate_trades=True
-        )
+        result = await engine.step_batch_fast(session_id, 3, mock_db, include_intermediate_trades=True)
 
         # Both fills should be accumulated
         assert fill_1 in result.orders_filled
         assert fill_2 in result.orders_filled
 
-    async def test_accumulation_false_only_last_step_fills(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_accumulation_false_only_last_step_fills(self, engine, mock_db, mock_session_model):
         """Without accumulation, only the final step's fills are returned."""
         session_id = str(mock_session_model.id)
         await _start_session(engine, session_id, mock_db, mock_session_model)
@@ -339,9 +319,7 @@ class TestStepBatchFastFillAccumulation:
 
         engine._active[session_id].sandbox.check_pending_orders = _fake_check
 
-        result = await engine.step_batch_fast(
-            session_id, 3, mock_db, include_intermediate_trades=False
-        )
+        result = await engine.step_batch_fast(session_id, 3, mock_db, include_intermediate_trades=False)
 
         # Only the last step's fills (empty list from step 3 since call_count 3 = fill_last)
         # Actually step 3 call_count == 3 returns fill_last
@@ -357,9 +335,7 @@ class TestStepBatchFastErrorCases:
         with pytest.raises(BacktestNotFoundError):
             await engine.step_batch_fast("nonexistent-session-id", 5, mock_db)
 
-    async def test_raises_invalid_state_if_already_complete(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_raises_invalid_state_if_already_complete(self, engine, mock_db, mock_session_model):
         """BacktestInvalidStateError raised when simulator.is_complete is True on entry."""
         session_id = str(mock_session_model.id)
         await _start_session(engine, session_id, mock_db, mock_session_model)
@@ -384,9 +360,7 @@ class TestStepBatchFastErrorCases:
 class TestStepBatchFastPortfolioOnce:
     """Portfolio is computed exactly once at the end of the batch, not per-step."""
 
-    async def test_get_portfolio_called_once_for_large_batch(
-        self, engine, mock_db, mock_session_model
-    ):
+    async def test_get_portfolio_called_once_for_large_batch(self, engine, mock_db, mock_session_model):
         """Sandbox.get_portfolio is called once regardless of batch size."""
         session_id = str(mock_session_model.id)
         await _start_session(engine, session_id, mock_db, mock_session_model)

@@ -43,17 +43,15 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 #: All IPv4/IPv6 networks whose addresses must never be targeted by webhooks.
-_BLOCKED_NETWORKS: tuple[
-    ipaddress.IPv4Network | ipaddress.IPv6Network, ...
-] = (
-    ipaddress.IPv4Network("127.0.0.0/8"),       # IPv4 loopback
-    ipaddress.IPv6Network("::1/128"),            # IPv6 loopback
-    ipaddress.IPv4Network("169.254.0.0/16"),     # IPv4 link-local / AWS metadata
-    ipaddress.IPv6Network("fe80::/10"),          # IPv6 link-local
-    ipaddress.IPv4Network("10.0.0.0/8"),         # RFC-1918 private class A
-    ipaddress.IPv4Network("172.16.0.0/12"),      # RFC-1918 private class B
-    ipaddress.IPv4Network("192.168.0.0/16"),     # RFC-1918 private class C
-    ipaddress.IPv4Network("172.17.0.0/16"),      # Docker bridge default subnet
+_BLOCKED_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+    ipaddress.IPv4Network("127.0.0.0/8"),  # IPv4 loopback
+    ipaddress.IPv6Network("::1/128"),  # IPv6 loopback
+    ipaddress.IPv4Network("169.254.0.0/16"),  # IPv4 link-local / AWS metadata
+    ipaddress.IPv6Network("fe80::/10"),  # IPv6 link-local
+    ipaddress.IPv4Network("10.0.0.0/8"),  # RFC-1918 private class A
+    ipaddress.IPv4Network("172.16.0.0/12"),  # RFC-1918 private class B
+    ipaddress.IPv4Network("192.168.0.0/16"),  # RFC-1918 private class C
+    ipaddress.IPv4Network("172.17.0.0/16"),  # Docker bridge default subnet
 )
 
 
@@ -92,9 +90,7 @@ def validate_webhook_url(url: str) -> str:
 
     # 1. Scheme check — only https is permitted.
     if parsed.scheme != "https":
-        raise ValueError(
-            f"Webhook URL must use the https scheme; got {parsed.scheme!r}."
-        )
+        raise ValueError(f"Webhook URL must use the https scheme; got {parsed.scheme!r}.")
 
     # 2. Hostname presence check.
     hostname = parsed.hostname
@@ -105,9 +101,7 @@ def validate_webhook_url(url: str) -> str:
     try:
         ipaddress.ip_address(hostname)
         # If ip_address() succeeds the input IS a bare IP — reject it.
-        raise ValueError(
-            f"Webhook URL must use a hostname, not a bare IP address: {hostname!r}."
-        )
+        raise ValueError(f"Webhook URL must use a hostname, not a bare IP address: {hostname!r}.")
     except ValueError as exc:
         # ip_address() raises ValueError when the string is NOT a valid IP,
         # meaning the hostname is a DNS name — exactly what we want.
@@ -119,9 +113,7 @@ def validate_webhook_url(url: str) -> str:
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
     except OSError as exc:
-        raise ValueError(
-            f"Webhook URL hostname {hostname!r} could not be resolved: {exc}"
-        ) from exc
+        raise ValueError(f"Webhook URL hostname {hostname!r} could not be resolved: {exc}") from exc
 
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         ip_str = sockaddr[0]
@@ -197,9 +189,7 @@ async def fire_event(
         stmt = select(WebhookSubscription).where(
             WebhookSubscription.account_id == account_id,
             WebhookSubscription.active.is_(True),
-            WebhookSubscription.events.cast(JSONB).contains(
-                cast(json.dumps([event_name]), JSONB)
-            ),
+            WebhookSubscription.events.cast(JSONB).contains(cast(json.dumps([event_name]), JSONB)),
         )
         result = await db.execute(stmt)
         subscriptions = result.scalars().all()

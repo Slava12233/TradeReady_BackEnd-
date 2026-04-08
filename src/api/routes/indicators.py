@@ -78,12 +78,12 @@ _ENGINE_KEY_MAP: dict[str, str] = {
     "ema_12": "ema_12",
     "ema_26": "ema_26",
     "bb_upper": "bb_upper",
-    "bb_mid": "bb_middle",   # engine returns "bb_middle"
+    "bb_mid": "bb_middle",  # engine returns "bb_middle"
     "bb_lower": "bb_lower",
-    "adx_14": "adx",         # engine returns "adx"
-    "atr_14": "atr",          # engine returns "atr"
+    "adx_14": "adx",  # engine returns "adx"
+    "atr_14": "atr",  # engine returns "atr"
     "volume_ma_20": "volume_ma_20",
-    "price": "current_price", # engine returns "current_price"
+    "price": "current_price",  # engine returns "current_price"
 }
 
 # Supported public indicator names (sorted for stable display).
@@ -311,8 +311,7 @@ def _resolve_indicator_names(indicators_param: str | None) -> list[str]:
     unknown = [name for name in requested if name not in _ENGINE_KEY_MAP]
     if unknown:
         raise InvalidSymbolError(
-            f"Unknown indicator(s): {', '.join(sorted(unknown))}. "
-            f"Supported: {', '.join(_ALL_INDICATORS)}."
+            f"Unknown indicator(s): {', '.join(sorted(unknown))}. Supported: {', '.join(_ALL_INDICATORS)}."
         )
     # Return in sorted order to produce a stable cache key.
     return sorted(set(requested))

@@ -155,9 +155,7 @@ class TestFireEvent:
 
         mock_task = MagicMock()
         # First call raises, second succeeds
-        mock_task.delay = MagicMock(
-            side_effect=[RuntimeError("Celery broker down"), None]
-        )
+        mock_task.delay = MagicMock(side_effect=[RuntimeError("Celery broker down"), None])
 
         with patch("src.tasks.webhook_tasks.dispatch_webhook", mock_task):
             from src.webhooks.dispatcher import fire_event

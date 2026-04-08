@@ -130,9 +130,7 @@ def dispatch_webhook(
         to schedule the next attempt; Celery intercepts this and does not
         propagate it to the caller.
     """
-    return asyncio.run(
-        _async_dispatch(self, subscription_id, url, event_name, payload)
-    )
+    return asyncio.run(_async_dispatch(self, subscription_id, url, event_name, payload))
 
 
 async def _async_dispatch(
@@ -175,9 +173,7 @@ async def _async_dispatch(
     try:
         async with session_factory() as _session:
             _result = await _session.execute(
-                select(WebhookSubscription.secret).where(
-                    WebhookSubscription.id == UUID(subscription_id)
-                )
+                select(WebhookSubscription.secret).where(WebhookSubscription.id == UUID(subscription_id))
             )
             row = _result.one_or_none()
     except Exception:
@@ -241,9 +237,7 @@ async def _async_dispatch(
     payload_bytes: bytes = json.dumps(payload, default=str).encode("utf-8")
 
     # ── Compute HMAC-SHA256 signature ────────────────────────────────────────
-    signature: str = hmac.new(
-        secret.encode("utf-8"), payload_bytes, hashlib.sha256
-    ).hexdigest()
+    signature: str = hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
 
     # ── Attempt HTTP delivery ────────────────────────────────────────────────
     start = time.monotonic()
@@ -372,9 +366,7 @@ async def _record_failure(subscription_id: str, session_factory: Any) -> None:  
     try:
         async with session_factory() as session:
             result = await session.execute(
-                select(WebhookSubscription.failure_count).where(
-                    WebhookSubscription.id == UUID(subscription_id)
-                )
+                select(WebhookSubscription.failure_count).where(WebhookSubscription.id == UUID(subscription_id))
             )
             row = result.one_or_none()
             if row is None:
@@ -394,9 +386,7 @@ async def _record_failure(subscription_id: str, session_factory: Any) -> None:  
                 )
 
             await session.execute(
-                update(WebhookSubscription)
-                .where(WebhookSubscription.id == UUID(subscription_id))
-                .values(**values)
+                update(WebhookSubscription).where(WebhookSubscription.id == UUID(subscription_id)).values(**values)
             )
             await session.commit()
 

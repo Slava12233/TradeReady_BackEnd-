@@ -130,9 +130,7 @@ async def create_webhook(
     """
     settings = get_settings()
     count = await db.scalar(
-        select(func.count()).select_from(WebhookSubscription).where(
-            WebhookSubscription.account_id == account.id
-        )
+        select(func.count()).select_from(WebhookSubscription).where(WebhookSubscription.account_id == account.id)
     )
     if (count or 0) >= settings.per_account_webhook_limit:
         raise InputValidationError(
@@ -195,8 +193,8 @@ async def list_webhooks(
     result = await db.execute(stmt)
     subs = result.scalars().all()
 
-    count_stmt = select(func.count()).select_from(WebhookSubscription).where(
-        WebhookSubscription.account_id == account.id
+    count_stmt = (
+        select(func.count()).select_from(WebhookSubscription).where(WebhookSubscription.account_id == account.id)
     )
     count_result = await db.execute(count_stmt)
     total: int = count_result.scalar_one()

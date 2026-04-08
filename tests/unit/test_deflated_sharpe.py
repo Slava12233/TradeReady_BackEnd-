@@ -105,7 +105,7 @@ class TestNormalCdf:
         values = [_normal_cdf(x) for x in xs]
         for i in range(1, len(values)):
             assert values[i] > values[i - 1], (
-                f"CDF not monotone at index {i}: Φ({xs[i]})={values[i]} <= Φ({xs[i-1]})={values[i-1]}"
+                f"CDF not monotone at index {i}: Φ({xs[i]})={values[i]} <= Φ({xs[i - 1]})={values[i - 1]}"
             )
 
     def test_cdf_large_positive_approaches_one(self):
@@ -235,8 +235,7 @@ class TestComputeDeflatedSharpeResults:
             result = compute_deflated_sharpe(_make_returns(50), num_trials=n)
             expected_p = _normal_cdf(result.deflated_sharpe)
             assert abs(result.p_value - expected_p) < 1e-9, (
-                f"p_value mismatch for num_trials={n}: "
-                f"expected {expected_p}, got {result.p_value}"
+                f"p_value mismatch for num_trials={n}: expected {expected_p}, got {result.p_value}"
             )
 
     def test_annualization_factor_changes_observed_sharpe(self):

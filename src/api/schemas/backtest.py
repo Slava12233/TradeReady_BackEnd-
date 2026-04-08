@@ -53,10 +53,7 @@ class BacktestCreateRequest(_BaseSchema):
         default=None,
         ge=Decimal("0"),
         le=Decimal("0.1"),
-        description=(
-            "Trading fee rate as a fraction (e.g. 0.001 = 0.1%). "
-            "Defaults to 0.001 when omitted."
-        ),
+        description=("Trading fee rate as a fraction (e.g. 0.001 = 0.1%). Defaults to 0.001 when omitted."),
         examples=[None, 0.001, 0.0005],
     )
 

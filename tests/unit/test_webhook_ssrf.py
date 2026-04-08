@@ -162,8 +162,8 @@ class TestBlockedNetworks:
         """If any resolved IP is blocked, the whole URL is rejected."""
         # Simulate a round-robin DNS that returns both a public and a private IP.
         addr_infos = [
-            (None, None, None, None, ("93.184.216.34", 0)),   # public — OK
-            (None, None, None, None, ("10.0.0.5", 0)),         # private — BLOCKED
+            (None, None, None, None, ("93.184.216.34", 0)),  # public — OK
+            (None, None, None, None, ("10.0.0.5", 0)),  # private — BLOCKED
         ]
         with patch("socket.getaddrinfo", return_value=addr_infos):
             with pytest.raises(ValueError, match="blocked IP address"):

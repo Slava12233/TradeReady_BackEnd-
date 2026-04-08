@@ -87,10 +87,7 @@ def _build_recommendation(
         A human-readable recommendation string.
     """
     if winner_entry is None:
-        return (
-            "No strategies have completed test results yet. "
-            "Run tests before comparing."
-        )
+        return "No strategies have completed test results yet. Run tests before comparing."
 
     name = winner_entry["name"]
     metric_val = winner_entry["metrics"].get(ranking_metric)
@@ -104,10 +101,7 @@ def _build_recommendation(
     else:
         dsr_clause = "and has no Deflated Sharpe data"
 
-    return (
-        f"{name} ranks first by {ranking_metric} ({value_str}) "
-        f"{dsr_clause}. Consider deploying."
-    )
+    return f"{name} ranks first by {ranking_metric} ({value_str}) {dsr_clause}. Consider deploying."
 
 
 class StrategyService:

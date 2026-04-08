@@ -3472,7 +3472,4 @@ class WebhookSubscription(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<WebhookSubscription id={self.id} account={self.account_id} "
-            f"url={self.url!r} active={self.active}>"
-        )
+        return f"<WebhookSubscription id={self.id} account={self.account_id} url={self.url!r} active={self.active}>"

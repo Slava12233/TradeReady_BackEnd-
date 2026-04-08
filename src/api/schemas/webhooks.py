@@ -53,10 +53,7 @@ class WebhookCreateRequest(_BaseSchema):
     events: list[str] = Field(
         ...,
         min_length=1,
-        description=(
-            "List of event names to subscribe to. "
-            f"Supported: {sorted(SUPPORTED_EVENTS)}"
-        ),
+        description=(f"List of event names to subscribe to. Supported: {sorted(SUPPORTED_EVENTS)}"),
         examples=[["backtest.completed", "strategy.deployed"]],
     )
     description: str | None = Field(
@@ -104,10 +101,7 @@ class WebhookCreateRequest(_BaseSchema):
         """
         unknown = sorted(set(value) - SUPPORTED_EVENTS)
         if unknown:
-            raise ValueError(
-                f"Unsupported event(s): {unknown}. "
-                f"Supported events: {sorted(SUPPORTED_EVENTS)}"
-            )
+            raise ValueError(f"Unsupported event(s): {unknown}. Supported events: {sorted(SUPPORTED_EVENTS)}")
         return value
 
 
@@ -180,10 +174,7 @@ class WebhookUpdateRequest(_BaseSchema):
             return None
         unknown = sorted(set(value) - SUPPORTED_EVENTS)
         if unknown:
-            raise ValueError(
-                f"Unsupported event(s): {unknown}. "
-                f"Supported events: {sorted(SUPPORTED_EVENTS)}"
-            )
+            raise ValueError(f"Unsupported event(s): {unknown}. Supported events: {sorted(SUPPORTED_EVENTS)}")
         return value
 
 
@@ -207,8 +198,7 @@ class WebhookCreateResponse(_BaseSchema):
     secret: str = Field(
         ...,
         description=(
-            "HMAC-SHA256 signing secret — shown ONLY at creation. "
-            "Use this to verify incoming webhook payloads."
+            "HMAC-SHA256 signing secret — shown ONLY at creation. Use this to verify incoming webhook payloads."
         ),
     )
     created_at: datetime = Field(..., description="UTC timestamp of creation.")

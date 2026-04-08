@@ -228,9 +228,7 @@ class TestBatchStepFastResponseShape:
         """Happy path: all BatchStepFastResponse fields are present."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result(steps_executed=5)
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result(steps_executed=5))
 
         with _build_client(mock_engine=mock_engine) as client:
             resp = client.post(
@@ -253,17 +251,13 @@ class TestBatchStepFastResponseShape:
             "remaining_steps",
             "steps_executed",
         }
-        assert required_fields.issubset(data.keys()), (
-            f"Missing fields: {required_fields - data.keys()}"
-        )
+        assert required_fields.issubset(data.keys()), f"Missing fields: {required_fields - data.keys()}"
 
     def test_steps_executed_matches_engine_result(self):
         """steps_executed in the response matches what the engine returned."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result(steps_executed=7)
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result(steps_executed=7))
 
         with _build_client(mock_engine=mock_engine) as client:
             resp = client.post(
@@ -278,9 +272,7 @@ class TestBatchStepFastResponseShape:
         """is_complete is False when the engine reports the session is ongoing."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result(is_complete=False)
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result(is_complete=False))
 
         with _build_client(mock_engine=mock_engine) as client:
             resp = client.post(
@@ -295,9 +287,7 @@ class TestBatchStepFastResponseShape:
         """prices dict values are strings (Decimal serialized to str)."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result()
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result())
 
         with _build_client(mock_engine=mock_engine) as client:
             resp = client.post(
@@ -315,9 +305,7 @@ class TestBatchStepFastResponseShape:
         """portfolio field is a dict."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result()
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result())
 
         with _build_client(mock_engine=mock_engine) as client:
             resp = client.post(
@@ -332,9 +320,7 @@ class TestBatchStepFastResponseShape:
         """include_intermediate_trades defaults to False and is forwarded to engine."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result()
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result())
 
         with _build_client(mock_engine=mock_engine) as client:
             client.post(
@@ -350,9 +336,7 @@ class TestBatchStepFastResponseShape:
         """include_intermediate_trades=True is forwarded to engine."""
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result()
-        )
+        mock_engine.step_batch_fast = AsyncMock(return_value=_make_batch_fast_engine_result())
 
         with _build_client(mock_engine=mock_engine) as client:
             client.post(
@@ -378,9 +362,7 @@ class TestBatchStepFastCompletion:
         session_id = str(uuid4())
         mock_engine = MagicMock()
         mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result(
-                steps_executed=10, is_complete=True, step=100, total_steps=100
-            )
+            return_value=_make_batch_fast_engine_result(steps_executed=10, is_complete=True, step=100, total_steps=100)
         )
 
         with _build_client(mock_engine=mock_engine) as client:
@@ -400,9 +382,7 @@ class TestBatchStepFastCompletion:
         mock_engine = MagicMock()
         # Engine ran only 3 steps before completing
         mock_engine.step_batch_fast = AsyncMock(
-            return_value=_make_batch_fast_engine_result(
-                steps_executed=3, is_complete=True, step=100, total_steps=100
-            )
+            return_value=_make_batch_fast_engine_result(steps_executed=3, is_complete=True, step=100, total_steps=100)
         )
 
         with _build_client(mock_engine=mock_engine) as client:
@@ -430,14 +410,10 @@ class TestBatchStepFastErrors:
         session_id = str(uuid4())
         mock_engine = MagicMock()
         mock_engine.step_batch_fast = AsyncMock(
-            side_effect=BacktestNotFoundError(
-                f"Backtest session '{session_id}' is not active."
-            )
+            side_effect=BacktestNotFoundError(f"Backtest session '{session_id}' is not active.")
         )
         mock_engine._get_active = MagicMock(
-            side_effect=BacktestNotFoundError(
-                f"Backtest session '{session_id}' is not active."
-            )
+            side_effect=BacktestNotFoundError(f"Backtest session '{session_id}' is not active.")
         )
 
         # Also need to mock _raise_if_terminal to avoid a second DB query
@@ -546,9 +522,7 @@ class TestBatchStepFastErrors:
         session_id = str(uuid4())
         mock_engine = MagicMock()
         mock_engine.step_batch_fast = AsyncMock(
-            side_effect=BacktestNotFoundError(
-                f"Backtest session '{session_id}' is not active."
-            )
+            side_effect=BacktestNotFoundError(f"Backtest session '{session_id}' is not active.")
         )
 
         with patch(
@@ -592,9 +566,7 @@ class TestBatchStepFastErrors:
 
         session_id = str(uuid4())
         mock_engine = MagicMock()
-        mock_engine.step_batch_fast = AsyncMock(
-            side_effect=BacktestNotFoundError(f"Session {session_id} not found.")
-        )
+        mock_engine.step_batch_fast = AsyncMock(side_effect=BacktestNotFoundError(f"Session {session_id} not found."))
 
         with patch(
             "src.api.routes.backtest._raise_if_terminal",

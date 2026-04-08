@@ -158,9 +158,7 @@ class StrategyComparisonRequest(_BaseSchema):
     def _validate_metric(cls, v: str) -> str:
         """Ensure ranking_metric is one of the supported values."""
         if v not in _VALID_RANKING_METRICS:
-            raise ValueError(
-                f"ranking_metric must be one of {sorted(_VALID_RANKING_METRICS)}; got '{v}'"
-            )
+            raise ValueError(f"ranking_metric must be one of {sorted(_VALID_RANKING_METRICS)}; got '{v}'")
         return v
 
 

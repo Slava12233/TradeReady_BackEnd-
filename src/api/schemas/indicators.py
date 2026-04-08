@@ -88,8 +88,7 @@ class IndicatorResponse(_BaseSchema):
     indicators: dict[str, float] = Field(
         ...,
         description=(
-            "Map of indicator name to computed float value. "
-            "Only indicators with valid (non-null) values are included."
+            "Map of indicator name to computed float value. Only indicators with valid (non-null) values are included."
         ),
         examples=[
             {

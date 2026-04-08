@@ -44,9 +44,7 @@ def _make_task(retries: int = 0):
 def _compute_expected_sig(secret: str, payload: dict) -> str:
     """Compute the HMAC-SHA256 hex digest the same way the implementation does."""
     payload_bytes = json.dumps(payload, default=str).encode("utf-8")
-    return hmac.new(
-        secret.encode("utf-8"), payload_bytes, hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
 
 
 def _make_secret_row(secret: str):
@@ -437,9 +435,7 @@ class TestRetryPath:
 
         mock_response = MagicMock()
         mock_response.status_code = 500
-        http_error = httpx.HTTPStatusError(
-            "Server Error", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Server Error", request=MagicMock(), response=mock_response)
         mock_response.raise_for_status = MagicMock(side_effect=http_error)
 
         mock_client = AsyncMock()
@@ -474,9 +470,7 @@ class TestRetryPath:
 
         mock_response = MagicMock()
         mock_response.status_code = 503
-        http_error = httpx.HTTPStatusError(
-            "Service Unavailable", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=mock_response)
         mock_response.raise_for_status = MagicMock(side_effect=http_error)
 
         mock_client = AsyncMock()
@@ -511,9 +505,7 @@ class TestRetryPath:
 
         mock_response = MagicMock()
         mock_response.status_code = 503
-        http_error = httpx.HTTPStatusError(
-            "Service Unavailable", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=mock_response)
         mock_response.raise_for_status = MagicMock(side_effect=http_error)
 
         mock_client = AsyncMock()
@@ -548,9 +540,7 @@ class TestRetryPath:
 
         mock_response = MagicMock()
         mock_response.status_code = 503
-        http_error = httpx.HTTPStatusError(
-            "Service Unavailable", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=mock_response)
         mock_response.raise_for_status = MagicMock(side_effect=http_error)
 
         mock_client = AsyncMock()
@@ -585,9 +575,7 @@ class TestRetryPath:
 
         mock_response = MagicMock()
         mock_response.status_code = 500
-        http_error = httpx.HTTPStatusError(
-            "Server Error", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Server Error", request=MagicMock(), response=mock_response)
         mock_response.raise_for_status = MagicMock(side_effect=http_error)
 
         mock_client = AsyncMock()
@@ -625,9 +613,7 @@ class TestRetryPath:
 
         mock_response = MagicMock()
         mock_response.status_code = 503
-        http_error = httpx.HTTPStatusError(
-            "Service Unavailable", request=MagicMock(), response=mock_response
-        )
+        http_error = httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=mock_response)
         mock_response.raise_for_status = MagicMock(side_effect=http_error)
 
         mock_client = AsyncMock()
@@ -661,9 +647,7 @@ class TestRetryPath:
         import httpx
 
         mock_client = AsyncMock()
-        mock_client.post = AsyncMock(
-            side_effect=httpx.TimeoutException("timed out", request=MagicMock())
-        )
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out", request=MagicMock()))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
@@ -694,9 +678,7 @@ class TestRetryPath:
         import httpx
 
         mock_client = AsyncMock()
-        mock_client.post = AsyncMock(
-            side_effect=httpx.RequestError("DNS lookup failed", request=MagicMock())
-        )
+        mock_client.post = AsyncMock(side_effect=httpx.RequestError("DNS lookup failed", request=MagicMock()))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 

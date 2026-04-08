@@ -181,9 +181,7 @@ def compute_deflated_sharpe(
     """
     t = len(returns)
     if t < MIN_RETURNS:
-        raise ValueError(
-            f"At least {MIN_RETURNS} return observations are required; got {t}."
-        )
+        raise ValueError(f"At least {MIN_RETURNS} return observations are required; got {t}.")
     if num_trials < 1:
         raise ValueError(f"num_trials must be >= 1; got {num_trials}.")
 
@@ -220,10 +218,7 @@ def compute_deflated_sharpe(
     else:
         ln_n = math.log(float(num_trials))
         sqrt_2_ln_n = math.sqrt(2.0 * ln_n)
-        expected_max_sharpe = (
-            sqrt_2_ln_n * (1.0 - _GAMMA_EULER / (2.0 * ln_n))
-            + _GAMMA_EULER / sqrt_2_ln_n
-        )
+        expected_max_sharpe = sqrt_2_ln_n * (1.0 - _GAMMA_EULER / (2.0 * ln_n)) + _GAMMA_EULER / sqrt_2_ln_n
 
     # ------------------------------------------------------------------
     # Step 3: Variance of the Sharpe estimator (non-normality correction)
@@ -234,11 +229,7 @@ def compute_deflated_sharpe(
     # Note: γ₃ = skewness, κ = excess kurtosis (already subtracted 3 above).
     # The term ((κ−1)/4)·SR² uses excess kurtosis directly.
     sr_for_var = observed_sharpe  # use annualised SR consistently
-    var_sr = (1.0 / t) * (
-        1.0
-        - skewness * sr_for_var
-        + ((kurtosis - 1.0) / 4.0) * sr_for_var**2
-    )
+    var_sr = (1.0 / t) * (1.0 - skewness * sr_for_var + ((kurtosis - 1.0) / 4.0) * sr_for_var**2)
 
     # Floor variance at a tiny epsilon to avoid sqrt of negative or zero
     var_floor = 1e-12

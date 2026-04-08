@@ -313,16 +313,11 @@ class TestTenStrategyComparison:
     async def test_ranks_are_1_through_10(self):
         """Ranks for 10 strategies are exactly 1 through 10, all distinct."""
         strategies = [_make_strategy(name=f"S{i}") for i in range(10)]
-        pairs = [
-            (s, _make_test_run({"sharpe_ratio": float(i) * 0.5}))
-            for i, s in enumerate(strategies)
-        ]
+        pairs = [(s, _make_test_run({"sharpe_ratio": float(i) * 0.5})) for i, s in enumerate(strategies)]
         repo = _make_repo_for_strategies(pairs)
         service = _make_service(repo)
 
-        result = await service.compare_strategies(
-            [s.id for s in strategies], ranking_metric="sharpe_ratio"
-        )
+        result = await service.compare_strategies([s.id for s in strategies], ranking_metric="sharpe_ratio")
 
         ranks = [e["rank"] for e in result["strategies"]]
         assert sorted(ranks) == list(range(1, 11))
@@ -332,16 +327,11 @@ class TestTenStrategyComparison:
         strategies = [_make_strategy(name=f"S{i}") for i in range(10)]
         # Strategy at index 7 has the highest sharpe_ratio
         sharpe_values = [0.1, 0.3, 0.5, 0.7, 0.9, 1.1, 1.3, 9.9, 0.2, 0.4]
-        pairs = [
-            (s, _make_test_run({"sharpe_ratio": sharpe_values[i]}))
-            for i, s in enumerate(strategies)
-        ]
+        pairs = [(s, _make_test_run({"sharpe_ratio": sharpe_values[i]})) for i, s in enumerate(strategies)]
         repo = _make_repo_for_strategies(pairs)
         service = _make_service(repo)
 
-        result = await service.compare_strategies(
-            [s.id for s in strategies], ranking_metric="sharpe_ratio"
-        )
+        result = await service.compare_strategies([s.id for s in strategies], ranking_metric="sharpe_ratio")
 
         assert result["strategies"][0]["name"] == "S7"
         assert result["winner_id"] == str(strategies[7].id)
@@ -350,8 +340,7 @@ class TestTenStrategyComparison:
         """All 10 entries appear in the response with populated metrics dicts."""
         strategies = [_make_strategy(name=f"S{i}") for i in range(10)]
         pairs = [
-            (s, _make_test_run({"sharpe_ratio": float(i), "roi_pct": float(i * 2)}))
-            for i, s in enumerate(strategies)
+            (s, _make_test_run({"sharpe_ratio": float(i), "roi_pct": float(i * 2)})) for i, s in enumerate(strategies)
         ]
         repo = _make_repo_for_strategies(pairs)
         service = _make_service(repo)
@@ -377,9 +366,7 @@ class TestInvalidStrategyId:
         s1 = _make_strategy(name="Known")
         unknown_id = uuid4()
 
-        repo = _make_repo_for_strategies(
-            [(s1, _make_test_run({"sharpe_ratio": 1.0}))]
-        )
+        repo = _make_repo_for_strategies([(s1, _make_test_run({"sharpe_ratio": 1.0}))])
         service = _make_service(repo)
 
         with pytest.raises(StrategyNotFoundError):
@@ -390,9 +377,7 @@ class TestInvalidStrategyId:
         unknown_id = uuid4()
         s1 = _make_strategy()
 
-        repo = _make_repo_for_strategies(
-            [(s1, _make_test_run({"sharpe_ratio": 1.0}))]
-        )
+        repo = _make_repo_for_strategies([(s1, _make_test_run({"sharpe_ratio": 1.0}))])
         service = _make_service(repo)
 
         with pytest.raises(StrategyNotFoundError) as exc_info:
@@ -453,9 +438,7 @@ class TestNoTestResults:
         s1 = _make_strategy(name="A")
         s2 = _make_strategy(name="B")
 
-        repo = _make_repo_for_strategies(
-            [(s1, None), (s2, None)]
-        )
+        repo = _make_repo_for_strategies([(s1, None), (s2, None)])
         service = _make_service(repo)
 
         result = await service.compare_strategies([s1.id, s2.id])
@@ -467,9 +450,7 @@ class TestNoTestResults:
         s1 = _make_strategy(name="A")
         s2 = _make_strategy(name="B")
 
-        repo = _make_repo_for_strategies(
-            [(s1, None), (s2, None)]
-        )
+        repo = _make_repo_for_strategies([(s1, None), (s2, None)])
         service = _make_service(repo)
 
         result = await service.compare_strategies([s1.id, s2.id])
@@ -784,9 +765,7 @@ class TestRecommendationTextFormat:
         s1 = _make_strategy()
         s2 = _make_strategy()
 
-        repo = _make_repo_for_strategies(
-            [(s1, None), (s2, None)]
-        )
+        repo = _make_repo_for_strategies([(s1, None), (s2, None)])
         service = _make_service(repo)
 
         result = await service.compare_strategies([s1.id, s2.id])
