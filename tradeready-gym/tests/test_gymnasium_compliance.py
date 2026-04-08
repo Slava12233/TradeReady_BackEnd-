@@ -14,6 +14,7 @@ from tradeready_gym.envs.multi_asset_env import MultiAssetTradingEnv
 from tradeready_gym.wrappers.normalization import NormalizationWrapper
 from tradeready_gym.wrappers.batch_step import BatchStepWrapper
 from tradeready_gym.wrappers.feature_engineering import FeatureEngineeringWrapper
+from tradeready_gym.utils.training_tracker import TrainingTracker
 
 
 def _mock_api_call(method: str, path: str, **kwargs):

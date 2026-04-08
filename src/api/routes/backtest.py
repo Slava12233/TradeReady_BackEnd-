@@ -127,12 +127,12 @@ def _batch_fast_to_response(result: BatchStepResult) -> BatchStepFastResponse:
     )
 
 
-async def _raise_if_terminal(session_id: str, db: AsyncSession) -> None:
+async def _raise_if_terminal(session_id: UUID, db: AsyncSession) -> None:
     """If the session exists with a terminal status, raise a descriptive error."""
     from src.database.repositories.backtest_repo import BacktestRepository  # noqa: PLC0415
 
     repo = BacktestRepository(db)
-    session = await repo.get_session(UUID(session_id))
+    session = await repo.get_session(session_id)
     if session and session.status in ("completed", "failed", "cancelled"):
         raise BacktestInvalidStateError(
             f"Backtest session has already {session.status}.",
@@ -212,25 +212,25 @@ async def create_backtest(
 @router.post("/backtest/{session_id}/start")
 async def start_backtest(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> dict[str, str]:
     """Start a created backtest session."""
-    await engine.start(session_id, db)
-    return {"status": "running", "session_id": session_id}
+    await engine.start(str(session_id), db)
+    return {"status": "running", "session_id": str(session_id)}
 
 
 @router.post("/backtest/{session_id}/step", response_model=StepResponse)
 async def step_backtest(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> StepResponse:
     """Advance one candle step."""
     try:
-        result = await engine.step(session_id, db)
+        result = await engine.step(str(session_id), db)
     except BacktestNotFoundError:
         await _raise_if_terminal(session_id, db)
         raise
@@ -240,14 +240,14 @@ async def step_backtest(
 @router.post("/backtest/{session_id}/step/batch", response_model=StepResponse)
 async def step_batch_backtest(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     body: BacktestStepBatchRequest,
     engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> StepResponse:
     """Advance N candle steps."""
     try:
-        result = await engine.step_batch(session_id, body.steps, db)
+        result = await engine.step_batch(str(session_id), body.steps, db)
     except BacktestNotFoundError:
         await _raise_if_terminal(session_id, db)
         raise
@@ -257,7 +257,7 @@ async def step_batch_backtest(
 @router.post("/backtest/{session_id}/step/batch/fast", response_model=BatchStepFastResponse)
 async def step_batch_fast_backtest(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     body: BacktestStepBatchFastRequest,
     engine: BacktestEngineDep,
     db: DbSessionDep,
@@ -275,7 +275,7 @@ async def step_batch_fast_backtest(
     """
     try:
         result = await engine.step_batch_fast(
-            session_id,
+            str(session_id),
             body.steps,
             db,
             include_intermediate_trades=body.include_intermediate_trades,
@@ -289,12 +289,12 @@ async def step_batch_fast_backtest(
 @router.post("/backtest/{session_id}/cancel")
 async def cancel_backtest(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> dict[str, Any]:
     """Cancel a running backtest and save partial results."""
-    result = await engine.cancel(session_id, db)
+    result = await engine.cancel(str(session_id), db)
     return {
         "session_id": result.session_id,
         "status": result.status,
@@ -309,13 +309,13 @@ async def cancel_backtest(
 @router.post("/backtest/{session_id}/trade/order")
 async def backtest_place_order(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     body: BacktestOrderRequest,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Place an order in the backtest sandbox."""
     result = await engine.execute_order(
-        session_id,
+        str(session_id),
         body.symbol,
         body.side,
         body.type,
@@ -335,11 +335,11 @@ async def backtest_place_order(
 @router.get("/backtest/{session_id}/trade/orders")
 async def backtest_list_orders(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """List all orders in the backtest sandbox."""
-    active = engine._get_active(session_id)
+    active = engine._get_active(str(session_id))
     orders = active.sandbox.get_orders()
     return {
         "orders": [
@@ -364,11 +364,11 @@ async def backtest_list_orders(
 @router.get("/backtest/{session_id}/trade/orders/open")
 async def backtest_open_orders(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """List pending orders in the backtest sandbox."""
-    active = engine._get_active(session_id)
+    active = engine._get_active(str(session_id))
     orders = active.sandbox.get_orders(status="pending")
     return {
         "orders": [
@@ -391,23 +391,23 @@ async def backtest_open_orders(
 @router.delete("/backtest/{session_id}/trade/order/{order_id}")
 async def backtest_cancel_order(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     order_id: str,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Cancel a pending order in the backtest sandbox."""
-    cancelled = await engine.cancel_order(session_id, order_id)
+    cancelled = await engine.cancel_order(str(session_id), order_id)
     return {"order_id": order_id, "cancelled": cancelled}
 
 
 @router.get("/backtest/{session_id}/trade/history")
 async def backtest_trade_history(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get trade history from the backtest sandbox."""
-    active = engine._get_active(session_id)
+    active = engine._get_active(str(session_id))
     trades = active.sandbox.get_trades()
     return {
         "trades": [
@@ -436,12 +436,12 @@ async def backtest_trade_history(
 @router.get("/backtest/{session_id}/market/price/{symbol}")
 async def backtest_price(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     symbol: str,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get price for a symbol at the current virtual time."""
-    result = await engine.get_price(session_id, symbol)
+    result = await engine.get_price(str(session_id), symbol)
     return {
         "symbol": result.symbol,
         "price": str(result.price),
@@ -452,11 +452,11 @@ async def backtest_price(
 @router.get("/backtest/{session_id}/market/prices")
 async def backtest_prices(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get all prices at the current virtual time."""
-    active = engine._get_active(session_id)
+    active = engine._get_active(str(session_id))
     return {
         "prices": {k: str(v) for k, v in active.current_prices.items()},
         "virtual_time": active.simulator.current_time.isoformat(),
@@ -466,13 +466,13 @@ async def backtest_prices(
 @router.get("/backtest/{session_id}/market/ticker/{symbol}")
 async def backtest_ticker(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     symbol: str,
     engine: BacktestEngineDep,
     db: DbSessionDep,
 ) -> dict[str, Any]:
     """Get 24h ticker stats at the current virtual time."""
-    active = engine._get_active(session_id)
+    active = engine._get_active(str(session_id))
     ticker = await active.replayer.load_ticker_24h(symbol, active.simulator.current_time)
 
     if ticker is None:
@@ -495,7 +495,7 @@ async def backtest_ticker(
 @router.get("/backtest/{session_id}/market/candles/{symbol}")
 async def backtest_candles(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     symbol: str,
     engine: BacktestEngineDep,
     interval: str = Query(default="60", description="Interval as a label ('1m','5m','1h','1d') or seconds ('3600')"),
@@ -511,7 +511,7 @@ async def backtest_candles(
     from src.utils.helpers import parse_interval  # noqa: PLC0415
 
     interval_seconds = parse_interval(interval)
-    candles = await engine.get_candles(session_id, symbol, interval_seconds, limit)
+    candles = await engine.get_candles(str(session_id), symbol, interval_seconds, limit)
     return {
         "symbol": symbol,
         "interval": interval,
@@ -537,11 +537,11 @@ async def backtest_candles(
 @router.get("/backtest/{session_id}/account/balance")
 async def backtest_balance(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get sandbox balances."""
-    balances = await engine.get_balance(session_id)
+    balances = await engine.get_balance(str(session_id))
     return {
         "balances": [{"asset": b.asset, "available": str(b.available), "locked": str(b.locked)} for b in balances],
     }
@@ -550,11 +550,11 @@ async def backtest_balance(
 @router.get("/backtest/{session_id}/account/positions")
 async def backtest_positions(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get sandbox positions."""
-    positions = await engine.get_positions(session_id)
+    positions = await engine.get_positions(str(session_id))
     return {
         "positions": [
             {
@@ -571,11 +571,11 @@ async def backtest_positions(
 @router.get("/backtest/{session_id}/account/portfolio")
 async def backtest_portfolio(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     engine: BacktestEngineDep,
 ) -> dict[str, Any]:
     """Get sandbox portfolio summary."""
-    portfolio = await engine.get_portfolio(session_id)
+    portfolio = await engine.get_portfolio(str(session_id))
     return {
         "total_equity": str(portfolio.total_equity),
         "available_cash": str(portfolio.available_cash),
@@ -592,7 +592,7 @@ async def backtest_portfolio(
 @router.get("/backtest/{session_id}/status", response_model=BacktestListItem)
 async def get_backtest_status(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     repo: BacktestRepoDep,
     engine: BacktestEngineDep,
     db: DbSessionDep,
@@ -604,13 +604,13 @@ async def get_backtest_status(
     marks them as failed.
     """
     account_id = _get_account_id(request)
-    s = await repo.get_session(UUID(session_id), account_id)
+    s = await repo.get_session(session_id, account_id)
 
     if s is None:
-        raise BacktestNotFoundError(session_id=UUID(session_id))
+        raise BacktestNotFoundError(session_id=session_id)
 
     # Detect orphaned session: DB says running but engine has no active session
-    if s.status == "running" and session_id not in engine._active:
+    if s.status == "running" and str(session_id) not in engine._active:
         from datetime import datetime as _dt
 
         from sqlalchemy import update as sa_update
@@ -630,9 +630,9 @@ async def get_backtest_status(
         await db.execute(stmt)
         await db.flush()
         # Re-fetch the updated session
-        s = await repo.get_session(UUID(session_id), account_id)
+        s = await repo.get_session(session_id, account_id)
         if s is None:
-            raise BacktestNotFoundError(session_id=UUID(session_id))
+            raise BacktestNotFoundError(session_id=session_id)
 
     return BacktestListItem(
         session_id=str(s.id),
@@ -668,15 +668,15 @@ async def get_backtest_status(
 @router.get("/backtest/{session_id}/results", response_model=BacktestResultsResponse)
 async def get_backtest_results(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     repo: BacktestRepoDep,
 ) -> BacktestResultsResponse:
     """Get full results of a completed backtest."""
     account_id = _get_account_id(request)
-    session = await repo.get_session(UUID(session_id), account_id)
+    session = await repo.get_session(session_id, account_id)
 
     if session is None:
-        raise BacktestNotFoundError(session_id=UUID(session_id))
+        raise BacktestNotFoundError(session_id=session_id)
 
     # Build metrics with safe defaults for all expected frontend fields
     raw_metrics = session.metrics or {}
@@ -724,14 +724,14 @@ async def get_backtest_results(
 @router.get("/backtest/{session_id}/results/equity-curve")
 async def get_equity_curve(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     repo: BacktestRepoDep,
     interval: int = Query(default=1, ge=1),
 ) -> dict[str, Any]:
     """Get equity curve data for a completed backtest."""
-    snapshots = await repo.get_snapshots(UUID(session_id))
+    snapshots = await repo.get_snapshots(session_id)
     return {
-        "session_id": session_id,
+        "session_id": str(session_id),
         "interval": str(interval),
         "snapshots": [
             {
@@ -751,15 +751,15 @@ async def get_equity_curve(
 @router.get("/backtest/{session_id}/results/trades")
 async def get_backtest_trades(
     request: Request,
-    session_id: str,
+    session_id: UUID,
     repo: BacktestRepoDep,
     limit: int = Query(default=1000, ge=1, le=10000),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """Get trade log for a completed backtest."""
-    trades = await repo.get_trades(UUID(session_id), limit=limit, offset=offset)
+    trades = await repo.get_trades(session_id, limit=limit, offset=offset)
     return {
-        "session_id": session_id,
+        "session_id": str(session_id),
         "trades": [
             {
                 "id": str(t.id),

@@ -29,9 +29,10 @@ from src.api.schemas.webhooks import (
     WebhookResponse,
     WebhookUpdateRequest,
 )
+from src.config import get_settings
 from src.database.models import WebhookSubscription
 from src.dependencies import DbSessionDep
-from src.utils.exceptions import PermissionDeniedError
+from src.utils.exceptions import InputValidationError, PermissionDeniedError
 
 logger = structlog.get_logger(__name__)
 
@@ -127,6 +128,19 @@ async def create_webhook(
     Returns:
         :class:`WebhookCreateResponse` including the one-time ``secret``.
     """
+    settings = get_settings()
+    count = await db.scalar(
+        select(func.count()).select_from(WebhookSubscription).where(
+            WebhookSubscription.account_id == account.id
+        )
+    )
+    if (count or 0) >= settings.per_account_webhook_limit:
+        raise InputValidationError(
+            f"Account has reached the maximum of {settings.per_account_webhook_limit} webhook subscriptions.",
+            field="url",
+            details={"limit": settings.per_account_webhook_limit, "current": count},
+        )
+
     secret = secrets.token_urlsafe(32)
     sub = WebhookSubscription(
         account_id=account.id,

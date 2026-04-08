@@ -125,6 +125,8 @@ def _build_client(
         mock_session.rollback = AsyncMock()
         mock_session.delete = AsyncMock()
         mock_session.execute = AsyncMock()
+        # db.scalar() is used for per-account webhook limit check (returns count integer)
+        mock_session.scalar = AsyncMock(return_value=0)
 
     redis = _mock_redis()
 
@@ -259,6 +261,8 @@ class TestCreateWebhook:
         mock_session.flush = AsyncMock()
         mock_session.commit = AsyncMock()
         mock_session.rollback = AsyncMock()
+        # db.scalar() is used for per-account webhook limit check; return 0 = under limit
+        mock_session.scalar = AsyncMock(return_value=0)
 
         # After flush() the ORM object has id and timestamps set
         def _after_flush():
@@ -296,6 +300,8 @@ class TestCreateWebhook:
         mock_session.flush = AsyncMock(side_effect=lambda: None)
         mock_session.commit = AsyncMock()
         mock_session.rollback = AsyncMock()
+        # db.scalar() is used for per-account webhook limit check; return 0 = under limit
+        mock_session.scalar = AsyncMock(return_value=0)
 
         def _set_sub_id():
             sub = mock_session.add.call_args.args[0]
@@ -375,6 +381,63 @@ class TestCreateWebhook:
 
         assert response.status_code == 401
 
+    def test_create_webhook_rejected_when_limit_reached(self):
+        """Creating a 26th webhook is rejected with 422 when account is at the 25-sub limit."""
+        account = _make_account()
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+        # Simulate account already having 25 subscriptions — the limit
+        mock_session.scalar = AsyncMock(return_value=25)
+
+        client = _build_client(mock_account=account, mock_session=mock_session)
+        response = client.post(
+            "/api/v1/webhooks",
+            json={
+                "url": "https://example.com/hook",
+                "events": ["backtest.completed"],
+            },
+        )
+        client._auth_patcher.stop()
+
+        # InputValidationError maps to 422 in the global exception handler
+        assert response.status_code == 422
+        body = response.json()
+        assert "error" in body
+        assert "limit" in body["error"]["message"].lower() or "maximum" in body["error"]["message"].lower()
+
+    def test_create_webhook_succeeds_at_limit_minus_one(self):
+        """Creating a webhook when the account has 24 subscriptions succeeds."""
+        account = _make_account()
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+        # 24 = one below the 25-subscription limit
+        mock_session.scalar = AsyncMock(return_value=24)
+
+        def _set_sub_id():
+            sub = mock_session.add.call_args.args[0]
+            sub.id = uuid4()
+            sub.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+            sub.updated_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+        mock_session.flush = AsyncMock(side_effect=lambda: _set_sub_id())
+
+        client = _build_client(mock_account=account, mock_session=mock_session)
+        response = client.post(
+            "/api/v1/webhooks",
+            json={
+                "url": "https://example.com/hook",
+                "events": ["backtest.completed"],
+            },
+        )
+        client._auth_patcher.stop()
+
+        assert response.status_code == 201
+
     def test_create_webhook_accepts_multiple_valid_events(self):
         """Multiple valid events are accepted."""
         account = _make_account()
@@ -390,6 +453,8 @@ class TestCreateWebhook:
         mock_session.flush = AsyncMock(side_effect=lambda: _set_sub_id())
         mock_session.commit = AsyncMock()
         mock_session.rollback = AsyncMock()
+        # db.scalar() is used for per-account webhook limit check; return 0 = under limit
+        mock_session.scalar = AsyncMock(return_value=0)
 
         client = _build_client(mock_account=account, mock_session=mock_session)
         response = client.post(
@@ -902,6 +967,8 @@ class TestCrudLifecycle:
         create_session.flush = AsyncMock(side_effect=lambda: _flush_side_effect())
         create_session.commit = AsyncMock()
         create_session.rollback = AsyncMock()
+        # db.scalar() is used for per-account webhook limit check; return 0 = under limit
+        create_session.scalar = AsyncMock(return_value=0)
 
         create_client = _build_client(mock_account=account, mock_session=create_session)
         create_resp = create_client.post(

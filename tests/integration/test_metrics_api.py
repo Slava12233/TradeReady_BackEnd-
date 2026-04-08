@@ -4,9 +4,10 @@ Covers:
 
 - ``POST /api/v1/metrics/deflated-sharpe``
 
-The endpoint is **public** (no authentication required).  All tests use the
-sync ``TestClient`` with the full middleware stack and mocked infrastructure
-(no real DB or Redis needed).
+The endpoint requires authentication.  All tests use the sync ``TestClient``
+with the full middleware stack and mocked infrastructure (no real DB or Redis
+needed).  The auth middleware is patched via ``_authenticate_request`` so
+that tests do not need a real account in the database.
 
 Run with::
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import math
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
@@ -57,11 +59,21 @@ _LARGE_RETURNS = [0.002 + (-1) ** i * 0.003 for i in range(100)]
 # ---------------------------------------------------------------------------
 
 
-def _build_client() -> tuple[TestClient, object]:
+def _build_client(*, authenticated: bool = True) -> tuple[TestClient, object]:
     """Create a ``TestClient`` with mocked infrastructure.
 
-    The metrics endpoint is public so no auth patch is required.
-    Returns a tuple of ``(client, cleanup_fn)``.
+    The metrics endpoint now requires authentication.  When ``authenticated``
+    is ``True`` (default), ``_authenticate_request`` is patched to return a
+    mock ``Account`` so that all requests are accepted by the auth middleware.
+    When ``False``, ``_authenticate_request`` returns ``(None, None)`` so the
+    middleware issues a 401 response — used to test that the endpoint is no
+    longer public.
+
+    Args:
+        authenticated: Whether to inject a mock authenticated account.
+
+    Returns:
+        A tuple of ``(client, cleanup_fn)``.
     """
     from src.dependencies import get_db_session, get_redis, get_settings
 
@@ -85,6 +97,27 @@ def _build_client() -> tuple[TestClient, object]:
     mock_session = AsyncMock()
     mock_session.commit = AsyncMock()
     mock_session.rollback = AsyncMock()
+
+    # Build a minimal mock Account for the auth middleware.
+    mock_account = MagicMock()
+    mock_account.id = uuid4()
+    mock_account.status = "active"
+
+    # _authenticate_request is called at request time, not app-creation time,
+    # so we use patch.start() to keep the patch alive across requests.
+    if authenticated:
+        auth_patcher = patch(
+            "src.api.middleware.auth._authenticate_request",
+            new_callable=AsyncMock,
+            return_value=(mock_account, None),
+        )
+    else:
+        auth_patcher = patch(
+            "src.api.middleware.auth._authenticate_request",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        )
+    auth_patcher.start()
 
     with (
         patch("src.database.session.init_db", new_callable=AsyncMock),
@@ -114,6 +147,7 @@ def _build_client() -> tuple[TestClient, object]:
 
     def _cleanup():
         app.dependency_overrides.clear()
+        auth_patcher.stop()
 
     return client, _cleanup
 
@@ -452,35 +486,101 @@ class TestErrorResponseFormat:
 
 
 # ---------------------------------------------------------------------------
-# Tests: endpoint is public (no auth required)
+# Tests: endpoint requires authentication
 # ---------------------------------------------------------------------------
 
 
-class TestPublicEndpoint:
-    """Tests that the metrics endpoint does not require authentication."""
+class TestAuthRequired:
+    """Tests that the metrics endpoint requires authentication (no longer public)."""
 
     def setup_method(self):
-        # Build a client WITHOUT injecting a mock account —
-        # the endpoint should still succeed because it is public.
+        # Build a client that simulates unauthenticated requests so we can
+        # verify the middleware returns 401.
+        self.client, self._cleanup = _build_client(authenticated=False)
+
+    def teardown_method(self):
+        self._cleanup()
+
+    def test_no_credentials_returns_401(self):
+        """The endpoint must return 401 when no credentials are supplied."""
+        response = self.client.post(
+            "/api/v1/metrics/deflated-sharpe",
+            json={"returns": _MIN_RETURNS, "num_trials": 1},
+        )
+        assert response.status_code == 401
+
+    def test_authenticated_request_succeeds(self):
+        """An authenticated request must return 200."""
+        # Build a second client that IS authenticated.
+        authed_client, cleanup = _build_client(authenticated=True)
+        try:
+            response = authed_client.post(
+                "/api/v1/metrics/deflated-sharpe",
+                json={"returns": _MIN_RETURNS, "num_trials": 1},
+            )
+            assert response.status_code == 200
+        finally:
+            cleanup()
+
+
+# ---------------------------------------------------------------------------
+# Tests: new upper-bound validations
+# ---------------------------------------------------------------------------
+
+
+class TestUpperBoundValidation:
+    """Tests for the new upper-bound constraints on DeflatedSharpeRequest."""
+
+    def setup_method(self):
         self.client, self._cleanup = _build_client()
 
     def teardown_method(self):
         self._cleanup()
 
-    def test_no_api_key_header_succeeds(self):
-        """The endpoint must return 200 with no X-API-Key header."""
+    def test_returns_exceeding_max_length_returns_422(self):
+        """returns list with more than 10,000 entries must return HTTP 422."""
         response = self.client.post(
             "/api/v1/metrics/deflated-sharpe",
-            json={"returns": _MIN_RETURNS, "num_trials": 1},
+            json={"returns": [0.001] * 10_001, "num_trials": 1},
         )
-        # 401 would indicate auth is incorrectly required
+        assert response.status_code == 422
+
+    def test_returns_at_max_length_succeeds(self):
+        """returns list with exactly 10,000 entries must return HTTP 200."""
+        response = self.client.post(
+            "/api/v1/metrics/deflated-sharpe",
+            json={"returns": [0.001] * 10_000, "num_trials": 1},
+        )
         assert response.status_code == 200
 
-    def test_no_authorization_header_succeeds(self):
-        """The endpoint must return 200 with no Authorization header."""
+    def test_num_trials_exceeding_upper_bound_returns_422(self):
+        """num_trials above 100,000 must return HTTP 422."""
         response = self.client.post(
             "/api/v1/metrics/deflated-sharpe",
-            json={"returns": _MIN_RETURNS, "num_trials": 1},
-            headers={},  # explicitly no auth headers
+            json={"returns": _MIN_RETURNS, "num_trials": 100_001},
+        )
+        assert response.status_code == 422
+
+    def test_num_trials_at_upper_bound_succeeds(self):
+        """num_trials equal to 100,000 must return HTTP 200."""
+        response = self.client.post(
+            "/api/v1/metrics/deflated-sharpe",
+            json={"returns": _MIN_RETURNS, "num_trials": 100_000},
+        )
+        assert response.status_code == 200
+
+    def test_annualization_factor_exceeding_upper_bound_returns_422(self):
+        """annualization_factor above 525,600 must return HTTP 422."""
+        response = self.client.post(
+            "/api/v1/metrics/deflated-sharpe",
+            json={"returns": _MIN_RETURNS, "num_trials": 1, "annualization_factor": 525_601},
+        )
+        assert response.status_code == 422
+
+    def test_annualization_factor_at_upper_bound_succeeds(self):
+        """annualization_factor equal to 525,600 must return HTTP 200."""
+        response = self.client.post(
+            "/api/v1/metrics/deflated-sharpe",
+            json={"returns": _MIN_RETURNS, "num_trials": 1, "annualization_factor": 525_600},
         )
         assert response.status_code == 200

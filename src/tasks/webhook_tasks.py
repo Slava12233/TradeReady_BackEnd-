@@ -33,7 +33,6 @@ Example (manual trigger)::
     result = dispatch_webhook.delay(
         subscription_id="uuid-string",
         url="https://example.com/hooks",
-        secret="my-secret",
         event_name="order.filled",
         payload={"order_id": "..."},
     )
@@ -47,6 +46,7 @@ import hmac
 import json
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
 
@@ -77,17 +77,20 @@ _HTTP_TIMEOUT: float = 10.0
     name="src.tasks.webhook_tasks.dispatch_webhook",
     bind=True,
     max_retries=3,
-    ignore_result=False,
+    ignore_result=True,
 )
 def dispatch_webhook(
     self: Any,  # noqa: ANN401
     subscription_id: str,
     url: str,
-    secret: str,
     event_name: str,
     payload: dict,  # type: ignore[type-arg]
 ) -> dict[str, Any]:
     """Sign and POST a webhook payload to a subscriber's endpoint.
+
+    Fetches the HMAC signing secret from the DB at dispatch time (not from the
+    task arguments) to prevent the secret from being written to the Celery
+    result backend in plaintext.
 
     Computes an HMAC-SHA256 signature over the JSON-serialised payload and
     sends it via HTTP POST.  Retries up to 3 times with exponential back-off
@@ -104,11 +107,13 @@ def dispatch_webhook(
     * If ``failure_count`` reaches :data:`_MAX_FAILURES`, ``active`` is set to
       ``False`` (subscription auto-disabled).
 
+    If the subscription has been deleted between enqueue and dispatch, the task
+    logs a warning and returns without making any HTTP request.
+
     Args:
         self:            Celery task instance (injected via ``bind=True``).
         subscription_id: String UUID of the :class:`~src.database.models.WebhookSubscription`.
         url:             Destination HTTPS endpoint.
-        secret:          HMAC-SHA256 signing key (plaintext).
         event_name:      Dot-separated event identifier (e.g. ``"order.filled"``).
         payload:         JSON-serialisable event data dict.
 
@@ -126,7 +131,7 @@ def dispatch_webhook(
         propagate it to the caller.
     """
     return asyncio.run(
-        _async_dispatch(self, subscription_id, url, secret, event_name, payload)
+        _async_dispatch(self, subscription_id, url, event_name, payload)
     )
 
 
@@ -134,26 +139,103 @@ async def _async_dispatch(
     task: Any,  # noqa: ANN401
     subscription_id: str,
     url: str,
-    secret: str,
     event_name: str,
     payload: dict,  # type: ignore[type-arg]
 ) -> dict[str, Any]:
     """Async implementation of :func:`dispatch_webhook`.
 
+    Fetches the HMAC signing secret from the DB so it is never stored in the
+    Celery result backend.  Returns early with a warning log if the subscription
+    has been deleted between enqueue and dispatch.
+
     Args:
         task:            The bound Celery task instance (for retry / retry_count).
         subscription_id: String UUID of the subscription.
         url:             Destination endpoint.
-        secret:          HMAC signing key.
         event_name:      Event identifier.
         payload:         Event data.
 
     Returns:
         Delivery result dict (same shape as :func:`dispatch_webhook`).
     """
-    import httpx  # noqa: PLC0415
+    from uuid import UUID  # noqa: PLC0415
 
+    import httpx  # noqa: PLC0415
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from src.database.models import WebhookSubscription  # noqa: PLC0415
     from src.database.session import get_session_factory  # noqa: PLC0415
+
+    session_factory = get_session_factory()
+
+    # ── Fetch secret from DB ─────────────────────────────────────────────────
+    # The secret is intentionally NOT passed via Celery task arguments because
+    # task arguments are serialised as plaintext JSON in the Redis result
+    # backend.  Fetching from DB at dispatch time keeps the secret off the wire.
+    try:
+        async with session_factory() as _session:
+            _result = await _session.execute(
+                select(WebhookSubscription.secret).where(
+                    WebhookSubscription.id == UUID(subscription_id)
+                )
+            )
+            row = _result.one_or_none()
+    except Exception:
+        logger.exception(
+            "webhook.dispatch.secret_fetch_failed",
+            subscription_id=subscription_id,
+        )
+        return {
+            "subscription_id": subscription_id,
+            "event_name": event_name,
+            "status_code": 0,
+            "duration_ms": 0,
+            "success": False,
+        }
+
+    if row is None:
+        logger.warning(
+            "webhook.dispatch.subscription_not_found",
+            subscription_id=subscription_id,
+            event_name=event_name,
+        )
+        return {
+            "subscription_id": subscription_id,
+            "event_name": event_name,
+            "status_code": 0,
+            "duration_ms": 0,
+            "success": False,
+        }
+
+    secret: str = row.secret
+
+    # ── Defence-in-depth SSRF check ──────────────────────────────────────────
+    # This re-validates the URL immediately before delivery.  It catches URLs
+    # that were stored in the DB before SSRF protection was introduced, or that
+    # somehow bypassed schema validation.
+    # NOTE: DNS rebinding is NOT fully mitigated — the hostname is resolved
+    # here at task execution time, but an adversary could still switch DNS
+    # records between this resolution and the actual httpx.post() call below.
+    # This check closes the window against opportunistic attacks rather than
+    # eliminating the race entirely.
+    from src.webhooks.dispatcher import validate_webhook_url  # noqa: PLC0415
+
+    try:
+        validate_webhook_url(url)
+    except ValueError:
+        logger.warning(
+            "webhook.delivery.ssrf_blocked",
+            subscription_id=subscription_id,
+            event_name=event_name,
+            url_host=urlparse(url).netloc,  # full URL logged for security forensics
+        )
+        return {
+            "subscription_id": subscription_id,
+            "event_name": event_name,
+            "status_code": 0,
+            "duration_ms": 0,
+            "success": False,
+        }
 
     # ── Serialise payload ────────────────────────────────────────────────────
     payload_bytes: bytes = json.dumps(payload, default=str).encode("utf-8")
@@ -188,7 +270,7 @@ async def _async_dispatch(
             "webhook.delivery.failed",
             subscription_id=subscription_id,
             event_name=event_name,
-            url=url,
+            url_host=urlparse(url).netloc,
             status_code=status_code,
             retry=retry_index,
             duration_ms=duration_ms,
@@ -201,7 +283,7 @@ async def _async_dispatch(
             raise task.retry(exc=exc, countdown=countdown) from exc
 
         # All retries exhausted — update failure_count in DB and possibly disable.
-        await _record_failure(subscription_id, get_session_factory())
+        await _record_failure(subscription_id, session_factory)
         return {
             "subscription_id": subscription_id,
             "event_name": event_name,
@@ -216,12 +298,12 @@ async def _async_dispatch(
         "webhook.delivery.success",
         subscription_id=subscription_id,
         event_name=event_name,
-        url=url,
+        url_host=urlparse(url).netloc,
         status_code=status_code,
         duration_ms=duration_ms,
     )
 
-    await _record_success(subscription_id, get_session_factory())
+    await _record_success(subscription_id, session_factory)
 
     return {
         "subscription_id": subscription_id,

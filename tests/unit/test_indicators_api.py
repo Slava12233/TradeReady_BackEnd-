@@ -124,7 +124,7 @@ class TestBuildCacheKey:
         assert key.startswith("indicators:BTCUSDT:")
         parts = key.split(":")
         assert len(parts) == 3
-        assert len(parts[2]) == 8  # 8-char hex digest
+        assert len(parts[2]) == 16  # 16-char hex digest
 
     def test_same_inputs_stable_key(self):
         key1 = _build_cache_key("BTCUSDT", ["rsi_14", "sma_20"])

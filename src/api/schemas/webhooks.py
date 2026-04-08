@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.webhooks.dispatcher import validate_webhook_url
+
 # ---------------------------------------------------------------------------
 # Supported events
 # ---------------------------------------------------------------------------
@@ -64,6 +66,28 @@ class WebhookCreateRequest(_BaseSchema):
         examples=["My production webhook"],
     )
 
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        """Reject URLs that could be used for SSRF attacks.
+
+        Calls :func:`~src.webhooks.dispatcher.validate_webhook_url` which
+        enforces ``https``-only scheme, rejects bare IP literals, and resolves
+        the hostname to ensure none of the returned addresses fall within
+        loopback, link-local, RFC-1918 private, Docker bridge, or cloud
+        metadata IP ranges.
+
+        Args:
+            value: Raw URL string from the request body.
+
+        Returns:
+            The validated URL string.
+
+        Raises:
+            ValueError: If the URL fails any SSRF safety check.
+        """
+        return validate_webhook_url(value)
+
     @field_validator("events")
     @classmethod
     def validate_events(cls, value: list[str]) -> list[str]:
@@ -113,6 +137,30 @@ class WebhookUpdateRequest(_BaseSchema):
         description="New description label.",
         examples=["Updated webhook"],
     )
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
+        """Reject URLs that could be used for SSRF attacks when provided.
+
+        Calls :func:`~src.webhooks.dispatcher.validate_webhook_url` which
+        enforces ``https``-only scheme, rejects bare IP literals, and resolves
+        the hostname to ensure none of the returned addresses fall within
+        loopback, link-local, RFC-1918 private, Docker bridge, or cloud
+        metadata IP ranges.
+
+        Args:
+            value: Optional raw URL string from the request body.
+
+        Returns:
+            The validated URL string, or ``None`` if not provided.
+
+        Raises:
+            ValueError: If the URL fails any SSRF safety check.
+        """
+        if value is None:
+            return None
+        return validate_webhook_url(value)
 
     @field_validator("events")
     @classmethod

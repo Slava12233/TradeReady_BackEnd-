@@ -566,3 +566,45 @@ class TestBatchStepFastErrors:
         assert "error" in body
         assert "code" in body["error"]
         assert "message" in body["error"]
+
+    def test_invalid_uuid_session_id_returns_422(self):
+        """A non-UUID session_id path parameter must return 422 (FastAPI path validation).
+
+        Prior to the session_id: UUID fix, the route used session_id: str which
+        allowed any string through and would raise a 500 deep in the engine.
+        Now the UUID type annotation causes FastAPI to validate the path param
+        before the handler runs.
+        """
+        mock_engine = MagicMock()
+
+        with _build_client(mock_engine=mock_engine) as client:
+            resp = client.post(
+                "/api/v1/backtest/not-a-valid-uuid/step/batch/fast",
+                json={"steps": 5},
+            )
+
+        # FastAPI raises 422 for path params that fail type coercion
+        assert resp.status_code == 422
+
+    def test_valid_uuid_session_id_passes_path_validation(self):
+        """A properly formatted UUID is accepted by path validation and reaches the engine."""
+        from src.utils.exceptions import BacktestNotFoundError
+
+        session_id = str(uuid4())
+        mock_engine = MagicMock()
+        mock_engine.step_batch_fast = AsyncMock(
+            side_effect=BacktestNotFoundError(f"Session {session_id} not found.")
+        )
+
+        with patch(
+            "src.api.routes.backtest._raise_if_terminal",
+            new_callable=AsyncMock,
+        ):
+            with _build_client(mock_engine=mock_engine) as client:
+                resp = client.post(
+                    f"/api/v1/backtest/{session_id}/step/batch/fast",
+                    json={"steps": 3},
+                )
+
+        # 404 means it passed UUID validation and reached the engine handler
+        assert resp.status_code == 404

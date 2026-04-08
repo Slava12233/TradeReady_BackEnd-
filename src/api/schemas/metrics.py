@@ -59,28 +59,32 @@ class DeflatedSharpeRequest(_BaseSchema):
     returns: list[float] = Field(
         ...,
         min_length=10,
+        max_length=10_000,
         description=(
             "Per-period return observations (e.g. daily returns as decimals, not "
-            "percentages).  Requires at least 10 observations."
+            "percentages).  Requires at least 10 observations and at most 10,000."
         ),
         examples=[[0.001, -0.002, 0.003, 0.001, -0.001, 0.002, 0.0, -0.003, 0.004, 0.001]],
     )
     num_trials: int = Field(
         ...,
         ge=1,
+        le=100_000,
         description=(
             "Number of strategy variants tested before selecting this one.  "
             "The higher the value, the harder the significance test becomes "
-            "due to multiple-testing correction."
+            "due to multiple-testing correction.  Maximum 100,000."
         ),
         examples=[100],
     )
     annualization_factor: int = Field(
         default=252,
         ge=1,
+        le=525_600,
         description=(
             "Number of return periods per year.  "
-            "Use 252 for daily, 52 for weekly, 12 for monthly returns."
+            "Use 252 for daily, 52 for weekly, 12 for monthly returns.  "
+            "Maximum 525,600 (minute-level data)."
         ),
         examples=[252],
     )

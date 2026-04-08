@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ── Base ─────────────────────────────────────────────────────────────────────
 
@@ -153,6 +153,7 @@ class StrategyComparisonRequest(_BaseSchema):
         examples=["sharpe_ratio"],
     )
 
+    @field_validator("ranking_metric", mode="before")
     @classmethod
     def _validate_metric(cls, v: str) -> str:
         """Ensure ranking_metric is one of the supported values."""
@@ -161,14 +162,6 @@ class StrategyComparisonRequest(_BaseSchema):
                 f"ranking_metric must be one of {sorted(_VALID_RANKING_METRICS)}; got '{v}'"
             )
         return v
-
-    def model_post_init(self, __context: object) -> None:
-        """Validate ranking_metric after Pydantic model construction."""
-        if self.ranking_metric not in _VALID_RANKING_METRICS:
-            raise ValueError(
-                f"ranking_metric must be one of {sorted(_VALID_RANKING_METRICS)}; "
-                f"got '{self.ranking_metric}'"
-            )
 
 
 class StrategyComparisonMetrics(_BaseSchema):

@@ -46,10 +46,18 @@ When testing `src/tasks/*.py` from `agent/tests/`, Celery is NOT installed. Use 
 
 `compare_training_runs` validates each run_id as a UUID. Use real UUIDs (e.g. `"550e8400-e29b-41d4-a716-446655440001"`) in tests, not short strings like `"run-1"`.
 
+## Webhook Route Mock Pattern (2026-04-08)
+
+`POST /api/v1/webhooks` now calls `db.scalar(...)` for per-account limit check before inserting. Mock sessions in integration tests MUST include `mock_session.scalar = AsyncMock(return_value=0)`. Without it, comparing `AsyncMock >= int` raises `TypeError` and returns 500. Add to both the default mock in `_build_client()` AND any custom mock sessions in individual tests.
+
+`validate_webhook_url()` in `src/webhooks/dispatcher.py` calls `socket.getaddrinfo` for DNS resolution. Tests using fake hostnames (e.g. `slow.example.com`) MUST patch `src.webhooks.dispatcher.validate_webhook_url` or the function raises `ValueError` before the mock HTTP client is called.
+
+**Why:** SSRF protection added in tasks 1-4 — validate_webhook_url runs at schema validation time AND as defence-in-depth inside `_async_dispatch`. Tests for retry/timeout behaviour must bypass SSRF with `patch("src.webhooks.dispatcher.validate_webhook_url", return_value=url)`.
+
 ## Test Counts (last verified 2026-04-08)
 
-- Unit tests: 80 files — added `test_webhook_dispatcher.py` (8 tests) and `test_webhook_task.py` (21 tests) on 2026-04-08; previously 78 files (added `test_batch_step_fast.py` 22 tests same day)
-- Integration tests: 27 files — added `test_webhooks_api.py` (32 tests, 2026-04-08); previously 26 files
+- Unit tests: 80 files — `test_webhook_dispatcher.py` now 18 tests (+10 SSRF), `test_webhook_task.py` now 27 tests (+6 SSRF/retry/redaction) as of 2026-04-08; previously 8 and 21 tests
+- Integration tests: 27 files — `test_webhooks_api.py` now 36 tests (+4 limit/SSRF tests 2026-04-08); `test_batch_step_fast_api.py` now 19 tests (+2 UUID validation tests 2026-04-08)
 - Integration tests: 29 files — added `test_batch_step_fast_api.py` (17 tests, 2026-04-08) for `POST /backtest/{id}/step/batch/fast`; previously 28 files
 - tradeready-gym tests: added `test_configurable_fees.py` (39 tests, 2026-04-07) — fee_rate threading; existing `test_headless_env.py` (52 tests) already existed
 

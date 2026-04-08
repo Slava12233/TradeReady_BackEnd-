@@ -104,6 +104,13 @@ class Settings(BaseSettings):
         description="Maximum ticks held in memory before an immediate flush is triggered.",
     )
 
+    # ── Webhooks ──────────────────────────────────────────────────────────────
+    per_account_webhook_limit: int = Field(
+        default=25,
+        ge=1,
+        description="Maximum number of webhook subscriptions allowed per account.",
+    )
+
     # ── Monitoring ────────────────────────────────────────────────────────────
     grafana_admin_password: str = Field(default="change_me")
 

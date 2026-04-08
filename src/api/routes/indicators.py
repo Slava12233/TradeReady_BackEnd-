@@ -332,7 +332,7 @@ def _build_cache_key(symbol: str, indicator_names: list[str]) -> str:
         Redis key string in the form ``indicators:{symbol}:{8-char hash}``.
     """
     names_str = ",".join(indicator_names)
-    indicator_hash = hashlib.md5(names_str.encode(), usedforsecurity=False).hexdigest()[:8]  # noqa: S324
+    indicator_hash = hashlib.md5(names_str.encode(), usedforsecurity=False).hexdigest()[:16]  # noqa: S324
     return f"indicators:{symbol}:{indicator_hash}"
 
 

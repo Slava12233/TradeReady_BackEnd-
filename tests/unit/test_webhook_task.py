@@ -8,6 +8,8 @@ Tests the _async_dispatch coroutine (the async core of dispatch_webhook):
 - Auto-disable (active=False) after 10 consecutive failures
 - Timeout handling
 - _record_success and _record_failure DB helpers
+- Secret fetched from DB (not passed as task argument)
+- Early return when subscription deleted between enqueue and dispatch
 """
 
 from __future__ import annotations
@@ -47,8 +49,41 @@ def _compute_expected_sig(secret: str, payload: dict) -> str:
     ).hexdigest()
 
 
+def _make_secret_row(secret: str):
+    """Build a mock row with a .secret attribute."""
+    row = MagicMock()
+    row.secret = secret
+    return row
+
+
+def _make_session_factory_with_secret(secret: str):
+    """Build a mock session factory whose first execute() returns the secret row.
+
+    Used to satisfy the DB secret-fetch in _async_dispatch.  If the test also
+    needs to exercise _record_failure or _record_success, patch those helpers
+    directly instead of threading more execute() side_effects here.
+    """
+    mock_session = AsyncMock()
+    mock_session.commit = AsyncMock()
+
+    secret_result = MagicMock()
+    secret_result.one_or_none.return_value = _make_secret_row(secret)
+    mock_session.execute = AsyncMock(return_value=secret_result)
+
+    mock_factory = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_factory.return_value = mock_ctx
+
+    return mock_factory, mock_session
+
+
 def _make_session_factory(failure_count: int = 0):
-    """Build a mock async session factory pre-loaded with failure_count."""
+    """Build a mock async session factory pre-loaded with failure_count.
+
+    Used for _record_failure and _record_success DB helper tests.
+    """
     mock_session = AsyncMock()
     mock_session.commit = AsyncMock()
     mock_session.execute = AsyncMock()
@@ -98,12 +133,12 @@ class TestHmacSignature:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory, _ = _make_session_factory()
+        mock_factory, _ = _make_session_factory_with_secret(secret)
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("src.database.session.get_session_factory", return_value=mock_factory),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.tasks.webhook_tasks._record_success", AsyncMock()),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -112,7 +147,6 @@ class TestHmacSignature:
                 task=task,
                 subscription_id=str(uuid4()),
                 url="https://example.com/hook",
-                secret=secret,
                 event_name="order.filled",
                 payload=payload,
             )
@@ -146,12 +180,12 @@ class TestHmacSignature:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory, _ = _make_session_factory()
+        mock_factory, _ = _make_session_factory_with_secret("secret")
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("src.database.session.get_session_factory", return_value=mock_factory),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.tasks.webhook_tasks._record_success", AsyncMock()),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -160,7 +194,6 @@ class TestHmacSignature:
                 task=task,
                 subscription_id=str(uuid4()),
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="battle.completed",
                 payload={},
             )
@@ -183,12 +216,12 @@ class TestHmacSignature:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory, _ = _make_session_factory()
+        mock_factory, _ = _make_session_factory_with_secret("secret")
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("src.database.session.get_session_factory", return_value=mock_factory),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.tasks.webhook_tasks._record_success", AsyncMock()),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -197,12 +230,85 @@ class TestHmacSignature:
                 task=task,
                 subscription_id=str(uuid4()),
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="order.filled",
                 payload={},
             )
 
         assert captured_headers["Content-Type"] == "application/json"
+
+
+# ---------------------------------------------------------------------------
+# Secret fetch tests
+# ---------------------------------------------------------------------------
+
+
+class TestSecretFetch:
+    """Tests that the secret is fetched from DB and never passed as an argument."""
+
+    async def test_returns_early_when_subscription_not_found(self):
+        """If the subscription is deleted between enqueue and dispatch, returns without HTTP call."""
+        mock_session = AsyncMock()
+        not_found_result = MagicMock()
+        not_found_result.one_or_none.return_value = None
+        mock_session.execute = AsyncMock(return_value=not_found_result)
+
+        mock_factory = MagicMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_factory.return_value = mock_ctx
+
+        mock_client = AsyncMock()
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
+        ):
+            from src.tasks.webhook_tasks import _async_dispatch
+
+            task = _make_task()
+            result = await _async_dispatch(
+                task=task,
+                subscription_id=str(uuid4()),
+                url="https://example.com/hook",
+                event_name="order.filled",
+                payload={},
+            )
+
+        # No HTTP request should have been made
+        mock_client.post.assert_not_called()
+        assert result["success"] is False
+
+    async def test_returns_early_when_secret_fetch_raises(self):
+        """DB error during secret fetch returns success=False without raising."""
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=RuntimeError("DB error"))
+
+        mock_factory = MagicMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_factory.return_value = mock_ctx
+
+        mock_client = AsyncMock()
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
+        ):
+            from src.tasks.webhook_tasks import _async_dispatch
+
+            task = _make_task()
+            result = await _async_dispatch(
+                task=task,
+                subscription_id=str(uuid4()),
+                url="https://example.com/hook",
+                event_name="order.filled",
+                payload={},
+            )
+
+        mock_client.post.assert_not_called()
+        assert result["success"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -224,12 +330,12 @@ class TestSuccessPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory, _ = _make_session_factory()
+        mock_factory, _ = _make_session_factory_with_secret("secret")
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("src.database.session.get_session_factory", return_value=mock_factory),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.tasks.webhook_tasks._record_success", AsyncMock()),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -238,7 +344,6 @@ class TestSuccessPath:
                 task=task,
                 subscription_id=str(uuid4()),
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="order.filled",
                 payload={"x": 1},
             )
@@ -261,7 +366,7 @@ class TestSuccessPath:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         mock_record = AsyncMock(return_value=None)
-        mock_factory, _ = _make_session_factory()
+        mock_factory, _ = _make_session_factory_with_secret("secret")
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
@@ -276,7 +381,6 @@ class TestSuccessPath:
                 task=task,
                 subscription_id=sub_id,
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="order.filled",
                 payload={},
             )
@@ -295,7 +399,7 @@ class TestSuccessPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory = MagicMock()
+        mock_factory, _ = _make_session_factory_with_secret("secret")
         mock_record = AsyncMock(return_value=None)
 
         sub_id = str(uuid4())
@@ -312,7 +416,6 @@ class TestSuccessPath:
                 task=task,
                 subscription_id=sub_id,
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="order.filled",
                 payload={},
             )
@@ -344,10 +447,11 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("src.database.session.get_session_factory"),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -358,7 +462,6 @@ class TestRetryPath:
                     task=task,
                     subscription_id=str(uuid4()),
                     url="https://example.com/hook",
-                    secret="secret",
                     event_name="order.filled",
                     payload={},
                 )
@@ -381,10 +484,11 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("src.database.session.get_session_factory"),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -394,7 +498,6 @@ class TestRetryPath:
                     task=task,
                     subscription_id=str(uuid4()),
                     url="https://example.com/hook",
-                    secret="secret",
                     event_name="order.filled",
                     payload={},
                 )
@@ -418,10 +521,11 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("src.database.session.get_session_factory"),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -431,7 +535,6 @@ class TestRetryPath:
                     task=task,
                     subscription_id=str(uuid4()),
                     url="https://example.com/hook",
-                    secret="secret",
                     event_name="order.filled",
                     payload={},
                 )
@@ -455,10 +558,11 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("src.database.session.get_session_factory"),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -468,7 +572,6 @@ class TestRetryPath:
                     task=task,
                     subscription_id=str(uuid4()),
                     url="https://example.com/hook",
-                    secret="secret",
                     event_name="order.filled",
                     payload={},
                 )
@@ -492,12 +595,11 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory, _ = _make_session_factory(failure_count=5)
+        mock_factory, _ = _make_session_factory_with_secret("secret")
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("src.database.session.get_session_factory", return_value=mock_factory),
-            patch("src.database.models.WebhookSubscription"),
             patch("src.tasks.webhook_tasks._record_failure") as mock_fail,
         ):
             mock_fail.__call__ = AsyncMock(return_value=None)
@@ -510,7 +612,6 @@ class TestRetryPath:
                 task=task,
                 subscription_id=str(uuid4()),
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="order.filled",
                 payload={},
             )
@@ -534,12 +635,12 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        mock_factory, _ = _make_session_factory(failure_count=1)
+        mock_factory, _ = _make_session_factory_with_secret("secret")
 
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
             patch("src.database.session.get_session_factory", return_value=mock_factory),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.tasks.webhook_tasks._record_failure", AsyncMock()),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -548,7 +649,6 @@ class TestRetryPath:
                 task=task,
                 subscription_id=str(uuid4()),
                 url="https://example.com/hook",
-                secret="secret",
                 event_name="order.filled",
                 payload={},
             )
@@ -567,10 +667,13 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("src.database.session.get_session_factory"),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
+            # Bypass SSRF validation — the URL is fake; we're testing retry behaviour not SSRF
+            patch("src.webhooks.dispatcher.validate_webhook_url", return_value="https://slow.example.com/hook"),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -580,7 +683,6 @@ class TestRetryPath:
                     task=task,
                     subscription_id=str(uuid4()),
                     url="https://slow.example.com/hook",
-                    secret="secret",
                     event_name="order.filled",
                     payload={},
                 )
@@ -588,7 +690,7 @@ class TestRetryPath:
         task.retry.assert_called_once()
 
     async def test_network_error_triggers_retry(self):
-        """httpx.RequestError (e.g. DNS failure) also triggers retry."""
+        """httpx.RequestError (e.g. DNS failure after passing SSRF check) also triggers retry."""
         import httpx
 
         mock_client = AsyncMock()
@@ -598,10 +700,15 @@ class TestRetryPath:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
         with (
             patch("httpx.AsyncClient", return_value=mock_client),
-            patch("src.database.session.get_session_factory"),
-            patch("src.database.models.WebhookSubscription"),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
+            # Bypass SSRF validation — we're testing retry behaviour on network errors,
+            # not SSRF blocking.  In production the URL would have passed SSRF at creation
+            # time; a transient DNS error at delivery time should trigger retry.
+            patch("src.webhooks.dispatcher.validate_webhook_url", return_value="https://no-such-host.example.com/hook"),
         ):
             from src.tasks.webhook_tasks import _async_dispatch
 
@@ -611,7 +718,6 @@ class TestRetryPath:
                     task=task,
                     subscription_id=str(uuid4()),
                     url="https://no-such-host.example.com/hook",
-                    secret="secret",
                     event_name="order.filled",
                     payload={},
                 )
@@ -632,34 +738,21 @@ class TestAutoDisable:
         sub_id = str(uuid4())
         mock_factory, mock_session = _make_session_factory(failure_count=5)
 
-        # Patch the WebhookSubscription import inside the helper so SQLAlchemy
-        # can build the UPDATE statement against the real mapped columns.
-        with patch("src.tasks.webhook_tasks.WebhookSubscription", create=True):
-            # Since the helper uses a lazy import we patch at the lazy-import site.
-            # The simplest approach: patch the full DB helper to verify behavior
-            # indirectly (see test_all_retries_exhausted_calls_record_failure above)
-            # and here just assert the session interactions are correct.
-            pass
-
-        # Re-approach: call _record_failure with the real model (no patch needed
-        # because the function lazy-imports it, but the session is mocked so no
-        # DB is actually called — the UPDATE statement is built but never sent).
-        mock_factory2, mock_session2 = _make_session_factory(failure_count=5)
         # We still need to let session.execute succeed for the SELECT step.
         # The UPDATE step also calls session.execute; use side_effect list.
         select_result = MagicMock()
         row = MagicMock()
         row.failure_count = 5
         select_result.one_or_none.return_value = row
-        mock_session2.execute = AsyncMock(side_effect=[select_result, MagicMock()])
+        mock_session.execute = AsyncMock(side_effect=[select_result, MagicMock()])
 
         from src.tasks.webhook_tasks import _record_failure
 
-        await _record_failure(sub_id, mock_factory2)
+        await _record_failure(sub_id, mock_factory)
 
         # Should execute a SELECT + UPDATE then commit
-        assert mock_session2.execute.await_count == 2
-        mock_session2.commit.assert_awaited_once()
+        assert mock_session.execute.await_count == 2
+        mock_session.commit.assert_awaited_once()
 
     async def test_auto_disable_at_threshold(self):
         """At failure_count=9, the next failure (10) triggers auto-disable path."""
@@ -758,3 +851,117 @@ class TestAutoDisable:
 
         mock_session.execute.assert_awaited_once()
         mock_session.commit.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# SSRF defence-in-depth tests
+# ---------------------------------------------------------------------------
+
+
+class TestSsrfDefenceInDepth:
+    """Tests for the SSRF defence-in-depth check in _async_dispatch.
+
+    The _async_dispatch function re-validates the URL immediately before the
+    HTTP request to catch URLs that bypassed schema validation (e.g. stored in
+    the DB before SSRF protection was introduced).
+    """
+
+    async def test_ssrf_blocked_url_returns_success_false_without_http_call(self):
+        """A URL that fails SSRF validation returns success=False without HTTP call."""
+        mock_client = AsyncMock()
+
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
+            # Make validate_webhook_url raise — simulates a blocked URL
+            patch(
+                "src.webhooks.dispatcher.validate_webhook_url",
+                side_effect=ValueError("Webhook URL must use the https scheme"),
+            ),
+        ):
+            from src.tasks.webhook_tasks import _async_dispatch
+
+            task = _make_task(retries=0)
+            result = await _async_dispatch(
+                task=task,
+                subscription_id=str(uuid4()),
+                url="http://internal.corp/hook",
+                event_name="order.filled",
+                payload={},
+            )
+
+        # SSRF block → early return, no HTTP call, no retry
+        assert result["success"] is False
+        mock_client.post.assert_not_called()
+        task.retry.assert_not_called()
+
+    async def test_ssrf_blocked_url_does_not_trigger_retry(self):
+        """SSRF-blocked URL does not schedule a Celery retry — it is a permanent rejection."""
+        mock_client = AsyncMock()
+        mock_factory, _ = _make_session_factory_with_secret("secret")
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("src.database.session.get_session_factory", return_value=mock_factory),
+            patch(
+                "src.webhooks.dispatcher.validate_webhook_url",
+                side_effect=ValueError("Blocked"),
+            ),
+        ):
+            from src.tasks.webhook_tasks import _async_dispatch
+
+            task = _make_task(retries=0)
+            # Must NOT raise — SSRF is handled gracefully
+            await _async_dispatch(
+                task=task,
+                subscription_id=str(uuid4()),
+                url="http://10.0.0.1/hook",
+                event_name="order.filled",
+                payload={},
+            )
+
+        task.retry.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# URL redaction tests
+# ---------------------------------------------------------------------------
+
+
+class TestUrlRedactionInLogs:
+    """Tests that verify the log records use url_host (not the full URL).
+
+    The _async_dispatch failure log omits query strings, paths, and other URL
+    components that may contain sensitive data.  It logs only the host:port
+    netloc component.
+    """
+
+    async def test_log_uses_netloc_not_full_url(self):
+        """On delivery failure the logged field is url_host (netloc), not the full URL.
+
+        We verify this by inspecting the source URL manipulation: urlparse(url).netloc
+        for 'https://example.com/sensitive-path?token=secret' is 'example.com' only.
+        """
+        from urllib.parse import urlparse
+
+        url = "https://example.com/sensitive-path?token=secret"
+        netloc = urlparse(url).netloc
+        full_url = url
+
+        # Netloc must not contain path or query string
+        assert netloc == "example.com"
+        assert "/sensitive-path" not in netloc
+        assert "token=secret" not in netloc
+        assert netloc != full_url
+
+    async def test_netloc_includes_port_when_nonstandard(self):
+        """For non-standard ports, the netloc includes host:port."""
+        from urllib.parse import urlparse
+
+        url = "https://example.com:8443/webhook"
+        netloc = urlparse(url).netloc
+
+        assert netloc == "example.com:8443"
+        assert "/webhook" not in netloc

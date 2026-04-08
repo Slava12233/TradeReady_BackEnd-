@@ -10,6 +10,7 @@
 | R2-01 through R2-08 fix verification (all HIGH recommendations) | 2026-03-23 | 0 CRITICAL; 1 HIGH (R2-04 partial — enforcement.py still routes to agent_feedback not agent_audit_log); 1 MEDIUM (pgAdmin default password); 2 LOW; CONDITIONAL PASS |
 | V.0.0.2 deployment changes: `src/config.py`, `src/main.py`, `.github/workflows/deploy.yml`, `.github/workflows/test.yml`, `.env.example`, `src/mcp/tools.py`, `src/api/routes/battles.py`, `src/api/routes/agents.py`, `src/tasks/agent_analytics.py` | 2026-03-30 | 0 CRITICAL; 1 HIGH (no wildcard CORS guard); 2 MEDIUM; 2 LOW; CONDITIONAL PASS |
 | Endgame readiness: `src/api/routes/metrics.py`, `src/api/routes/indicators.py`, `src/api/routes/webhooks.py`, `src/webhooks/dispatcher.py`, `src/tasks/webhook_tasks.py`, `src/api/schemas/{metrics,indicators,webhooks,strategies}.py`, modified `strategies.py` (compare) and `backtest.py` (fast-batch) | 2026-04-07 | 1 CRITICAL (SSRF in webhook URL); 2 HIGH (unbounded returns array DoS, secret in Celery result backend); 3 MEDIUM; 3 LOW; CONDITIONAL PASS |
+| V.0.0.3 re-audit: all endgame findings fix verification | 2026-04-07 | All 9 original findings RESOLVED; 2 new LOW (full URL in success + SSRF-block logs); **PASS** |
 
 ## Areas NOT Yet Audited (as of 2026-04-07)
 
@@ -62,19 +63,20 @@
 - `pg_dump` in `deploy.yml` runs inside the container via `docker compose exec -T timescaledb pg_dump -U agentexchange` — no password passed on the command line; relies on PostgreSQL local trust auth (running as the postgres user inside the container). This is standard and correct: no credential exposure in logs.
 - `ResourceNotFoundError` does NOT exist in `src/utils/exceptions.py`; replacing it with `HTTPException` was the correct fix. However, the `HTTPException` error format (`{"detail": "..."}`) differs from the platform standard format (`{"error": {"code": ..., "message": ...}}`).
 
-## Webhook System Security Patterns (verified 2026-04-07)
+## Webhook System Security Patterns (verified 2026-04-07, fixes verified same date)
 
-- **SSRF CRITICAL:** `WebhookCreateRequest.url` has no scheme or IP-range validation. Any user can register `http://localhost:6379` (Redis) or metadata endpoints. Fix: `@field_validator` rejecting non-https and RFC-1918/loopback addresses.
-- **Secret in Celery backend (HIGH):** `dispatch_webhook.delay(secret=sub.secret, ...)` stores the secret in Redis result backend for 1 hour (`result_expires=3600`). Fix: have the task fetch the secret from DB at execution time using `subscription_id`.
+- **SSRF RESOLVED:** `validate_webhook_url()` in `src/webhooks/dispatcher.py` blocks non-https schemes, bare IP literals, and any hostname resolving to loopback/link-local/RFC-1918/Docker-bridge IPs. Called from schema validators in both `WebhookCreateRequest` and `WebhookUpdateRequest`, and as defence-in-depth in `_async_dispatch` before `httpx.post()`.
+- **Secret in Celery backend RESOLVED:** `dispatch_webhook` no longer receives `secret` as an arg. `ignore_result=True` set. Task fetches secret from DB at dispatch time.
 - **HMAC direction:** The webhook system is outbound-only (server signs, subscriber verifies). There is NO inbound HMAC verification path — `hmac.compare_digest` is not applicable here.
-- **Secret exposure:** `WebhookCreateResponse` includes `secret` once at creation only. `WebhookResponse` (list/detail/update) omits it. `_sub_to_response()` does not include `secret`. Confirmed correct.
+- **Secret exposure:** `WebhookCreateResponse` includes `secret` once at creation only. `WebhookResponse` (list/detail/update) omits it. Confirmed correct.
 - **Account isolation:** `_get_owned_sub()` verifies `sub.account_id == account_id` before all mutations. `fire_event()` filters `WHERE account_id = :account_id`. No cross-account path.
-- **Subscription count limit:** No per-account cap exists on subscription count. An account can create unlimited subscriptions. Recommended max: 25 per account.
+- **Subscription count limit RESOLVED:** `create_webhook` checks `COUNT(*) WHERE account_id = account.id` against `settings.per_account_webhook_limit` (default 25) before insert.
+- **Residual LOW:** `webhook.delivery.success` log still includes `url=url` (full URL). Only `webhook.delivery.failed` was fixed to use `url_host=urlparse(url).netloc`. The new `webhook.delivery.ssrf_blocked` log also includes `url=url` (intentional for forensic value).
 
-## Public Endpoint Security Pattern (endgame routes)
+## Public Endpoint Security Pattern (endgame routes — updated)
 
-- `/api/v1/metrics/` prefix is in `_PUBLIC_PREFIXES` (no auth required). Endpoint does CPU-bound computation on user-supplied float arrays. The `returns` array has `min_length=10` but **no `max_length`**. This is a DoS risk on an unauthenticated endpoint. Pattern to watch: all public computation endpoints need both `min_length` AND `max_length`.
-- `/api/v1/market/indicators/*` inherits public access from the existing `/api/v1/market/` prefix. No new auth bypass.
+- `/api/v1/metrics/` is NO LONGER in `_PUBLIC_PREFIXES` (fix confirmed). The metrics endpoint now requires authentication (HTTP 401 for unauthenticated callers). All input bounds added: `max_length=10_000` on returns, `le=100_000` on num_trials, `le=525_600` on annualization_factor.
+- `/api/v1/market/indicators/*` inherits public access from the existing `/api/v1/market/` prefix. No auth bypass. Cache key hash length increased to `[:16]` (64-bit, was 32-bit).
 
 ## Passed Checks (stable — no need to re-audit unless code changes)
 

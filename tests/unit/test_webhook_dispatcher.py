@@ -18,6 +18,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -82,7 +84,6 @@ class TestFireEvent:
         mock_task.delay.assert_called_once_with(
             subscription_id=str(sub.id),
             url=sub.url,
-            secret=sub.secret,
             event_name="order.filled",
             payload={"order_id": "abc"},
         )
@@ -234,3 +235,119 @@ class TestFireEvent:
             )
 
         assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# SSRF protection tests — validate_webhook_url()
+# ---------------------------------------------------------------------------
+
+
+class TestValidateWebhookUrl:
+    """Tests for validate_webhook_url() SSRF protection.
+
+    These tests exercise the function directly without any network calls for
+    the blocked cases.  The happy-path test uses socket.getaddrinfo patching
+    to avoid a live DNS dependency.
+    """
+
+    def test_http_scheme_rejected(self):
+        """Plain http:// URLs are rejected — HTTPS is required."""
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        with pytest.raises(ValueError, match="https"):
+            validate_webhook_url("http://example.com/hook")
+
+    def test_non_https_scheme_rejected(self):
+        """Non-http schemes (ftp, ws) are also rejected."""
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        with pytest.raises(ValueError, match="https"):
+            validate_webhook_url("ftp://example.com/hook")
+
+    def test_bare_ip_literal_rejected(self):
+        """A URL using a bare IPv4 literal must be rejected."""
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        with pytest.raises(ValueError, match="bare IP"):
+            validate_webhook_url("https://93.184.216.34/hook")
+
+    def test_localhost_hostname_rejected(self):
+        """https://localhost/hook resolves to 127.0.0.1 and must be blocked."""
+        import socket
+        from unittest.mock import patch as local_patch
+
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        # Patch getaddrinfo so localhost always resolves to 127.0.0.1 regardless
+        # of the OS hosts file (avoids environment-specific behaviour).
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))]
+        with local_patch("socket.getaddrinfo", return_value=fake_addr):
+            with pytest.raises(ValueError, match="blocked"):
+                validate_webhook_url("https://localhost/hook")
+
+    def test_private_class_a_ip_rejected(self):
+        """A hostname resolving to RFC-1918 10.0.0.x must be rejected."""
+        import socket
+        from unittest.mock import patch as local_patch
+
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0))]
+        with local_patch("socket.getaddrinfo", return_value=fake_addr):
+            with pytest.raises(ValueError, match="blocked"):
+                validate_webhook_url("https://internal.corp/hook")
+
+    def test_link_local_aws_metadata_ip_rejected(self):
+        """A hostname resolving to 169.254.x.x (AWS metadata) must be rejected."""
+        import socket
+        from unittest.mock import patch as local_patch
+
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 0))]
+        with local_patch("socket.getaddrinfo", return_value=fake_addr):
+            with pytest.raises(ValueError, match="blocked"):
+                validate_webhook_url("https://metadata.aws/hook")
+
+    def test_private_class_c_ip_rejected(self):
+        """A hostname resolving to RFC-1918 192.168.x.x must be rejected."""
+        import socket
+        from unittest.mock import patch as local_patch
+
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 0))]
+        with local_patch("socket.getaddrinfo", return_value=fake_addr):
+            with pytest.raises(ValueError, match="blocked"):
+                validate_webhook_url("https://router.home/hook")
+
+    def test_valid_public_https_url_accepted(self):
+        """A valid HTTPS URL resolving to a public IP is accepted and returned."""
+        import socket
+        from unittest.mock import patch as local_patch
+
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        # 93.184.216.34 is the well-known example.com IP — a public address.
+        fake_addr = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))]
+        with local_patch("socket.getaddrinfo", return_value=fake_addr):
+            result = validate_webhook_url("https://example.com/hook")
+
+        assert result == "https://example.com/hook"
+
+    def test_unresolvable_hostname_rejected(self):
+        """A hostname that cannot be resolved raises ValueError (not OSError)."""
+        from unittest.mock import patch as local_patch
+
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        with local_patch("socket.getaddrinfo", side_effect=OSError("Name or service not known")):
+            with pytest.raises(ValueError, match="could not be resolved"):
+                validate_webhook_url("https://this-does-not-exist.example.invalid/hook")
+
+    def test_missing_hostname_rejected(self):
+        """A URL with no hostname component is rejected."""
+        from src.webhooks.dispatcher import validate_webhook_url
+
+        with pytest.raises(ValueError, match="hostname"):
+            validate_webhook_url("https:///path")
