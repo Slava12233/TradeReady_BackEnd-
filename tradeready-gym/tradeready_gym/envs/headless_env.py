@@ -234,19 +234,32 @@ class HeadlessTradingEnv(gym.Env):
         return text
 
     def close(self) -> None:
-        """Release the database connection pool and shut down the event loop."""
+        """Release the database connection pool.
+
+        The event loop is intentionally NOT closed here because SB3's
+        ``Monitor`` wrapper may call ``reset()`` after ``close()`` during
+        episode transitions.  The loop is only closed in ``__del__`` when
+        the env instance is garbage-collected.
+        """
         if self._db_engine is not None:
             try:
-                self._loop.run_until_complete(self._db_engine.dispose())
+                if not self._loop.is_closed():
+                    self._loop.run_until_complete(self._db_engine.dispose())
             except Exception:  # noqa: BLE001
                 logger.debug("headless_env.close: error disposing DB engine", exc_info=True)
-
-        try:
-            self._loop.close()
-        except Exception:  # noqa: BLE001
-            logger.debug("headless_env.close: error closing event loop", exc_info=True)
+            self._db_engine = None
+            self._session_factory = None
+            self._backtest_engine = None
 
         super().close()
+
+    def __del__(self) -> None:
+        """Ensure the event loop is cleaned up on garbage collection."""
+        try:
+            if hasattr(self, "_loop") and not self._loop.is_closed():
+                self._loop.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ── Internal async helpers ───────────────────────────────────────────────
 
