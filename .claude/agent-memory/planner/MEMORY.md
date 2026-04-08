@@ -1,6 +1,6 @@
 # Planner Agent Memory
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-04-08 -->
 
 ## Task Board Patterns
 
@@ -94,3 +94,26 @@ AuthMiddleware must run before RateLimitMiddleware so `request.state.account` is
 
 See [reference_completed_plans.md](reference_completed_plans.md) for full listing (7 boards complete, 177 total tasks, 1 plan pending).
 Sweet spot: 18-36 tasks per board. Over 36 signals scope creep; split into phases.
+
+---
+
+## CI/CD Deploy Flow (from `.github/workflows/deploy.yml`)
+
+1. Push to `main` triggers test → deploy pipeline
+2. SSH into server, record rollback commit + migration revision
+3. `pg_dump` backup (excludes hypertable data), `git reset --hard origin/main`
+4. `docker compose build api ingestion celery`, infrastructure health check
+5. `alembic upgrade head`, rolling restart (celery-beat → celery → api → ingestion)
+6. Health check curl; auto-rollback on failure (git checkout + alembic downgrade)
+
+Key: deploy is fully automated on push to `main`. No manual intervention needed.
+
+---
+
+## Recommendation Plan Pattern (learned 2026-04-08)
+
+For C-level recommendation execution plans, use this structure per recommendation:
+- Objective (success criteria), Prerequisites (checkboxes), Steps (numbered with commands/file paths)
+- Verification checklist, Estimated effort, Agent assignment, Dependencies, Risk table
+- Include: execution timeline (Gantt-style), dependency graph, quick wins section, summary table
+- Recommendations that can run in parallel should be grouped (Group A/B/C pattern from task boards)

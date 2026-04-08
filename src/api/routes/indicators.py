@@ -146,7 +146,7 @@ async def list_available_indicators() -> AvailableIndicatorsResponse:
 async def get_indicators(
     symbol: str,
     db: DbSessionDep,
-    redis: RedisDep,
+    redis: RedisDep,  # type: ignore[type-arg]
     indicators: Annotated[
         str | None,
         Query(
@@ -350,7 +350,7 @@ async def _get_cached(redis: object, cache_key: str) -> IndicatorResponse | None
     import redis.asyncio as aioredis  # noqa: PLC0415
 
     try:
-        raw: str | None = await redis.get(cache_key)  # type: ignore[union-attr]
+        raw: str | None = await redis.get(cache_key)  # type: ignore[attr-defined]
         if raw is None:
             return None
         data = json.loads(raw)
@@ -378,7 +378,7 @@ async def _set_cached(redis: object, cache_key: str, response: IndicatorResponse
 
     try:
         payload = response.model_dump(mode="json")
-        await redis.setex(cache_key, _CACHE_TTL_SECONDS, json.dumps(payload))  # type: ignore[union-attr]
+        await redis.setex(cache_key, _CACHE_TTL_SECONDS, json.dumps(payload))  # type: ignore[attr-defined]
     except (aioredis.RedisError, Exception) as exc:
         logger.warning(
             "market.indicators.cache_write_error",
@@ -386,7 +386,7 @@ async def _set_cached(redis: object, cache_key: str, response: IndicatorResponse
         )
 
 
-async def _fetch_candles(db: object, symbol: str, lookback: int) -> list[object]:
+async def _fetch_candles(db: object, symbol: str, lookback: int) -> list:
     """Query the last *lookback* 1-minute candles for *symbol* from TimescaleDB.
 
     Uses the ``candles_1m`` continuous-aggregate view, ordered oldest-first so
@@ -413,7 +413,7 @@ async def _fetch_candles(db: object, symbol: str, lookback: int) -> list[object]
             "ORDER BY bucket DESC "
             "LIMIT :limit"
         )
-        result = await db.execute(raw_sql, {"symbol": symbol, "limit": lookback})  # type: ignore[union-attr]
+        result = await db.execute(raw_sql, {"symbol": symbol, "limit": lookback})  # type: ignore[attr-defined]
         rows = result.fetchall()
         # Reverse to get oldest-first chronological order.
         return list(reversed(rows))
