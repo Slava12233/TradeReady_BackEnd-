@@ -1,6 +1,6 @@
 # API Routes
 
-<!-- last-updated: 2026-04-02 -->
+<!-- last-updated: 2026-04-07 -->
 
 > FastAPI route modules implementing all REST endpoints for the AI Agent Crypto Trading Platform.
 
@@ -296,6 +296,8 @@ Follow the pattern in `backtest.py`: call `engine._get_active(session_id)` to ge
 
 ## Recent Changes
 
+- `2026-04-07` — `backtest.py`: Fixed orphan detection in `/backtest/{id}/status` that prematurely marked newly-created sessions as `"failed"` before they could register in the in-memory engine. Now checks `is_active()` before applying orphan timeout. Fixed compare endpoint (`GET /backtest/compare`) returning null metrics for cancelled sessions.
+- `2026-04-07` — `battles.py`: `GET /battles/{id}/live` now computes and returns `elapsed_minutes`, `remaining_minutes`, and `updated_at`. Uses `model_validate()` on the typed `BattleLiveParticipantSchema` to enforce the 13-field contract.
 - `2026-04-02` (BUG-017) — `account.py`: `/account/positions` now fetches `opened_at` from the `Position` table directly via a separate query, replacing the epoch sentinel (`1970-01-01`) that was previously returned. Also fixed `asyncio.gather` on a shared DB session (caused `IllegalStateChangeError`); positions and portfolio queries now run sequentially.
 - `2026-04-02` (BUG-012) — `market.py`: `GET /market/tickers` `symbols` query parameter is now optional; when omitted all cached tickers are returned. Previously required, causing 422 errors for clients that expected bulk fetch behavior.
 - `2026-04-02` (BUG-003) — `battles.py`: `_battle_to_response()` now checks SQLAlchemy `inspect(battle).attrs.participants.loaded_value` state before accessing the relationship, preventing `MissingGreenlet` errors when participants are not eagerly loaded.

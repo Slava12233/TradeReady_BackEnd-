@@ -52,10 +52,10 @@ Pattern seen in `development/CLAUDE.md` timeline entries:
 - Never prune Decisions or Learnings sections
 - Prune only change logs when file exceeds 500 lines
 
-## Known Incomplete Areas (as of 2026-03-21)
+## Known Completed Since Last Update
 
-- `Frontend/src/components/battles/` — empty, not yet built; CLAUDE.md exists but has placeholder content
-- Agent ecosystem (Phase 1+2) just completed — `agent/conversation/`, `agent/memory/`, `agent/permissions/`, `agent/trading/` CLAUDE.md files were created as part of those phases
+- `Frontend/src/components/battles/` — fully built (2026-03-22): 7 components, 2 routes, 2 hooks, 14 API functions, 15 types. Live battle crash fixed (2026-04-07).
+- Agent ecosystem (Phase 1+2) complete — all CLAUDE.md files exist for `agent/conversation/`, `agent/memory/`, `agent/permissions/`, `agent/trading/`
 
 ## Root CLAUDE.md Index Tables
 
@@ -80,7 +80,7 @@ When adding a new CLAUDE.md, insert into the correct table section.
 - `/analyze-agents` skill added; `/review-changes` updated with feedback capture
 - 3 activity logging scripts added to `scripts/`
 - Agent Logging System (34 tasks) complete as of 2026-03-21; `monitoring/CLAUDE.md` created (new directory)
-- Alembic head is now 019 (was 017 after ecosystem); DB now has 35+ tables including agent_api_calls and agent_strategy_signals
+- Alembic head is now 022 (021 after QA sprint, 022 after backtest stop_price fix 2026-04-07); DB now has 35+ tables including agent_api_calls, agent_strategy_signals, backtest_trades.stop_price
 - `src/monitoring/metrics.py` created (new file in existing directory — update `src/monitoring/CLAUDE.md` when working there)
 - 3 new API endpoints added to agents router (trace, analyze, feedback PATCH); agents.py now has 17 endpoints
 - [project_master_plan_progress.md](project_master_plan_progress.md) — Trading Agent Master Plan task completion status and test counts by phase

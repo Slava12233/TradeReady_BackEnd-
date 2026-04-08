@@ -17,8 +17,8 @@ tags:
 
 ## Current State
 
-**Active work:** Production stable. Battle live UI crash fix deployed. 166 battle tests passing (161 passed, 5 skipped Docker-dependent).
-**Last session:** 2026-04-07 — Battle live crash fix: resolved "Cannot read properties of undefined (reading 'toFixed')" on `GET /battles/{id}/live`. Backend/frontend data shape was completely mismatched (6 vs 13 fields, different names). Fixed schema, route, service, and 3 frontend components. All tests updated.
+**Active work:** Production stable. Battle live crash fixed. Backtest stop_price gap fixed (BT-02, BT-17). Migration 022 applied. CLAUDE.md files synced.
+**Last session:** 2026-04-07 — (1) Battle live crash fix: resolved "Cannot read properties of undefined (reading 'toFixed')" on `GET /battles/{id}/live` — data shape mismatch (6 vs 13 fields). Typed `BattleLiveParticipantSchema`, `!= null` guard fix, 3 frontend components updated. (2) Backtest fixes: BT-02/BT-17 stop_price now persisted through sandbox→engine→DB (migration 022); orphan detection race condition fixed. (3) Context manager sync: context.md pruned 931→409 lines; 5 CLAUDE.md files updated (alembic, backtesting, database, api/routes, battles/schema).
 **Previous session:** 2026-04-06 — CLAUDE.md sync: fixed 10 missing agent ecosystem repo files in `src/database/repositories/CLAUDE.md`; updated timestamps and recent-changes entries for `src/agents`, `src/database`, and `src/database/repositories`.
 **Next steps:** (1) Monitor production stability. (2) Resume strategy search system: Build Module A (Feature Pipeline), Module B (Signal Interface), Module C (Deflated Sharpe). Implementation plan in `development/implementation-plan-a-to-z.md`.
 **Blocked:** Nothing.
@@ -104,7 +104,7 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 
 Each account owns multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. All trading tables keyed by `agent_id`. Auth flow: API key tries agents table first, falls back to accounts. JWT uses `X-Agent-Id` header.
 
-### Database (21 migrations, current head: 021)
+### Database (22 migrations, current head: 022)
 
 Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable), `agent_api_calls`, `agent_strategy_signals`, `agent_audit_log`
 
@@ -150,7 +150,7 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 
 ## Recent Activity
 
-### 2026-04-07 — Battle Live Crash Fix (frontend/backend data shape mismatch)
+### 2026-04-07 — Battle Live Crash Fix + Backtest Bug Fixes (BT-02, BT-17, orphan detection)
 
 **Changes:**
 - `src/api/schemas/battles.py` — Added typed `BattleLiveParticipantSchema` (13 fields: agent_id, agent_name, avatar_url, color, current_equity, roi_pct, total_pnl, total_trades, win_rate, rank, sharpe_ratio, max_drawdown_pct, status). Updated `BattleLiveResponse` to include `elapsed_minutes`, `remaining_minutes`, and `updated_at` fields that were previously absent.
@@ -161,6 +161,11 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 - `Frontend/src/components/battles/BattleList.tsx` — Made leader ROI display null-safe.
 - `tests/integration/test_battle_endpoints.py` — Updated all mocks to use new field names (`current_equity`, `roi_pct`, `total_pnl` instead of `equity`, `pnl`, `pnl_pct`).
 - `tests/integration/test_real_user_scenario_e2e.py` — Updated mocks for new field names.
+- `src/backtesting/sandbox.py` — `BacktestSandbox` now records `stop_price` on `SandboxTrade` for stop-loss/take-profit fills. Fixes BT-02 (stop_price missing from trade objects) and BT-17 (take-profit stop_price was None).
+- `src/backtesting/engine.py` — `_persist_results()` writes `stop_price` to `BacktestTrade` DB rows.
+- `src/api/routes/backtest.py` — Fixed orphan detection logic that was incorrectly marking newly-created sessions as `"failed"` before they could start. Also fixed compare endpoint returning null metrics for cancelled sessions.
+- `alembic/versions/022_add_stop_price_to_backtest_trades.py` — New migration: nullable `stop_price NUMERIC(20,8)` on `backtest_trades`. Head: 021 → 022.
+- `tests/unit/test_backtest_sandbox.py` — Updated to verify `stop_price` on filled stop-loss/take-profit trades.
 
 **Decisions:**
 - Introduced typed `BattleLiveParticipantSchema` to replace the previous `dict[str, object]` for live participant data. This makes the mismatch between backend and frontend impossible going forward — the schema now documents the exact 13-field contract.
@@ -169,6 +174,8 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 
 **Bugs fixed:**
 - **Battle live UI crash** — "Cannot read properties of undefined (reading 'toFixed')" — Root cause: frontend called `.toFixed()` on fields like `roi_pct` and `total_pnl` that were `undefined` because the backend used different field names (`pnl_pct`, `pnl`) than what the TypeScript types expected. The `!== null` guard didn't catch `undefined`. Primary crash fix was `!= null` in `BattleDetail.tsx`; full fix required aligning all 13 field names between backend schema and frontend types.
+- **BT-02 / BT-17 (stop_price missing)** — `BacktestSandbox` computed stop-loss/take-profit fills but did not populate `stop_price` on the resulting `SandboxTrade`. Engine didn't write it to the DB either. Fixed by threading `stop_price` from sandbox through engine to DB + migration 022.
+- **Orphan detection killing new sessions** — `GET /backtest/{id}` orphan detection logic checked session age from `created_at` and prematurely marked newly-created (not yet started) sessions as `"failed"` if the check ran before the session was registered in `_active`. Fixed by checking `is_active()` before applying orphan timeout logic.
 
 **Learnings:**
 - `!== null` (strict) vs `!= null` (loose) is a significant distinction in TypeScript null-checking. Using `!= null` catches both `null` and `undefined`; `!== null` only catches `null`. For any field that could arrive as `undefined` from an API mismatch, the loose check is safer as a crash guard.
@@ -322,560 +329,31 @@ New Files:
 
 ---
 
-### 2026-03-23 — Strategy Research & Implementation Planning
+### 2026-03-23 — `/c-level-report` Skill, C-Level Recommendations, Strategy Research
 
-**Changes:**
-
-Research Documents Created:
-- `development/strategy-research-complete.md` — Comprehensive A-Z research: current platform state (15 production systems), 5 existing strategies, autoresearch integration plan (Karpathy loop adapted for trading), 20+ new strategy candidates across 4 priority tiers, tools/libraries to add, data sources to integrate, search funnel architecture, overfitting prevention (Deflated Sharpe Ratio)
-- `development/strategy-research-intern-guide.md` — Same content rewritten for a senior middle school intern: every concept explained with analogies, full glossary of 30+ trading/ML terms
-- `development/training-loops-research-intern-guide.md` — Complete analysis of all 7 training loops: how they connect, exact schedules (ensemble 8h, regime 7d, genome 7d, PPO 30d, drift continuous), real costs ($0.35/month total for all training), time budgets, weekly/monthly play-by-play, what-can-go-wrong guide
-- `development/implementation-plan-a-to-z.md` — 16-module build plan across 6 phases (10 weeks): Module A (Feature Pipeline) through Module P (Order Flow). Each module specifies: files to create, interfaces, config, tests, time estimate, cost, dependencies
-
-Codebase Audit Results (14 of 16 planned modules MISSING):
-- MISSING: Autoresearch harness, cross-sectional momentum, pairs trading, volume spike detector, LLM sentiment signal, transformer prediction, Deflated Sharpe Ratio, funding rate arb, VectorBT, synthetic data, order flow analysis, external data connectors, modular strategy template, pluggable signal interface
-- PARTIAL: Walk-forward (3 of 5 strategies), feature engineering (3 separate implementations, no unified pipeline), signal aggregation (hardwired to 3 sources, not pluggable)
-- EXISTS: Mean reversion (config only in regime strategy_definitions.py)
-
-**Decisions:**
-- Vision clarified: goal is to find ONE best strategy via automated search, not run 1000 agents in parallel. Agents are test subjects during search, not permanent production runners.
-- Build order determined by dependency analysis: Foundation (A/B/C) → First Strategies (D/E/F) → Autoresearch (G/H) → Stat-Arb (I/J) → Data (K/L/M) → Advanced ML (N/O/P)
-- Autoresearch scoring: composite = Sharpe × (1 - max_drawdown/0.50), with hard rejects at DD>30%, Sharpe<0, trades<50
-- Start with free data sources only (Fear & Greed, CoinGecko, Binance depth); add paid sources only if strategy search shows they help
-
-**Learnings:**
-- All ML training loops combined cost ~$0.35/month in LLM API fees. $5/day LLM budget uses <1% for training.
-- PPO training on CPU takes 30-60 min for 500K timesteps — no GPU needed
-- Regime classifier retrains in ~30 seconds (XGBoost is incredibly fast for 8,760 samples)
-- Deflated Sharpe Ratio is CRITICAL before mass-testing: testing 1000 strategies produces expected best Sharpe of 3.72 by pure luck
-- Karpathy autoresearch yields ~12 experiments/hour, ~100 overnight — directly applicable to our strategy template
-
----
-
-### 2026-03-23 — All 5 C-Level Recommendations Implemented (39 Tasks Complete)
-
-**Changes:**
-
-Phase 1 — Docker Infrastructure:
-- `.env` created from `.env.example`, all Docker Compose services started and healthy
-- Alembic migrations applied (head: 019), exchange pairs seeded, 5 agent accounts provisioned
-- Grafana dashboards imported and Prometheus scrape targets verified
-- Historical candle data backfill initiated (12+ months BTC/ETH/USDT pairs)
-
-Phase 2 — Security Hardening (all 7 HIGH issues resolved):
-- `agent/permissions/manager.py` — ADMIN role check added to `grant_capability()` and `set_role()`; privilege escalation vector closed (R2-01)
-- `agent/permissions/budget.py` — `ensure_future` tasks tracked and awaited; no more fire-and-forget async budget updates (R2-02)
-- `docker-compose.yml` — Redis `requirepass` enabled + Docker internal bind only; Redis no longer accessible externally (R2-03)
-- `agent/permissions/audit.py` — "allow" audit events now persisted to `agent_audit_log`; previously only denials were stored (R2-04)
-- `agent/strategies/rl/train.py` — SHA-256 checksum verified before every `PPO.load()` call; prevents loading tampered model files (R2-05)
-- `agent/strategies/evolutionary/evolve.py` — Checksum verification added before `joblib.load()` for genome serialization (R2-06)
-- CLI entrypoints — All remaining `--api-key` argument exposures removed from 3 CLI scripts; API keys passed via env var only (R2-07)
-- `agent/trading/loop.py`, `agent/server_handlers.py` — All `float(Decimal)` casts replaced with `Decimal`-safe arithmetic (R2-08)
-- `agent/tests/test_security_regression.py` — 20 regression tests covering all 7 security fixes (R2-10)
-
-Phase 3 — Regime Classifier Training:
-- Regime classifier trained on 12-month BTC 1h data: 99.92% test accuracy (R3-01, R3-02)
-- Regime switcher demo run: correct bull/bear/sideways/volatile transitions validated (R3-03)
-- Walk-forward validation: WFE 97.46% (well above 50% deployability threshold) (R3-04)
-- Backtest comparison: Regime strategy Sharpe 1.14 vs MACD 0.74 vs Buy-and-Hold 0.61 (R3-05, R3-06)
-
-Phase 4 — Continuous Retraining Pipeline:
-- `src/tasks/retrain_tasks.py` — Celery task wrapping `RetrainOrchestrator` with A/B gate on all deployments (R5-01)
-- `src/tasks/celery_app.py` — 4 new beat schedule entries: ensemble weights 8h, regime 7d, genome 7d, PPO 30d (R5-02)
-- `agent/trading/loop.py` — `DriftDetector` wired into live `TradingLoop._observe()` with retrain trigger (R5-03)
-- `src/monitoring/metrics.py` — 4 new Prometheus metrics for retrain events (retrain_triggered, retrain_completed, retrain_duration_seconds, retrain_ab_gate_result) (R5-04)
-- `monitoring/dashboards/retraining.json` — New Grafana dashboard panel for retraining event timeline (R5-05)
-- `agent/tests/test_retrain_integration.py` — 29 integration tests for retrain Celery tasks and drift-triggered retrain flow (R5-06)
-
-Quality Gate:
-- Full code review passed (QG-01): 0 blockers, 3 MEDIUM suggestions noted
-- Full test suite passed (QG-02): all existing tests green, 49 new tests added
-- Context and CLAUDE.md files updated (QG-03): 12 CLAUDE.md files synced (permissions, regime, strategies, rl, trading, tasks, database, monitoring, tests, agent, sdk, alembic)
-
-**Decisions:**
-- Redis `requirepass` approach over network ACLs — simpler to maintain in Docker Compose; network ACLs require custom redis.conf volume mounts and add operational complexity without meaningful security gain in this deployment topology
-- Checksum verification uses SHA-256 stored alongside model file (`.sha256` sidecar) — avoids DB dependency at load time; `.sha256` files committed to git for auditability
-
-**Learnings:**
-- Regime classifier achieved 99.92% accuracy on 12-month BTC data with 6 features (added `volume_ratio` was the key improvement over 5-feature baseline at ~87%)
-- WFE of 97.46% indicates very low overfitting; regime strategy generalizes well out-of-sample — the walk-forward validation confirmed the classifier is not curve-fitted to specific market periods
-
----
-
-### 2026-03-23 — `/c-level-report` Skill Created (7th Skill)
-
-**Changes:**
-- `.claude/skills/c-level-report/SKILL.md` — Core workflow definition: 6 steps, 11 report sections, 9 rules. Invoked via `/c-level-report [scope]`. Gathers metrics from 12 data sources (git, tests, code reviews, agent memory, daily notes, Grafana, task boards, etc.)
-- `.claude/skills/c-level-report/templates/report-template.md` — Section templates and visual elements reference (progress bars, KPI tables, risk matrices, mermaid diagrams)
-- `.claude/skills/c-level-report/examples/sample-report.md` — Realistic sample report (~310 lines) using actual project data
-- `development/C-level_reports/.gitkeep` — Output directory created for generated reports
-- `development/tasks/c-level-report-skill/` — 5 task files + README + run-tasks.md for the skill build process
-- `development/c-level-report-skill-plan.md` — Implementation plan for the skill
-
-**CLAUDE.md updates (done inline by task agent):**
-- Root `CLAUDE.md` — `/c-level-report` row added to Skills table; skill count updated to 7
-- `.claude/skills/CLAUDE.md` — New row in inventory table; `Recent Changes` entry added; `last-updated` set to 2026-03-23
-- `development/CLAUDE.md` — `C-level_reports/` added to subdirectories table; `c-level-report-skill/` added to tasks listing; `Recent Changes` entry added
-
-**Decisions:**
-- Skill saves to `development/C-level_reports/` (not `development/reports/`) — consistent with Obsidian vault structure and the skill name; directory name mirrors the command
-- Supports 6 scope variants (full, progress, quality, risk, agents, roadmap) — covers CTO, CPO, and investor audiences with a single skill
-- Report uses markdown progress bars (`[====------] 40%`) — renders cleanly in both Obsidian and GitHub without requiring chart libraries
+`/c-level-report` skill created (7th skill): `.claude/skills/c-level-report/SKILL.md` + templates + example, 6 scope variants, gathers from 12 data sources, outputs to `development/C-level_reports/`. All 5 C-level recommendations complete (39 tasks): Docker infra, security hardening (7 HIGH → 0 HIGH: privilege escalation, async budget leak, Redis password, audit logging, model checksum), regime classifier trained (99.92% accuracy, WFE 97.46%, Sharpe 1.14 vs MACD 0.74), continuous retraining pipeline (4 Celery beat schedules, DriftDetector in TradingLoop, Prometheus retrain metrics, Grafana panel, 29 integration tests). Strategy research completed: 4 documents created (`strategy-research-complete.md`, `strategy-research-intern-guide.md`, `training-loops-research-intern-guide.md`, `implementation-plan-a-to-z.md`). 16-module build plan across 6 phases; codebase audit found 14 of 16 planned modules missing. Key decisions: goal is ONE best strategy via automated search; autoresearch scoring: composite = Sharpe × (1 - DD/0.50); start with free data sources only. Key learnings: DSR is critical before mass-testing (1000 strategies produces expected best Sharpe 3.72 by pure chance); regime classifier's `volume_ratio` feature took accuracy from ~87% to 99.92%; all 7 ML training loops cost ~$0.35/month.
 
 ---
 
 ### 2026-03-22 — Trading Agent Master Plan ALL 37 Tasks Complete (~1200+ New Tests)
 
-**Changes:**
+All 37 tasks of the Trading Agent Master Plan completed. Key deliverables: `DriftDetector` (Page-Hinkley test in `TradingLoop`), `RetrainOrchestrator` (4 Celery schedules: ensemble 8h, regime 7d, genome 7d, PPO 30d; A/B gate on deployments), `WalkForwardValidator` (WFE metric, `is_deployable=False` at WFE < 50%, 94 tests), `RecoveryManager` (3-state FSM: RECOVERING→SCALING_UP→FULL, Redis-backed, ATR normalization), `StrategyCircuitBreaker` (3 trigger rules, Redis TTL pauses), `PairSelector` (volume/momentum ranking with TTL cache), `WSManager` (ticker + order channel subscriptions, REST fallback), memory-driven learning loop, 5 new REST tools, 6 advanced order tools (SDK count: 17→25). Battle frontend: 7 components (BattleList, BattleDetail, BattleCreateDialog, BattleLeaderboard, BattleReplay, EquityCurveChart, AgentPerformanceCard), 2 routes, 2 hooks, 14 API functions, 15 TypeScript types. Agent dashboard analytics: 4 components, 2 hooks. Prometheus/Grafana: auto-provisioning volume mounts, `rule_files:` stanza, `agent:8001` scrape job. ~1200+ new tests. Key decisions: DriftDetector uses Page-Hinkley (not CUSUM) — single hyperparameter, well-suited for return streams; RetrainOrchestrator uses A/B gate on all deployments (min_improvement=0.01); `settle_agent_decisions` runs every 5 min; `monitoring/provisioning/` maps to `/etc/grafana/provisioning/` (not `/var/lib/grafana/`). Phase 0 Group A also completed: Redis cache glob bug fixed, working memory 24h TTL, `LogBatchWriter` singleton wired into `AgentServer`, 7 `IntentRouter` handlers, `PermissionDenied` as `TradingPlatformError` subclass, migrations 018/019 validated. 74 additional tests.
 
-New files created:
-- `agent/server_handlers.py` — 7 async intent handler functions + `REASONING_LOOP_SENTINEL` for fallback routing
-- `agent/tests/test_server_writer_wiring.py` — 20 tests for `LogBatchWriter` singleton wiring in `AgentServer`
-- `agent/tests/test_server_handlers.py` — 54 tests for all 7 intent handlers
-- `agent/strategies/risk/recovery.py` — `RecoveryManager` 3-state FSM (RECOVERING→SCALING_UP→FULL), Redis persistence, ATR normalization
-- `agent/strategies/ensemble/circuit_breaker.py` — `StrategyCircuitBreaker`: 3 trigger rules (consecutive losses, weekly drawdown, ensemble accuracy), Redis-backed TTL pauses
-- `agent/strategies/ensemble/attribution.py` — `AttributionLoader`, `AttributionResult`: reads 7-day Celery-computed PnL attribution, updates `MetaLearner` weights, auto-pauses negative-PnL strategies
-- `agent/strategies/drift.py` — `DriftDetector` using Page-Hinkley test; integrated into `TradingLoop._observe()`
-- `agent/strategies/retrain.py` — `RetrainOrchestrator`: 4 schedules (ensemble weights 8h, regime classifier 7d, genome population 7d, PPO RL 30d), A/B gate on deployments
-- `agent/strategies/walk_forward.py` — `WalkForwardConfig`, `WindowResult`, `WalkForwardResult`, `generate_windows()`, `compute_wfe()`, `run_walk_forward()`, `walk_forward_rl()`, `walk_forward_evolutionary()`; WFE < 50% triggers `is_deployable=False`
-- `agent/trading/ws_manager.py` — `WSManager`: subscribes to ticker + order channels, maintains price buffer, handles fill notifications, REST fallback on disconnect
-- `agent/trading/pair_selector.py` — `PairSelector`, `SelectedPairs`, `PairInfo`: volume/momentum ranking with TTL cache and `asyncio.Lock`
-- `tradeready-gym/tradeready_gym/rewards/composite.py` — `CompositeReward`: 4-factor weighted reward (Sortino, PnL, activity, drawdown)
-- `scripts/e2e_provision_agents.py` — provisions 5 trading agents with distinct risk profiles for production deployment
-- `monitoring/provisioning/datasources/prometheus.yml` — Grafana auto-provisioned datasource (Prometheus, uid `prometheus`)
-- `monitoring/provisioning/dashboards/dashboards.yml` — Grafana dashboard loader (serves all JSON from `/var/lib/grafana/dashboards`)
-- `Frontend/src/components/battles/*.tsx` — 7 battle UI components (BattleList, BattleDetail, BattleCreateDialog, BattleLeaderboard, BattleReplay, EquityCurveChart, AgentPerformanceCard)
-- `Frontend/src/components/dashboard/strategy-attribution-chart.tsx` — bar chart of avg PnL per direction from decisions API
-- `Frontend/src/components/dashboard/equity-comparison-chart.tsx` — multi-line Recharts overlay for all non-archived agents
-- `Frontend/src/components/dashboard/signal-confidence-histogram.tsx` — histogram of confidence scores in 10 deciles
-- `Frontend/src/components/dashboard/active-trade-monitor.tsx` — live PnL per open position, sorted by abs PnL
-- `Frontend/src/hooks/use-battles.ts` — TanStack Query hook: list battles, filter by status, create, start, stop
-- `Frontend/src/hooks/use-battle-results.ts` — TanStack Query hook: single battle detail, live metrics, results
-- `Frontend/src/hooks/use-agent-decisions.ts` — decision analysis hook (direction/confidence/pnl_outcome filters)
-- `Frontend/src/hooks/use-agent-equity-comparison.ts` — parallel multi-agent equity history via `useQueries`
-- `Frontend/src/app/(dashboard)/battles/page.tsx` — battles list page
-- `Frontend/src/app/(dashboard)/battles/[id]/page.tsx` — battle detail/live dashboard page
 
-Modified files:
-- `agent/memory/redis_cache.py` — `get_cached()` bug fix (HGET→HGETALL pipeline), `set_working()` 24h TTL
-- `agent/logging_middleware.py` — added optional `writer: LogBatchWriter` param
-- `agent/server.py` — `LogBatchWriter` singleton (`batch_writer` property), `IntentRouter` with 7 handlers, `WSManager` init/shutdown
-- `agent/tools/sdk_tools.py` — added `get_ticker()` and `get_pnl()` tools (count: 13→15)
-- `agent/tools/rest_tools.py` — added 5 REST tools (`compare_backtests`, `get_best_backtest`, `get_equity_curve`, `analyze_decisions`, `update_risk_profile`; count: 11→16)
-- `agent/trading/loop.py` — WS integration via `ws_manager`, drift detector hookup
-- `agent/trading/signal_generator.py` — volume confirmation filter, confidence threshold 0.5→0.55
-- `agent/trading/journal.py` — `save_episodic_memory()`, `save_procedural_memory()` for memory-driven learning
-- `agent/conversation/context.py` — memory retrieval in context builder, `build_trade_context()`
-- `agent/strategies/regime/labeler.py` — `volume_ratio` added as 6th feature
-- `agent/strategies/regime/classifier.py` — 6-feature input vector (was 5)
-- `agent/strategies/risk/sizing.py` — `KellyFractionalSizer`, `HybridSizer`, `SizingMethod` enum added
-- `agent/strategies/risk/risk_agent.py` — `DrawdownProfile`, `DrawdownTier`, 3 presets (AGGRESSIVE/MODERATE/CONSERVATIVE)
-- `agent/strategies/risk/veto.py` — `scale_factor` on `VetoDecision`
-- `agent/strategies/risk/middleware.py` — correlation gate as step 5 (Pearson r on log-returns)
-- `agent/strategies/ensemble/meta_learner.py` — dynamic weights (rolling Sharpe, regime-conditional modifiers), `TradeOutcome`, `apply_attribution_weights()`
-- `agent/strategies/ensemble/run.py` — circuit breaker integration, `BacktestValidationReport`, `build_validation_report()`
-- `agent/strategies/evolutionary/evolve.py` — OOS composite fitness (5-factor), `walk_forward_evolve()`
-- `agent/strategies/evolutionary/config.py` — `oos_split_ratio` field added
-- `agent/strategies/rl/config.py` — `composite` reward type + 5 new config fields
-- `agent/strategies/rl/train.py` — `CompositeReward` builder
-- `agent/strategies/rl/runner.py` — `walk_forward_train()` method
-- `agent/config.py` — `signal_confidence_threshold` field added
-- `src/utils/exceptions.py` — `PermissionDenied` added as `TradingPlatformError` subclass
-- `src/tasks/agent_analytics.py` — `settle_agent_decisions` task added (every 5 min)
-- `src/tasks/celery_app.py` — beat schedule 14→15 entries
-- `prometheus.yml` — `rule_files:` stanza, `agent:8001` scrape job
-- `docker-compose.yml` — Grafana provisioning volume mounts
-- `Frontend/src/lib/api-client.ts` — 14 battle API functions + 2 dashboard API functions (getAgentDecisionAnalysis, getAgentEquityHistory)
-- `Frontend/src/lib/types.ts` — battle types (15) + dashboard analytics types (5: DecisionItem, DecisionAnalysisResponse, DirectionStats, AgentEquityPoint, AgentEquityHistoryResponse)
-
-**Decisions:**
-- `DriftDetector` uses Page-Hinkley test (not CUSUM) — simpler, single hyperparameter (`delta=0.1`, `threshold=50.0`), and well-suited for trading return streams
-- `RetrainOrchestrator` uses A/B gate on all deployments — minimum improvement threshold (`min_improvement=0.01`) prevents deploying marginally worse retrained models
-- Battle frontend uses 7 components (not 9 as initially planned) — `BattleCard` and `BattleStatusBadge` were absorbed into `BattleList` and `BattleLeaderboard` respectively after UI review
-- `settle_agent_decisions` runs every 5 min (not 1 min) — balances latency vs DB load for decision resolution
-
-**Learnings:**
-- `monitoring/provisioning/` mount must map to `/etc/grafana/provisioning/` in docker-compose (not `/var/lib/grafana/provisioning/`) — Grafana reads provisioning from `/etc/grafana/provisioning/` at startup
-- Page-Hinkley test requires log-transformed returns (not raw price deltas) to be stationary — always transform before feeding to `DriftDetector`
-- `AttributionLoader` requires `period="attribution"` on `AgentPerformance` rows — this is written by the `agent_strategy_attribution` Celery task, not by the trading loop directly
 
 ---
 
-### 2026-03-22 — Task 29 Walk-Forward Validation Complete (94 New Tests)
+### 2026-03-21 — Agent Ecosystem Phases 1+2, Agent Memory & Learning System, Agent Logging System
 
-**Changes:**
+Agent Ecosystem Phase 1 (Tasks 01-20): 10 new DB models (migration 017), 10 repo classes, conversation system (session/history/context/router with 3-layer IntentRouter: keyword→regex→LLM), memory system (abstract store + Postgres + Redis hot cache, two-phase retrieval, relevance scoring), 5 agent tools (reflect_on_trade, review_portfolio, scan_opportunities, journal_entry, request_platform_feature), AgentServer with lifecycle + SIGTERM handlers, CLI REPL with 10 slash commands, 4 Celery beat tasks, 22 config fields. 370+ tests.
 
-- `agent/strategies/walk_forward.py` — New shared module (1100+ lines). `WalkForwardConfig` (Pydantic BaseSettings, env prefix `WF_`), `WindowResult` / `WalkForwardResult` (frozen Pydantic models), `generate_windows()` (calendar-aware rolling splits with end-of-month clamping), `compute_wfe()` (OOS/IS ratio, `None` on zero denominator), `run_walk_forward()` (async orchestrator with per-window error isolation and JSON report persistence), `walk_forward_rl()` (SB3 integration via `asyncio.to_thread`), `walk_forward_evolutionary()` (GA integration with `_create_evo_battle_runner()` factory for test seam), CLI entry point.
-- `agent/strategies/rl/runner.py` — Added `walk_forward_train()` synchronous method to `TrainingRunner`. Uses `asyncio.run()` to call `walk_forward_rl()`. Defaults dates from `config.train_start` / `config.test_end`.
-- `agent/strategies/evolutionary/evolve.py` — Added `walk_forward_evolve()` async function. Thin wrapper around `walk_forward_evolutionary()`.
-- `agent/tests/test_walk_forward.py` — 94 new tests across 11 test classes covering window splitting, WFE computation, config validation, frozen models, run orchestration, RL/evolutionary integrations, and `TrainingRunner` method.
-- `agent/strategies/CLAUDE.md` — Updated: `walk_forward.py` added to sub-package table, Task 29 in Recent Changes.
+Agent Ecosystem Phase 2 (Tasks 21-36): Permissions system (roles/capabilities/budget/enforcement; roles: READ_ONLY < STANDARD < ADVANCED < AUTONOMOUS < ADMIN), 4 CRITICAL security fixes (float precision, TOCTOU race, fail-open, default role), trading intelligence (TradingLoop 7-step cycle, SignalGenerator, TradeExecutor with UUID idempotency key, PositionMonitor, TradingJournal, StrategyManager, ABTestRunner with Welch's t-test). 414+ tests.
 
-**Key design decisions:**
-- WFE < 50% → `is_deployable=False` + `overfit_warning=True` in `WalkForwardResult`
-- Named factory `_create_evo_battle_runner()` is the single test seam for BattleRunner auth
-- `asyncio.to_thread` wraps SB3 synchronous training (CPU-bound, incompatible with async)
-- `structlog.get_logger(__name__)` called at module level — no `configure_agent_logging()` to avoid `PrintLogger.name` failure in tests
+Agent Memory & Learning System (14 tasks):  enabled on all 16 agents, 16 MEMORY.md files seeded, Memory Protocol in all 16 agent prompts, 3 activity logging scripts (log-agent-activity.sh, agent-run-summary.sh, analyze-agent-metrics.sh), PostToolUse hook in settings.json, /analyze-agents skill, /review-changes feedback capture.
 
-### 2026-03-22 — Trading Agent Master Plan Tasks 21-22, 24, 26-27, 30, 32-37 Complete (13 Tasks, 289 New Tests)
+Agent Logging System (34 tasks, 5 phases): Centralized structlog + trace_id correlation, LogBatchWriter async batched DB persistence (avoids per-call latency on hot path), 16 Prometheus metrics (AGENT_REGISTRY separate from platform registry), 2 new DB tables (agent_api_calls, agent_strategy_signals), trace_id on AgentDecision (migration 018), feedback lifecycle (migration 019), AuditMiddleware (fire-and-forget, never blocks request), 4 platform metrics in src/monitoring/metrics.py, 3 new agent API endpoints, 3 Celery analytics tasks, 6 Grafana dashboards, 11 Prometheus alert rules, 66 new tests.
 
-**Changes:**
-
-Phase 2 completion:
-- `agent/strategies/risk/recovery.py` — New `RecoveryManager` class: 3-state FSM (RECOVERING → SCALING_UP → FULL), Redis persistence, ATR normalization for HALT trigger, configurable ramp schedule. 53 tests. (Task 21)
-- Security review (Task 22): 0 CRITICAL, 0 HIGH found. 2 MEDIUM deferred: 1) `StrategyCircuitBreaker` failure mode for Redis OOM, 2) `DrawdownProfile` threshold validation gap. All risk gates confirmed fail-closed.
-
-Phase 3 (Intelligence):
-- `agent/tools/sdk_tools.py` — Added `get_ticker()` (24h volume/high/low/change) and `get_pnl()` (session PnL) tools. Tool count: 13 → 15. 35 new tests. (Task 24)
-- `agent/trading/signal_generator.py` — Volume confirmation filter: signals below `volume_confirmation_threshold` (default 0.8 of 20-period SMA) are suppressed. Confidence threshold raised from 0.5 to 0.55. (Task 24)
-- `agent/trading/pair_selector.py` — New `PairSelector`: fetches 24h tickers, ranks by volume, filters minimum $10M daily volume and max 5% spread, caches pair universe 1h in Redis, rotates weekly. 42 tests. (Task 26)
-- `agent/trading/ws_manager.py` — New `WSManager`: subscribes `AgentExchangeWS` to ticker and order channels for active pairs, maintains price buffer, handles fill notifications, REST fallback on WS disconnect. 46 tests. (Task 27)
-
-Phase 4 (Continuous Learning):
-- `agent/tasks.py` — Added `settle_agent_decisions` Celery beat task (every 5 min): finds unresolved decisions via `AgentDecisionRepository.find_unresolved()`, checks order fill status, calls `update_outcome(decision_id, outcome_pnl)`. 16 tests. (Task 30)
-- `agent/trading/journal.py` — `generate_reflection()` now saves EPISODIC and PROCEDURAL memories after each trade; retrieves top-5 PROCEDURAL memories for symbol/regime and includes in LLM prompt. 29 tests. (Task 32)
-- `agent/memory/retrieval.py` — `MemoryRetriever.retrieve_targeted()` added: retrieves by `memory_type` + `tags` for targeted procedural/episodic retrieval. (Task 32)
-
-Phase 5 (Platform Improvements):
-- `agent/tools/rest_tools.py` — 5 new REST tools: `compare_backtests`, `get_best_backtest`, `get_equity_curve`, `analyze_decisions`, `update_risk_profile`. 24 new tests. (Task 33)
-- `Frontend/src/components/battles/` — 9 new components: `BattleList`, `BattleCard`, `BattleDetail`, `BattleCreateForm`, `BattleLeaderboard`, `BattleParticipantRow`, `BattleStatusBadge`, `BattleTimeline`, `BattleResultsChart`. 3 routes added. 2 hooks: `useBattles`, `useBattleDetail`. 14 API functions in `api-client.ts`. 15 TypeScript types in `types.ts`. (Task 34)
-- `Frontend/src/components/agents/` — 4 new dashboard components: `StrategyAttributionCard`, `EquityComparisonChart`, `ConfidenceHistogram`, `TradeMonitorTable`. 2 new hooks: `useStrategyAttribution`, `useAgentDecisions`. (Task 35)
-
-Phase 6 (Monitoring & Hardening):
-- `monitoring/prometheus.yml` — Fixed scrape config: added `agent:8001` job alongside `platform:8000`. Alert rules loading validated. Grafana auto-provisioning confirmed. (Task 36)
-- Performance audit findings (Task 37): 2 HIGH — `ContextBuilder.build()` makes fresh network calls on every invocation (fix: add 30s cache for portfolio state); `WSManager` subscribes to all 600+ pairs instead of filtered pair universe (fix: wire `PairSelector` output). 3 MEDIUM — batch API calls for price fetches; add circuit breaker for REST fallback in `WSManager`; memory retrieval does full table scan without index. 1 LOW — `EnsembleRunner` re-instantiates `MetaLearner` on each step.
-
-**Decisions:**
-- `RecoveryManager` uses ATR normalization to determine HALT resumption (not a fixed time delay) — prevents resuming during a volatility spike that caused the halt; ATR returning to < 1.5x median is an objective condition, not an arbitrary wait.
-- Memory-driven learning uses `targeted retrieval` by type + tags rather than semantic search — procedural memories for a specific symbol/regime are structurally tagged; semantic search would surface irrelevant memories from other contexts.
-- `PairSelector` 1h cache instead of per-tick refresh — 24h volume rankings are stable at 1-minute granularity; refreshing every tick would hammer the market API with 600+ ticker fetches.
-- Battle frontend built as standalone route group, not embedded in the agent dashboard — battles involve multiple agents and the UI needs to support creation, live monitoring, and replay independently of a single agent context.
-- `settle_agent_decisions` Celery task runs every 5 minutes (not on trade fill) — decouples the learning feedback loop from the hot execution path; order fills can be delayed and async settlement is more resilient.
-
-**Bugs fixed:**
-- Prometheus scrape config only targeted `:8000` (platform) — agent metrics on `:8001` were never scraped; fixed by adding dedicated `agent` job in `monitoring/prometheus.yml`.
-- `ContextBuilder.build()` created a new HTTP client on every call — root cause: no connection pooling or caching; identified as HIGH perf issue in Task 37 audit; not yet fixed (fix is Task 37 follow-up).
-
-**Learnings:**
-- `RecoveryManager` state must be Redis-persisted (not in-process memory) — a service restart during recovery would reset to FULL state, bypassing the ramp-up schedule and potentially re-exposing full risk immediately after a drawdown.
-- Volume confirmation filter should use 20-period SMA of volume (not absolute volume) — absolute volume varies wildly across pairs (BTC vs altcoins by 100x); SMA-relative comparison is asset-agnostic.
-- Security review found all risk gates are fail-closed — the 2 MEDIUM findings are edge cases (Redis OOM, misconfigured DrawdownProfile), not architectural gaps. The fail-closed default was explicitly validated.
-
----
-
-### 2026-03-22 — Trading Agent Master Plan Phase 1 Branch + Phase 2 Independent Tasks Complete (8 Tasks, 361 New Tests)
-
-**Changes:**
-
-Phase 1 branch starts:
-- `agent/strategies/regime/labeler.py` — Added `_volume_ratio_series()` helper and `volume_ratio` (current_volume / SMA(volume,20)) as the 6th classifier feature; corrects for regime detection bias in low-volume markets.
-- `agent/strategies/regime/classifier.py` — Updated `FEATURE_NAMES` from 5 → 6 entries; added missing `_print_evaluation()` function (was referenced in tests but not defined). 17 new tests; 189 total regime tests passing.
-- `tradeready-gym/tradeready_gym/rewards/composite.py` — New `CompositeReward` class implementing weighted Sortino/PnL/activity/drawdown reward; allows per-component weight tuning without rewriting the env.
-- `agent/strategies/rl/config.py` — Added `"composite"` to valid `reward_type` enum. Added 5 composite-specific config fields: `composite_sortino_weight`, `composite_pnl_weight`, `composite_activity_weight`, `composite_drawdown_weight`, `composite_activity_bonus`.
-- `agent/strategies/rl/train.py` — Added `"composite"` case to `_build_reward()` dispatcher; instantiates `CompositeReward` with weights from config. 41 new tests.
-- `agent/strategies/evolutionary/evolve.py` — Added `compute_composite_fitness()` with 5-factor formula (0.35 × Sharpe + 0.25 × profit_factor − 0.20 × max_drawdown + 0.10 × win_rate + 0.10 × OOS Sharpe); dual IS/OOS battle loop; OOS-aware `ConvergenceDetector`.
-- `agent/strategies/evolutionary/config.py` — Added `oos_split_ratio` field (default 0.30); `is_split`, `in_sample_window`, `oos_window` properties. `fitness_fn` default changed from `sharpe_minus_drawdown` to `composite`.
-- `agent/strategies/evolutionary/battle_runner.py` — Added `get_detailed_metrics()` returning full 5-metric dict per agent (sharpe, drawdown, profit_factor, win_rate, roi_pct). 57 new tests.
-
-Phase 2 risk hardening:
-- `agent/strategies/risk/sizing.py` — Added `KellyFractionalSizer` (Kelly criterion with safety fraction and win/loss stats), `HybridSizer` (blends Kelly and volatility-adjusted sizing), and `SizingMethod` enum. 67 new tests; 93 total sizing tests.
-- `agent/strategies/risk/risk_agent.py` — Added `DrawdownProfile`, `DrawdownTier` dataclasses and 3 preset profiles (`AGGRESSIVE`, `MODERATE`, `CONSERVATIVE`). `RiskAgent` now accepts a `DrawdownProfile` for tiered size reduction as drawdown deepens. 67 new tests.
-- `agent/strategies/risk/veto.py` — Added `scale_factor` field to `VetoDecision` to expose the cumulative size scaling applied across all RESIZED gates.
-- `agent/strategies/risk/middleware.py` — Added `_check_correlation()` as step 5 in the `RiskMiddleware` pipeline: fetches 1h candles concurrently via `asyncio.gather`, computes Pearson r on log-returns, reduces size when `max(|r|) > 0.70`, caps correlated exposure at `2 × max_single_position`. 32 new tests; 59 total middleware tests.
-- `agent/strategies/ensemble/circuit_breaker.py` — New `StrategyCircuitBreaker`: 3 trigger rules (3 consecutive losses → 24h Redis pause, weekly PnL < −5% → 48h pause, ensemble accuracy < 40% → 25% size reduction). All state is Redis-backed with TTL auto-expiry; all methods async and fail-open on Redis errors. 56 new tests.
-- `agent/strategies/ensemble/run.py` — `EnsembleRunner.__init__()` now accepts optional `circuit_breaker: StrategyCircuitBreaker`; `step()` checks paused sources (stage 0) and applies size multiplier after `MetaLearner` (stage 3b).
-- `agent/tools/sdk_tools.py` — Added 6 new tools: `place_limit_order`, `place_stop_loss`, `place_take_profit`, `cancel_order`, `cancel_all_orders`, `get_open_orders`. Added `_serialize_order()` module-level helper. Tool count: 7 → 13. 24 new tests; 48 total SDK tools tests.
-
-Quality pipeline:
-- Code review: PASS WITH WARNINGS (no criticals; 4 minor warnings).
-- Test runner: fixed 1 import bug in `RiskMiddleware` (importing `SizingMethod` before it was added to `sizing.py`); all 539/539 new tests pass.
-
-**Decisions:**
-- `volume_ratio` added as 6th regime feature — ADX/ATR/RSI/MACD alone miss low-volume regime transitions; volume normalisation reveals institutional participation shifts.
-- `CompositeReward` as a separate class in `tradeready-gym/` (not inline in train.py) — keeps the gymnasium env boundary clean; allows the same reward to be used in future environments without duplicating logic.
-- OOS fitness in evolutionary GA uses a separate held-out battle window (30% split) rather than train-set Sharpe — prevents overfitting to the in-sample period; `ConvergenceDetector` now tracks OOS Sharpe as the primary stopping criterion.
-- `DrawdownProfile` with preset tiers (`AGGRESSIVE`/`MODERATE`/`CONSERVATIVE`) rather than free-form config fields — presets are tested and documented; prevents misconfigured thresholds from creating dangerous step-down schedules.
-- `StrategyCircuitBreaker` Redis-backed with TTL — pause state survives service restarts; TTL auto-expiry means no cron job is needed to reset pauses.
-- Kelly/Hybrid sizing separate from existing `DynamicSizer` — Kelly has different input requirements (win rate, W/L ratio) that are not available at volatility-sizing time; keeping them as distinct classes lets callers choose based on available data.
-
-**Bugs fixed:**
-- `agent/strategies/risk/middleware.py` imported `SizingMethod` from `sizing.py` before the enum was defined — root cause: circular refactor during Task 16; fix: moved import after enum definition and added `SizingMethod` to `__init__.py`.
-- `agent/strategies/regime/classifier.py` referenced `_print_evaluation()` in 3 test files but the function was never defined in the module — root cause: function was sketched during initial implementation and never fleshed out; fix: added the function in Task 08.
-
-**Learnings:**
-- Pearson r on linearly-growing prices is near zero — log-returns of linear trends have nearly constant values (low variance), making Pearson r numerically noisy. Test fixtures that need high correlation must use shared random shocks, not synthetic price levels.
-- `StrategyCircuitBreaker.ensemble_accuracy()` returns `None` (not 0.0) when the accuracy window has fewer than 20 observations — callers must guard against `None` before comparing to a threshold.
-
----
-
-### 2026-03-22 — Trading Agent Master Plan Phase 0 Group A Complete (5 Tasks)
-
-**Changes:**
-- `agent/memory/redis_cache.py` — Fixed broken `get_cached()` glob pattern (`agent:memory:*:{memory_id}` always returned None); now requires `agent_id` parameter and delegates to `get_cached_for_agent()`. Also: `set_working()` now uses atomic pipeline with `hset + expire(86400)` for 24h TTL crash safety.
-- `agent/logging_middleware.py` — `log_api_call()` accepts optional `writer: LogBatchWriter` parameter; calls `writer.add_api_call()` on both success and failure paths.
-- `agent/server.py` — `LogBatchWriter` instantiated as a singleton; `batch_writer` property exposed; lifecycle managed (start in `_init_dependencies()`, stop in `_shutdown()`). `IntentRouter` registered with all 7 handlers in `__init__()`, `process_message()` routes through router first.
-- `agent/server_handlers.py` — New file: 7 async handler functions (trade, analyze, portfolio, status, journal, learn, permissions) + `REASONING_LOOP_SENTINEL` for general fallback routing.
-- `src/utils/exceptions.py` — Added `PermissionDenied(TradingPlatformError)` with `code="permission_denied"`, `http_status=403`. Now auto-serialized by global exception handler.
-- `agent/permissions/enforcement.py` — Imports `PermissionDenied` from `src/utils/exceptions` instead of defining it locally; removes the local definition.
-- `agent/tests/test_redis_memory_cache.py` — 4 new tests in `TestGetCached` class; updated pipeline mock to verify TTL.
-- `agent/tests/test_server_writer_wiring.py` — New file, 20 tests for `LogBatchWriter` singleton wiring in `AgentServer`.
-- `agent/tests/test_server_handlers.py` — New file, 54 tests for 7 intent handler functions.
-- `tests/unit/test_exceptions.py` — 8 new tests for `PermissionDenied` exception.
-- `tests/unit/test_permission_enforcement.py` — 10 new tests for updated import path.
-
-**Decisions:**
-- `PermissionDenied` promoted from a locally-defined exception in `agent/permissions/enforcement.py` to a proper `TradingPlatformError` subclass in `src/utils/exceptions.py`. This makes it auto-serializable by the global exception handler and consistent with the platform's error envelope pattern.
-- `get_cached()` now requires `agent_id` — the old glob pattern `agent:memory:*:{memory_id}` is not supported by Redis and always returns None. Callers must know the `agent_id` to look up a cached memory.
-
-**Bugs fixed:**
-- `RedisMemoryCache.get_cached()` glob pattern always returned None → root cause: Redis does not support glob patterns in `get()`; the key pattern requires both `agent_id` and `memory_id` → fix: added required `agent_id` parameter and delegated to the existing `get_cached_for_agent()` method.
-- `set_working()` had no TTL → root cause: Redis hash had no expiry, so a mid-session crash left stale working memory in Redis indefinitely → fix: atomic `hset + expire(86400)` pipeline sets a 24h TTL.
-
-**Decisions:**
-- Migrations 018 and 019 validated as safe (PASS). Advisory noted: document downgrade data risk for migration 019 before production rollback (status/resolution columns are additive but downgrade drops them).
-
----
-
-### 2026-03-21 — MILESTONE: Agent Logging System Complete (34 Tasks, 5 Phases)
-
-**What was built:**
-Full observability stack for the agent ecosystem: distributed trace correlation across all agent operations, Prometheus metrics, async batched DB persistence, Grafana dashboards, and Prometheus alert rules.
-
-**Changes:**
-
-New agent infrastructure files:
-- `agent/logging.py` — `configure_agent_logging()`: centralized structlog config with ISO timestamps, JSON output, and structlog-contextvars context (trace_id, span_id, agent_id). Call once at startup.
-- `agent/logging_middleware.py` — `log_api_call()` async context manager: wraps every tool call with structured logging, latency measurement, and LLM token/cost estimation. `set_agent_id()` binds agent context.
-- `agent/logging_writer.py` — `LogBatchWriter`: accumulates `AgentApiCall` rows in-memory, flushes to DB in batches (configurable size/interval). Used by `trading/loop.py` and `strategies/ensemble/run.py`.
-- `agent/metrics.py` — 16 Prometheus metrics in `AGENT_REGISTRY` (separate from platform registry): API call counters/histograms, LLM cost gauges, memory hit/miss counters, permission denial counters, budget utilization gauges, strategy signal counters.
-- `agent/server.py` — Added `/metrics` endpoint via `asyncio.start_server`; `set_agent_id()` helper.
-
-Modified agent files (structlog migration + instrumentation):
-- `agent/main.py` — Calls `configure_agent_logging()` at startup.
-- `agent/tasks.py` — Migrated to structlog; calls `configure_agent_logging()`.
-- `agent/tools/sdk_tools.py` — Wraps all 7 tool functions with `log_api_call()`; passes `get_trace_id` as `trace_id_provider` to `AsyncAgentExchangeClient`.
-- `agent/tools/rest_tools.py` — Wraps tool functions; injects `X-Trace-Id` header on every outbound request.
-- `agent/tools/agent_tools.py` — Wraps tool functions with `log_api_call()`.
-- `agent/conversation/session.py` — LLM calls wrapped with `log_api_call()` for cost tracking.
-- `agent/trading/loop.py` — Generates fresh `trace_id` per tick; passes to `LogBatchWriter`; EMA-based anomaly detection on tick latency.
-- `agent/trading/journal.py` — LLM reflection calls wrapped with `log_api_call()`.
-- `agent/memory/postgres_store.py` — Logs all memory operations; increments `memory_operations_total` counter.
-- `agent/memory/redis_cache.py` — Records cache hit/miss via `memory_cache_hits_total`/`memory_cache_misses_total`.
-- `agent/memory/retrieval.py` — Logs retrieval latency and result count.
-- `agent/permissions/enforcement.py` — Increments `permission_denials_total` on every `PermissionDenied` event.
-- `agent/permissions/budget.py` — Emits `budget_usage_ratio` gauge on each check.
-- `agent/strategies/ensemble/run.py` — Writes `AgentStrategySignal` rows per step via `LogBatchWriter`.
-- `agent/strategies/rl/*.py` (5 files) — All call `configure_agent_logging()` at startup.
-- `agent/strategies/evolutionary/*.py` (2 files) — Migrated to `configure_agent_logging()`.
-- `agent/strategies/ensemble/*.py` (3 files) — Migrated; standardized event names.
-- `agent/strategies/regime/*.py` (2 files) — Standardized event names.
-- `agent/pyproject.toml` — Added `prometheus-client>=0.20` to dependencies.
-- `sdk/agentexchange/async_client.py` — Added `trace_id_provider: Callable[[], str] | None` to inject `X-Trace-Id` header on every outbound request.
-
-New backend files:
-- `src/api/middleware/audit.py` — `AuditMiddleware`: fire-and-forget middleware that writes request metadata to `audit_log` table; registered after other middleware in `src/main.py`.
-- `src/monitoring/metrics.py` — 4 platform Prometheus metrics: `platform_orders_total`, `platform_order_latency_seconds`, `platform_api_errors_total`, `platform_price_ingestion_lag_seconds`.
-- `src/database/repositories/agent_api_call_repo.py` — `AgentApiCallRepository`: bulk save + analytics queries.
-- `src/database/repositories/agent_strategy_signal_repo.py` — `AgentStrategySignalRepository`: bulk save + attribution queries.
-- `src/tasks/agent_analytics.py` — 3 Celery tasks: `agent_strategy_attribution` (daily 02:00 UTC), `agent_memory_effectiveness` (weekly Sunday 03:00 UTC), `agent_platform_health_report` (daily 06:00 UTC).
-- `alembic/versions/018_add_agent_logging_tables.py` — `agent_api_calls` table, `agent_strategy_signals` table, `trace_id` column on `agent_decisions`.
-- `alembic/versions/019_add_feedback_lifecycle_columns.py` — `status` CHECK constraint + default, `resolution` column on `agent_feedback`.
-- `monitoring/alerts/agent-alerts.yml` — 11 Prometheus alert rules.
-- `monitoring/dashboards/*.json` — 6 Grafana dashboard definitions.
-
-Modified backend files:
-- `src/api/routes/agents.py` — 3 new endpoints: `GET /decisions/trace/{trace_id}`, `GET /decisions/analyze`, `PATCH /feedback/{feedback_id}`.
-- `src/api/schemas/agents.py` — 8+ new Pydantic schemas for trace/analyze/feedback endpoints.
-- `src/api/middleware/logging.py` — Extracts `X-Trace-Id`; increments `platform_api_errors_total` on 4xx/5xx.
-- `src/database/models.py` — `AgentApiCall`, `AgentStrategySignal` models; `trace_id` on `AgentDecision`; `status`/`resolution` on `AgentFeedback`.
-- `src/dependencies.py` — 3 new dependency aliases: `AgentApiCallRepoDep`, `AgentStrategySignalRepoDep`, etc.
-- `src/main.py` — `AuditMiddleware` registered.
-- `src/order_engine/engine.py` — Instruments `platform_orders_total` counter and `platform_order_latency_seconds` histogram.
-- `src/price_ingestion/service.py` — Updates `platform_price_ingestion_lag_seconds` gauge.
-- `src/tasks/celery_app.py` — 3 new beat schedule entries (02:00, 03:00 Sunday, 06:00 UTC).
-
-New tests:
-- `agent/tests/test_logging.py` — 25 tests for `configure_agent_logging()` and structlog context.
-- `agent/tests/test_logging_middleware.py` — 24 tests for `log_api_call()` and LLM cost estimator.
-- `agent/tests/test_logging_writer.py` — 17 tests for `LogBatchWriter` async batching.
-- `tests/unit/test_agent_api_call_repo.py` — 9 tests for `AgentApiCallRepository`.
-- `tests/unit/test_agent_strategy_signal_repo.py` — 10 tests for `AgentStrategySignalRepository`.
-
-**Decisions:**
-- Separate `AGENT_REGISTRY` from platform's default Prometheus registry — agent and platform metrics are served on different ports; mixing them would require all consumers to filter by prefix.
-- `LogBatchWriter` over per-call DB inserts — agent tools fire on every LLM/SDK call (potentially hundreds per minute); synchronous per-call inserts would add latency to the hot path.
-- EMA anomaly detection in `TradingLoop` — lightweight stateful detection without a separate ML model; detects tick latency spikes that correlate with connectivity degradation.
-- `AuditMiddleware` is fire-and-forget — audit logging must never block a request; a failed DB write is logged but the request proceeds.
-- `trace_id` on `AgentDecision` (not a separate table) — decision rows already exist per trading action; adding a column is additive (migration 018) and enables trace→decision lookup without a join.
-
-**Learnings:**
-- `configure_agent_logging()` must be called before any structlog event is emitted — if called after the first log, context vars may be unbound.
-- `LogBatchWriter.flush()` should be called explicitly on shutdown — the background flush task may have unflushed rows when the event loop closes.
-- Prometheus `AGENT_REGISTRY` must use `registry=AGENT_REGISTRY` on every `Counter`/`Histogram`/`Gauge` definition — omitting it registers to the default registry and appears at the platform's `/metrics` instead.
-
----
-
-### 2026-03-21 — MILESTONE: Agent Memory & Learning System Complete (14 Tasks)
-
-**What was built:**
-Persistent cross-session memory and activity monitoring for the entire 16-agent sub-agent fleet. Three phases: native memory expansion, structured activity logging, and feedback capture loop.
-
-**Changes:**
-
-Phase 1 — Native Memory Expansion:
-- `.claude/agents/*.md` (all 16) — Added `memory: project` frontmatter field; each agent now reads and writes its own MEMORY.md at `.claude/agent-memory/{agent-name}/`.
-- `.claude/agent-memory/{16 agent dirs}/MEMORY.md` — Created and seeded: each file pre-loaded with project-specific patterns, conventions, gotchas relevant to that agent's role. Organized by category (quality gate, security, infrastructure, development, research/planning).
-- `.claude/agents/*.md` (all 16) — Added Memory Protocol section to all system prompts: read MEMORY.md on entry, save new learnings on exit, prune stale entries periodically.
-- `.gitignore` — Added `agent-memory-local/` exclusion for personal memory overrides that should not be shared.
-
-Phase 2 — Structured Activity Logging:
-- `scripts/log-agent-activity.sh` — New: PostToolUse hook script. Appends `{ts, tool, target}` JSONL to `development/agent-activity-log.jsonl`. Pure-bash fallback when `jq` unavailable. Always exits 0.
-- `scripts/agent-run-summary.sh` — New: activity summary script. Reads JSONL log, outputs tool frequency, file heatmap, activity by day. Accepts `--days N` argument.
-- `scripts/analyze-agent-metrics.sh` — New: deep analysis script (requires `jq`). Generates tool histogram, file heatmap, hourly activity distribution. Called by `/analyze-agents` skill.
-- `.claude/settings.json` — Added second PostToolUse hook entry: `Write|Edit|Bash` tool calls trigger `bash scripts/log-agent-activity.sh` (timeout 5s, non-blocking).
-
-Phase 3 — Feedback Loop:
-- `.claude/skills/analyze-agents/SKILL.md` — New: `/analyze-agents` skill reads activity log + all agent MEMORY.md files + code review reports; generates improvement report at `development/agent-analysis/report-{date}.md`; applies quick memory fixes.
-- `.claude/skills/review-changes/SKILL.md` — Updated: added explicit feedback capture step after code-reviewer runs — saves recurring patterns to agent MEMORY.md files.
-
-Supporting files:
-- `development/agent-memory-strategy-report.md` — Research report: evaluation of memory strategies for the agent fleet.
-- `development/tasks/agent-memory-system/` — 14-task board (all done): task files for each of the 14 tasks, README, run-tasks.md.
-
-**Decisions:**
-- File-based memory (MEMORY.md) over DB-backed memory — simpler, version-controlled (shared via git), no schema migration required; sufficient for the agent fleet's inter-session learning needs.
-- Per-agent subdirectory isolation — each agent only reads its own MEMORY.md on startup, preventing cross-agent memory contamination.
-- PostToolUse hook is non-blocking (exit 0 always, 5s timeout) — activity logging must never block agent execution; a broken JSONL log is preferable to a stalled agent.
-- `/analyze-agents` reads the JSONL log to generate suggestions — pattern-driven recommendations rather than manual review; agents improve based on actual usage data.
-
----
-
-### 2026-03-21 — MILESTONE: Agent Ecosystem Phase 2 Complete (Tasks 21-36)
-
-**What was built:**
-Trading intelligence layer on top of the Phase 1 conversation/memory/tool foundation. Adds permissions enforcement, budget management, and a full 7-step autonomous trading loop with A/B testing, journaling, and degradation-aware strategy management.
-
-**Changes:**
-
-Permissions system (`agent/permissions/`):
-- `permissions/roles.py` — `AgentRole` enum with `ROLE_HIERARCHY` and `ROLE_CAPABILITIES` mappings; helper functions `get_role_capabilities()`, `has_role_or_higher()`, `promote_role()`.
-- `permissions/capabilities.py` — `Capability` enum (24 fine-grained capabilities), `ALL_CAPABILITIES` set, `CapabilityManager` with role-capability intersection checks.
-- `permissions/budget.py` — `BudgetManager`: Redis-backed daily trade count, volume, and drawdown limits per agent; automatic midnight TTL expiry.
-- `permissions/enforcement.py` — `PermissionEnforcer`: action-to-capability mapping (`ACTION_CAPABILITY_MAP`), `check()` method that verifies role + capability + budget; raises `PermissionDenied` with audit trail; fail-closed on unknown capabilities.
-
-Security review (critical fixes applied before merge):
-- `permissions/budget.py` — Fixed float precision in budget comparison: `Decimal(str(amount))` instead of raw `float` to prevent rounding bypass near budget limits.
-- `permissions/enforcement.py` — Fixed TOCTOU race: budget deduction and permission check now done in a single Redis transaction (Lua script) instead of two sequential calls.
-- `permissions/enforcement.py` — Fixed fail-open default: unknown capabilities now DENIED by default instead of silently allowed.
-- `permissions/roles.py` — Fixed missing default role: agents without a persisted role now default to `READ_ONLY` instead of `AUTONOMOUS`.
-- Security report saved at `development/code-reviews/security-review-permissions.md`.
-
-Trading intelligence (`agent/trading/`):
-- `trading/loop.py` — `TradingLoop`: 7-step cycle (fetch candles → generate signals → check permissions → execute → monitor → journal → learn); exponential backoff on errors (max 5 min); graceful shutdown on SIGTERM; `LoopStoppedError` for clean teardown.
-- `trading/signal_generator.py` — `SignalGenerator`, `TradingSignal`: wraps `EnsembleRunner` from `agent/strategies/ensemble/`; converts ensemble `ConsensusSignal` to typed `TradingSignal` with confidence and metadata.
-- `trading/execution.py` — `TradeExecutor`: idempotent execution with UUID4 idempotency key; 3-attempt retry with 500ms backoff; budget check via `PermissionEnforcer` before every execution.
-- `trading/monitor.py` — `PositionMonitor`: per-position stop-loss / take-profit / max-hold-duration exit triggers; configurable thresholds; fires async callbacks on trigger.
-- `trading/journal.py` — `TradingJournal`: records every execution decision with context; `reflect_on_trade()` calls LLM for post-trade reflection; `daily_summary()` and `weekly_summary()` aggregate patterns; persists to `agent_journal` table via `AgentJournalRepo`.
-- `trading/strategy_manager.py` — `StrategyManager`: rolling 30-step performance window per strategy; `detect_degradation()` compares recent vs historical Sharpe; `adjust_weights()` demotes degraded strategies; `promote_strategy()` runs A/B test before promotion.
-- `trading/ab_testing.py` — `ABTestRunner`, `ABTest`: runs two strategy arms simultaneously in a backtest session; Welch's t-test evaluation with minimum 10 samples; structured `ABTest` result with winner, p-value, effect size.
-
-Tests (414+ in Phase 2):
-- `agent/tests/test_veto.py` — 42 tests for `VetoPipeline` and individual gate logic.
-- `agent/tests/test_risk_agent.py` — 39 tests for `RiskAgent` assessment and approval logic.
-- `agent/tests/test_risk_middleware.py` — 31 tests for `RiskMiddleware` full pipeline.
-- `agent/tests/test_sizing.py` — 26 tests for `DynamicSizer` volatility and drawdown adjustments.
-- `agent/tests/test_trade_executor.py` — 19 tests covering idempotency, retry, budget enforcement.
-- `agent/tests/test_trading_journal.py` — 33 tests for journal write, LLM reflection, summary.
-- `agent/tests/test_trading_loop.py` — 20 tests for loop step cycle, error backoff, shutdown.
-- `agent/tests/test_strategy_manager.py` — 81 tests for rolling window, degradation detection, weight adjustment, A/B promotion.
-- `agent/tests/test_ensemble_pipeline.py` — 68 tests for full 6-stage ensemble pipeline.
-- `agent/tests/test_runner.py` — 46 tests for multi-seed orchestrator.
-
-CLAUDE.md files created/updated:
-- `agent/permissions/CLAUDE.md` — New: roles, capabilities, budget limits, enforcement patterns, audit logging.
-- `agent/trading/CLAUDE.md` — New: trading loop, signal generator, executor, position monitor, journal, strategy manager, A/B testing.
-- `agent/CLAUDE.md` — Updated: added `permissions/` and `trading/` to directory structure and Sub-CLAUDE.md Index.
-
-**Decisions:**
-- `PermissionEnforcer` fail-closed by default — unknown capabilities are DENIED, never silently allowed; security review identified this as CRITICAL before merge.
-- `BudgetManager` uses Redis with TTL rather than DB rows — avoids DB write on every trade check; Redis TTL naturally resets daily limits at midnight even after service restarts.
-- `TradingLoop` is the mandatory entry point for all agent execution — bypassing it skips budget enforcement and audit logging; enforced by convention (no public `TradeExecutor` method outside the loop).
-- `StrategyManager` uses a 30-step rolling window for degradation detection — short enough to react to regime changes, long enough to avoid noise triggering false degradations.
-- `ABTestRunner` uses Welch's t-test (unequal variance) — real strategy arms almost never have equal variance; Student's t-test would be statistically invalid.
-
-**Bugs fixed (CRITICAL — from security review):**
-- Float precision bypass near budget limits — `float` comparison allowed submitting orders 0.0000001 USDT under limit. Fixed: `Decimal(str(amount))` for all budget comparisons.
-- TOCTOU race in `PermissionEnforcer.check()` — a check + deduct two-step could allow double-execution under concurrency. Fixed: single Lua script atomically checks and deducts in one Redis call.
-- Fail-open on unknown capabilities — missing `ACTION_CAPABILITY_MAP` entries silently allowed execution. Fixed: default is DENIED with audit log entry.
-- Default role was `AUTONOMOUS` for unpersisted agents — agents without a DB role record could execute unrestricted trades. Fixed: default is `READ_ONLY`.
-
----
-
-### 2026-03-21 — MILESTONE: Agent Ecosystem Phase 1 Complete (Tasks 01-20)
-
-**What was built:**
-DB foundation and reasoning infrastructure for autonomous agents: persistent memory, conversation tracking, self-reflection tools, server lifecycle management, and a CLI REPL.
-
-**Changes:**
-
-Database layer (`src/database/models.py` + `alembic/versions/017_agent_ecosystem_tables.py`):
-- 10 new SQLAlchemy models: `AgentSession`, `AgentMessage`, `AgentDecision`, `AgentJournal`, `AgentLearning`, `AgentFeedback`, `AgentPermission`, `AgentBudget`, `AgentPerformance`, `AgentObservation`.
-- `agent_observations` created as TimescaleDB hypertable (high-frequency telemetry; time-partitioned).
-- Migration 017 is a pure-additive migration — no destructive ALTER; safe to run on live DB.
-
-Repository classes (`src/database/repositories/`):
-- `AgentSessionRepo` — session CRUD, active session lookup by agent_id.
-- `AgentMessageRepo` — message append, conversation window retrieval (most-recent-N).
-- `AgentDecisionRepo` — decision persistence, recent decisions by session.
-- `AgentJournalRepo` — journal entries, date-range queries.
-- `AgentLearningRepo` — learning records, search by keyword.
-- `AgentFeedbackRepo` — feedback CRUD with rating filter.
-- `AgentPermissionRepo` — permission read/write by agent and capability.
-- `AgentBudgetRepo` — budget snapshot read/write by agent and period.
-- `AgentPerformanceRepo` — performance upsert, range query.
-- `AgentObservationRepo` — bulk-insert observations, time-window query.
-
-Pydantic models (`agent/models/ecosystem.py`):
-- 19 v2 Pydantic models covering request/response shapes for all 10 tables: `AgentSessionCreate`, `AgentSessionRead`, `AgentMessageCreate`, `AgentMessageRead`, `AgentDecisionCreate`, `AgentDecisionRead`, `AgentJournalCreate`, `AgentJournalRead`, `AgentLearningCreate`, `AgentLearningRead`, `AgentFeedbackCreate`, `AgentFeedbackRead`, `AgentPermissionCreate`, `AgentPermissionRead`, `AgentBudgetCreate`, `AgentBudgetRead`, `AgentPerformanceCreate`, `AgentPerformanceRead`, `AgentObservationCreate`.
-
-Conversation system (`agent/conversation/`):
-- `session.py` — `AgentSession`: DB-backed session lifecycle with auto-summarisation when message window exceeds 50; `open()`, `close()`, `add_message()`, `get_context()`.
-- `history.py` — `ConversationHistory`, `Message`: read-only window-based access to message history; supports `to_llm_messages()` for direct Pydantic AI injection.
-- `context.py` — `ContextBuilder`: assembles 6-section LLM context (system prompt + session summary + recent history + memory excerpts + platform state + task description).
-- `router.py` — `IntentRouter`, `IntentType`: 3-layer classification (keyword → regex → LLM fallback); routes to TRADE, ANALYZE, REFLECT, JOURNAL, ADMIN, UNKNOWN.
-
-Memory system (`agent/memory/`):
-- `store.py` — `MemoryStore` (abstract), `Memory` model, `MemoryType` (SHORT_TERM/LONG_TERM/WORKING/EPISODIC), `MemoryNotFoundError`.
-- `postgres_store.py` — `PostgresMemoryStore`: durable write-through to `agent_learnings` table; full-text search via `ILIKE`; metadata JSON filtering.
-- `redis_cache.py` — `RedisMemoryCache`: hot cache for working memory and regime/signal state; TTL-based expiry; `get_working_memory()` for current-session context.
-- `retrieval.py` — `MemoryRetriever`, `RetrievalResult`: two-phase retrieval (Redis hot cache first, Postgres fallback); relevance scoring by recency + keyword overlap; returns scored list.
-
-Agent tools (`agent/tools/agent_tools.py`):
-- `reflect_on_trade(trade_id, outcome)` — retrieves trade context, calls LLM for reflection, persists to `agent_journal`.
-- `review_portfolio(period)` — fetches portfolio metrics, identifies patterns vs memory, returns structured analysis.
-- `scan_opportunities(symbols, timeframe)` — fetches candles for symbols, runs regime classifier, surfaces regime-appropriate opportunities.
-- `journal_entry(content, tags)` — persists a free-form journal entry with tags to `agent_journal`.
-- `request_platform_feature(description, rationale)` — persists a structured feature request to `agent_feedback` with SUGGESTION type.
-
-Server + tasks:
-- `agent/server.py` — `AgentServer`: lifecycle management (`startup()`, `shutdown()`), SIGTERM/SIGINT handlers, periodic health checks (60s), scheduled task registration.
-- `agent/tasks.py` — 4 Celery beat tasks: `morning_review` (07:00 daily), `reset_daily_budgets` (midnight), `cleanup_old_memories` (weekly), `take_performance_snapshot` (hourly).
-- `agent/cli.py` — Interactive REPL with `prompt_toolkit` and `rich` formatting; 10 slash commands: `/help`, `/status`, `/session`, `/memory`, `/journal`, `/reflect`, `/permissions`, `/budget`, `/trade`, `/quit`.
-- `agent/config.py` — 22 configuration fields covering API credentials, session/memory settings, budget defaults, trading loop parameters, Celery broker URL.
-
-Tests (370+):
-- `agent/tests/test_memory_store.py` — 22 tests for abstract store, Memory model, MemoryType.
-- `agent/tests/test_memory_retrieval.py` — 31 tests for two-phase retrieval, scoring, fallback.
-- `agent/tests/test_redis_memory_cache.py` — 25 tests for hot cache, TTL, working memory.
-- `agent/tests/test_rl_pipeline.py` — 35 tests for RL train/eval/deploy pipeline.
-- (plus existing strategy tests from prior phases: 578 tests across 5 sub-packages)
-
-**Decisions:**
-- `agent_observations` as a TimescaleDB hypertable — agent telemetry (price observations, portfolio snapshots, signal recordings) is high-frequency and time-ordered; native time-series partitioning reduces query latency for lookback windows.
-- Auto-summarisation at 50 messages — long context windows are expensive and degrade LLM coherence; summarisation at 50 captures the arc without token waste; summary stored in session record.
-- Two-phase memory retrieval (Redis → Postgres) — working memory hot path hits Redis in <1ms; only cache misses hit Postgres; memory store is transparent to callers.
-- `IntentRouter` uses 3-layer fallback (keyword → regex → LLM) — most intents resolved without LLM call (fast + no token cost); LLM fallback handles ambiguous natural-language input that keyword/regex cannot classify.
-
+Key decisions (permanent): auto-summarize at 50 messages (context cost vs coherence); two-phase memory retrieval (Redis <1ms hot path, Postgres fallback); TradingLoop is single entry point (all agent trading must go through it — bypassing skips budget checks and audit logging); TradeExecutor uses UUID4 idempotency key (re-submitted keys return original result, no double-fills); ABTestRunner uses Welch's t-test (unequal variance is realistic for trading strategies); AGENT_REGISTRY separate from platform registry (served on different ports).
 ---
 
 ### 2026-03-20 — Summary: Agent Strategy System, Testing Agent V1, Frontend Performance, CLAUDE.md Sync (Multiple Sessions)

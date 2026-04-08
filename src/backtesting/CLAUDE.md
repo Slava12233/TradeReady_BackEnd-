@@ -1,6 +1,6 @@
 # Backtesting Engine
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Historical market data replay engine that lets AI agents test trading strategies against real Binance price data in an isolated, in-memory sandbox.
 
@@ -177,5 +177,6 @@ class DataReplayer:
 
 ## Recent Changes
 
+- `2026-04-07` — `sandbox.py`: `BacktestSandbox` now records `stop_price` on `SandboxTrade` objects for stop-loss and take-profit fills. `engine.py`: `_persist_results()` now writes `stop_price` to `BacktestTrade` DB rows. Migration 022 added the corresponding `stop_price` column to `backtest_trades`. Fixes BT-02 and BT-17 from the A-Z backtest tester report.
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Added `exchange` field to `BacktestConfig` and `BacktestCreateRequest`. `DataReplayer` accepts `exchange` param (data filtering pending DB migration — logs warning for non-Binance). Fixed backtest metrics returning None: changed `db.flush()` to `db.commit()` in `_persist_results()` so results are visible to concurrent GET requests.

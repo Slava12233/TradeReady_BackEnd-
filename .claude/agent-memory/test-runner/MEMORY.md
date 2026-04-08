@@ -144,6 +144,27 @@ Agent tests use `monkeypatch` to set env vars and pass `_env_file=None` to `Agen
 `log_api_call()` in `agent/logging_middleware.py` accepts an optional keyword-only `writer: LogBatchWriter | None = None` parameter. When provided, a record dict with `channel`, `endpoint`, `method`, `latency_ms`, and error info is passed to `writer.add_api_call(record)` after the body completes (success or failure). Writer errors are always swallowed.
 
 `AgentServer` in `agent/server.py` has a `batch_writer` property backed by `_batch_writer: LogBatchWriter | None`. The writer is created and started in `_init_dependencies()` when DB is available, and `writer.stop()` is called first in `_shutdown()` (before `_persist_state`) so buffered records are drained before closing connections. Writer stop errors are swallowed and logged.
+## sa_inspect + MagicMock Pattern (2026-04-07)
+
+`sa_inspect(obj)` raises `NoInspectionAvailable` when `obj` is a `MagicMock(spec=SomeOrmModel)`. Any route helper that calls `sa_inspect()` must wrap it in `try/except NoInspectionAvailable` and fall back to direct attribute access. The pattern:
+```python
+try:
+    state = sa_inspect(battle)
+    loaded = "participants" not in state.unloaded
+except NoInspectionAvailable:
+    loaded = True  # non-ORM object: treat attributes as accessible
+```
+**Why:** Integration tests mock ORM objects as `MagicMock(spec=Battle)` — SQLAlchemy can't inspect these.
+**How to apply:** Any route helper using `sa_inspect` for lazy-load guarding needs this try/except.
+
+## BattleLiveParticipantSchema Field Names (2026-04-07)
+
+The new `BattleLiveParticipantSchema` (added in the battle live endpoint refactor) uses these required fields:
+`current_equity`, `roi_pct`, `total_pnl`, `status` — NOT the old `equity`/`pnl`/`pnl_pct` names.
+Integration test mocks for `get_live_snapshot` must use the new names. Also, the route must call
+`BattleLiveParticipantSchema.model_validate(p)` on each raw dict from the service to satisfy mypy's
+type check (service returns `list[dict]`, schema expects `list[BattleLiveParticipantSchema]`).
+
 - [feedback_ann401_any_intentional.md](feedback_ann401_any_intentional.md) — ANN401 errors in ML strategy files are intentional and pre-existing
 - [project_agent_tests_location.md](project_agent_tests_location.md) — agent/ tests are independent from tests/ and use their own conftest
 - [feedback_f821_ensemble_run.md](feedback_f821_ensemble_run.md) — F821 undefined RiskMiddleware bug found and fixed in ensemble/run.py

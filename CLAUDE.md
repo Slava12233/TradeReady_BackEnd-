@@ -70,7 +70,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `Frontend/src/components/alerts/CLAUDE.md` | Price alert management — create dialog, alert sections |
 | `Frontend/src/components/analytics/CLAUDE.md` | Analytics charts — equity, drawdown, PnL, heatmaps |
 | `Frontend/src/components/backtest/CLAUDE.md` | Backtest UI components, sub-folder structure |
-| `Frontend/src/components/battles/CLAUDE.md` | Battle UI — 9 components, 3 routes, 2 hooks, 14 API functions, 15 types |
+| `Frontend/src/components/battles/CLAUDE.md` | Battle UI — 7 components, 2 routes, 2 hooks, 14 API functions, 15 types |
 | `Frontend/src/components/coin/CLAUDE.md` | Coin detail — TradingView chart, order book, stats |
 | `Frontend/src/components/docs/CLAUDE.md` | Documentation components — docs viewer, search |
 | `Frontend/src/components/dashboard/CLAUDE.md` | Dashboard — portfolio, equity chart, positions, orders |
