@@ -22,6 +22,9 @@ This directory contains all HTTP route handlers, organized by domain. Each file 
 | `battles.py` | `/api/v1/battles` | JWT only | Battle lifecycle, participants, live/results/replay, historical battles |
 | `strategies.py` | `/api/v1/strategies` | Required | Strategy CRUD, versioning, deploy/undeploy (10 endpoints) |
 | `strategy_tests.py` | `/api/v1/strategies` | Required | Strategy testing: start, list, get, cancel, results, compare (6 endpoints) |
+| `indicators.py` | `/api/v1/indicators` | Required | Compute indicators on-demand (RSI, MACD, SMA, EMA, Bollinger, ADX, ATR) |
+| `metrics.py` | `/api/v1/metrics` | Required | Per-agent performance metrics endpoint, deflated Sharpe |
+| `webhooks.py` | `/api/v1/webhooks` | Required | Webhook CRUD + test delivery (6 endpoints) |
 | `training.py` | `/api/v1/training` | Required | Training runs: register, report episodes, complete, list, detail, learning curve, compare (7 endpoints) |
 | `waitlist.py` | `/api/v1/waitlist` | Public | Landing page email collection |
 | `__init__.py` | — | — | Package docstring only |
@@ -233,6 +236,43 @@ For agent- and battle-scoped endpoints, routes manually verify `resource.account
 | `GET` | `/battles/{id}/market/prices` | 200 | Prices at virtual time (historical) |
 | `POST` | `/battles/{id}/replay` | 201 | Create new draft from completed battle config |
 
+### indicators.py — 2 endpoints
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| `POST` | `/indicators/compute` | 200 | Compute one or more indicators on a price series; returns named arrays |
+| `GET` | `/indicators/supported` | 200 | List all supported indicator names + parameter schemas |
+
+### metrics.py — 2 endpoints
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| `GET` | `/metrics/agent/{id}` | 200 | Sharpe, Sortino, deflated Sharpe, drawdown, win rate for an agent |
+| `GET` | `/metrics/compare` | 200 | Side-by-side metrics comparison for up to 5 agents |
+
+### webhooks.py — 6 endpoints
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| `POST` | `/webhooks` | 201 | Register webhook URL + event subscriptions (returns secret once) |
+| `GET` | `/webhooks` | 200 | List webhooks for authenticated account |
+| `GET` | `/webhooks/{id}` | 200 | Webhook detail + recent delivery log |
+| `PUT` | `/webhooks/{id}` | 200 | Update URL or subscribed event types |
+| `DELETE` | `/webhooks/{id}` | 204 | Delete webhook |
+| `POST` | `/webhooks/{id}/test` | 200 | Send test payload to the webhook URL |
+
+### strategies.py — compare endpoint (added)
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| `GET` | `/strategies/compare` | 200 | Side-by-side comparison of up to 5 strategies by key metrics |
+
+### backtest.py — fast batch endpoint (added)
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| `POST` | `/backtest/{id}/step/batch/fast` | 200 | Advance N steps at max speed (no per-step snapshots); returns `BatchStepResult` |
+
 ### waitlist.py — 1 endpoint (public)
 
 | Method | Path | Status | Description |
@@ -296,6 +336,7 @@ Follow the pattern in `backtest.py`: call `engine._get_active(session_id)` to ge
 
 ## Recent Changes
 
+- `2026-04-07` (V.0.0.3) — Added `indicators.py` (2 endpoints: compute, supported), `metrics.py` (2 endpoints: agent metrics, compare), `webhooks.py` (6 endpoints: CRUD + test). Added `GET /strategies/compare` to `strategy_tests.py`. Added `POST /backtest/{id}/step/batch/fast` to `backtest.py`. Total route count: ~90 → ~103 endpoints.
 - `2026-04-07` — `backtest.py`: Fixed orphan detection in `/backtest/{id}/status` that prematurely marked newly-created sessions as `"failed"` before they could register in the in-memory engine. Now checks `is_active()` before applying orphan timeout. Fixed compare endpoint (`GET /backtest/compare`) returning null metrics for cancelled sessions.
 - `2026-04-07` — `battles.py`: `GET /battles/{id}/live` now computes and returns `elapsed_minutes`, `remaining_minutes`, and `updated_at`. Uses `model_validate()` on the typed `BattleLiveParticipantSchema` to enforce the 13-field contract.
 - `2026-04-02` (BUG-017) — `account.py`: `/account/positions` now fetches `opened_at` from the `Position` table directly via a separate query, replacing the epoch sentinel (`1970-01-01`) that was previously returned. Also fixed `asyncio.gather` on a shared DB session (caused `IllegalStateChangeError`); positions and portfolio queries now run sequentially.

@@ -1,6 +1,6 @@
 # doc-updater — Persistent Memory
 
-<!-- last-updated: 2026-04-07 -->
+<!-- last-updated: 2026-04-07 (Task 15) -->
 
 ## Documentation Inventory
 
@@ -20,6 +20,8 @@
 | `docs/framework_guides/crewai.md` | CrewAI devs | SDK or API changes |
 | `docs/framework_guides/agent_zero.md` | Agent Zero devs | skill.md or SDK changes |
 | `docs/framework_guides/openclaw.md` | OpenClaw devs | skill.md or SDK changes |
+| `docs/getting-started-agents.md` | External agent devs | 9-step guide changes; new platform features |
+| `docs/architecture-overview.md` | External agent devs | Connection method or isolation model changes |
 | `docs/tradeready_research.md` | Internal | Competitive analysis (frozen) |
 | `docs/pricing_tiers_business_report.md` | Internal | Business model (frozen) |
 
@@ -27,7 +29,7 @@
 
 - `sdk/CLAUDE.md` — sync client patterns, async client, WebSocket client (48 methods across 10 groups as of 2026-04-07)
 - SDK install: `pip install -e sdk/`; package: `AgentExchangeClient`, `AsyncAgentExchangeClient`, `AgentExchangeWS`
-- `sdk/examples/` — 5 runnable scripts (basic_backtest, rl_training, genetic_optimization, strategy_tester, webhook_integration)
+- `sdk/examples/` — 6 runnable scripts (basic_backtest, rl_training, genetic_optimization, strategy_tester, webhook_integration, getting_started)
 
 ### Fumadocs site (Frontend/content/docs/)
 

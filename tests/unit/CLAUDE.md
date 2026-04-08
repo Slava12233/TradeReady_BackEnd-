@@ -1,8 +1,8 @@
 # Unit Tests
 
-<!-- last-updated: 2026-04-06 -->
+<!-- last-updated: 2026-04-07 -->
 
-> 1734 unit tests across 87 files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, agent ecosystem, and training.
+> 2280+ unit tests across 95+ files covering every backend component — services, repositories, engines, exchange abstraction, middleware, tasks, MCP tools, SDK client, strategies, agent ecosystem, training, webhooks, and indicators.
 
 ## What This Module Does
 

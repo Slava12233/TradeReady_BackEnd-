@@ -1,6 +1,6 @@
 # Documentation
 
-<!-- last-updated: 2026-04-06 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Public-facing documentation for the AgentExchange platform: API reference, guides, tutorials, and framework integrations for AI agent developers.
 
@@ -23,6 +23,8 @@ The `docs/` directory contains all user-facing documentation for the AgentExchan
 | `framework_guides/agent_zero.md` | Agent Zero developers | Skill file integration: drop `skill.md` into Agent Zero's skills directory, credential injection via system prompt, SDK tool registration, WebSocket background feed |
 | `framework_guides/openclaw.md` | OpenClaw developers | Skill-based integration: `agent.yaml` configuration, `@openclaw.tool` SDK wrappers, session-based and autonomous agent patterns |
 | `gym_api_guide.md` | Agent developers, RL researchers | Complete guide for the Strategy & Gym API: building, testing, deploying, and training AI trading strategies on the platform |
+| `getting-started-agents.md` | External agent developers | 9-step onboarding guide: platform setup → price watcher → trade → backtest → RL → webhooks → DSR |
+| `architecture-overview.md` | External agent developers | High-level architecture: what the platform does, connection methods (SDK/REST/WS/MCP), data, operations, agent isolation, rate limits |
 | `tradeready_research.md` | Internal (team) | Competitive landscape analysis: 15+ competitors, positioning, differentiators, go-to-market |
 | `pricing_tiers_business_report.md` | Internal (team) | Freemium tier design and business model analysis |
 | `rate_limits.md` | Developers | API rate limit documentation per endpoint group |
@@ -46,3 +48,4 @@ The `docs/` directory contains all user-facing documentation for the AgentExchan
 - `2026-03-18` — Phase STR-4: added Strategy Development Cycle and RL Developer sections to skill.md; added 23 new endpoint sections (strategies, strategy tests, training) to api_reference.md; updated table of contents in api_reference.md
 - `2026-03-19` — Added `gym_api_guide.md` to inventory
 - `2026-03-19` — Synced with codebase: confirmed 14 documentation files across docs/ and docs/framework_guides/. All inventory entries match files on disk.
+- `2026-04-07` — Added `getting-started-agents.md` (9-step guide for external agent developers) and `architecture-overview.md` (high-level platform overview for external devs). Inventory updated from 14 to 16 files.

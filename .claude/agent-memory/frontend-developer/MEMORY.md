@@ -85,3 +85,4 @@
 - [feedback_api_client_headers.md](feedback_api_client_headers.md) — Explicit X-Agent-Id in options.headers was being overwritten by auto-inject in executeRequest
 - [project_dashboard_analytics.md](project_dashboard_analytics.md) — Agent performance analytics dashboard sections added (Task 35)
 - [project_battle_system_ui.md](project_battle_system_ui.md) — Battle system UI complete (Task 34): types, API functions, 2 hooks, 9 components, 3 routes
+- `src/components/ui/textarea.tsx` does NOT exist — use a plain `<textarea>` with Tailwind classes (see webhook-section.tsx for pattern)

@@ -1,6 +1,6 @@
 # Background Tasks (Celery)
 
-<!-- last-updated: 2026-04-02 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Celery tasks and beat schedule for periodic jobs: order matching, portfolio snapshots, candle aggregation, data cleanup, backtest housekeeping, and battle monitoring.
 
@@ -22,6 +22,7 @@ This package defines all Celery background tasks for the platform. Tasks are reg
 | `strategy_tasks.py` | Strategy test episodes: `run_strategy_episode` (5min limit), `aggregate_test_results` (1min limit) |
 | `agent_analytics.py` | 4 agent analytics tasks: `agent_strategy_attribution` (daily), `agent_memory_effectiveness` (weekly), `agent_platform_health_report` (daily), `settle_agent_decisions` (every 5 min) |
 | `retrain_tasks.py` | 5 ML retraining tasks routed to `ml_training` queue: `run_retraining_cycle` (master, all due components), `retrain_ensemble`, `retrain_regime`, `retrain_genome`, `retrain_rl`; each with `soft_time_limit=3600`, `time_limit=3900` |
+| `webhook_tasks.py` | `deliver_webhook` Celery task — async HTTP POST to user URL with HMAC-SHA256 `X-Signature-256` header. Retries up to 3x (10s/60s/300s backoff) on non-2xx or network errors. 4xx responses are not retried. |
 | `__init__.py` | Package docstring (no exports) |
 
 ## Architecture & Patterns
@@ -178,6 +179,7 @@ celery -A src.tasks.celery_app beat --loglevel=info
 
 ## Recent Changes
 
+- `2026-04-07` (V.0.0.3) — Added `webhook_tasks.py`: `deliver_webhook` task handles outbound HMAC-signed HTTP POST with exponential retry (3 attempts: 10s/60s/300s). Uses `httpx` async client. 4xx errors are treated as permanent failures (no retry). Task registered in `celery_app.py` `include` list.
 - `2026-04-02` (BUG-018) — `celery_app.py`: Wrapped `importlib.util.find_spec("agent.tasks")` call in `try/except ModuleNotFoundError`. `find_spec()` itself can raise `ModuleNotFoundError` when the `agent/` directory exists on disk but is not installed as a Python package (no `__init__.py` or `pyproject.toml` in path). This fixes Celery startup crash in the non-agent Docker profile.
 - `2026-04-01` — Production fix: `celery_app.py` `agent.tasks` detection changed from direct `import` to `importlib.util.find_spec()` to avoid circular ImportError (`agent/tasks.py` → `celery_app.app` → not yet defined).
 - `2026-03-23` — Added `retrain_tasks.py` with 5 ML retraining Celery tasks (`run_retraining_cycle`, `retrain_ensemble`, `retrain_regime`, `retrain_genome`, `retrain_rl`). All tasks route to new `ml_training` queue, use `asyncio.run()` bridge to `RetrainOrchestrator`, and have `soft_time_limit=3600` / `time_limit=3900`. Beat entry `run-retraining-cycle` runs every 8h. Beat schedule count: 15 → 16.

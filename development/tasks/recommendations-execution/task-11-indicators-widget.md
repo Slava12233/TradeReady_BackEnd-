@@ -5,7 +5,7 @@ type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: [9]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[recommendations-execution/README]]"
 files:
@@ -34,12 +34,12 @@ R3 Component 2. Backend exposes `GET /api/v1/market/indicators/{symbol}` with 15
 - Wire into coin detail page
 
 ## Acceptance Criteria
-- [ ] Shows all 15 indicators grouped: Trend (SMA, EMA), Momentum (RSI, MACD), Volatility (BB, ATR, ADX), Volume
-- [ ] RSI color-coded: green < 30, red > 70
-- [ ] MACD histogram positive/negative coloring
-- [ ] Auto-refresh every 30 seconds
-- [ ] Loading skeleton
-- [ ] Responsive for mobile
+- [x] Shows all 15 indicators grouped: Trend (SMA, EMA), Momentum (RSI, MACD), Volatility (BB, ATR, ADX), Volume
+- [x] RSI color-coded: green < 30, red > 70
+- [x] MACD histogram positive/negative coloring
+- [x] Auto-refresh every 30 seconds
+- [x] Loading skeleton
+- [x] Responsive for mobile
 
 ## Agent Instructions
 1. Read `Frontend/src/components/coin/CLAUDE.md`

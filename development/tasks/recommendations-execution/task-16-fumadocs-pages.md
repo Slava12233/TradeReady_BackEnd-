@@ -5,7 +5,7 @@ type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: [15]
-status: "pending"
+status: "done"
 priority: "low"
 board: "[[recommendations-execution/README]]"
 files:
@@ -39,10 +39,10 @@ Task 15 creates the markdown guide. This converts key sections to MDX for the do
 - `Frontend/content/docs/meta.json` — Add getting-started section to sidebar
 
 ## Acceptance Criteria
-- [ ] Getting Started section appears in docs sidebar
-- [ ] All 4 pages render correctly
-- [ ] Code blocks have syntax highlighting
-- [ ] Navigation between pages works
+- [x] Getting Started section appears in docs sidebar
+- [x] All 4 pages render correctly
+- [x] Code blocks have syntax highlighting
+- [x] Navigation between pages works
 
 ## Dependencies
 - **Task 15** (guide content created)

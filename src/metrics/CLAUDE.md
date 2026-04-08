@@ -1,6 +1,6 @@
 # Unified Metrics
 
-<!-- last-updated: 2026-03-19 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Single source of truth for all performance metrics across backtesting and battles, ensuring consistent and comparable results.
 
@@ -14,6 +14,7 @@ The `src/metrics/` module computes trading performance metrics (ROI, Sharpe, Sor
 |------|---------|
 | `calculator.py` | Core metrics engine: `calculate_unified_metrics()`, input/output dataclasses, Sharpe/Sortino helpers |
 | `adapters.py` | Four adapter functions converting domain types into `MetricTradeInput` / `MetricSnapshotInput` |
+| `deflated_sharpe.py` | `deflated_sharpe_ratio()` — Bailey & Lopez de Prado DSR formula. Corrects Sharpe for multiple testing bias and non-normality of returns. Used by strategy search (Module C). |
 | `__init__.py` | Package marker with module docstring |
 
 ## Architecture & Patterns
@@ -95,4 +96,5 @@ calculate_unified_metrics(
 
 ## Recent Changes
 
+- `2026-04-07` (V.0.0.3) — Added `deflated_sharpe.py`: `deflated_sharpe_ratio(sharpe, n_trials, n_obs, skewness, kurtosis)` implementing the Bailey & Lopez de Prado Deflated Sharpe Ratio. Corrects for selection bias when choosing the best strategy from multiple trials. Used by the strategy search signal interface (Module C of the A-Z plan).
 - `2026-03-17` — Initial CLAUDE.md created

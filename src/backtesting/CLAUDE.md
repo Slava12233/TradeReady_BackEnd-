@@ -1,6 +1,6 @@
 # Backtesting Engine
 
-<!-- last-updated: 2026-04-07 -->
+<!-- last-updated: 2026-04-07 (V.0.0.3) -->
 
 > Historical market data replay engine that lets AI agents test trading strategies against real Binance price data in an isolated, in-memory sandbox.
 
@@ -53,7 +53,7 @@ Each active session is held in an `_ActiveSession` dataclass containing the simu
 - `daily_loss_limit_pct` -- halts trading when daily realized losses exceed N% of starting balance
 
 ### Fee & Slippage Model
-- Fee: 0.1% of quote amount (`_FEE_FRACTION = 0.001`), matching the live engine
+- Fee: configurable per-session via `BacktestConfig.fee_rate` (default `0.001` = 0.1%), stored as `_FEE_FRACTION` on the sandbox instance. Allows testing different exchange fee tiers.
 - Slippage: directional adjustment to execution price, clamped between 0.01% and 10% (`_MIN_SLIPPAGE` / `_MAX_SLIPPAGE`), computed as `slippage_factor * 0.001`
 - All arithmetic uses `Decimal` with explicit quantization (8 decimal places for prices/quantities, 2 for percentages)
 
@@ -66,6 +66,7 @@ class BacktestEngine:
     async def start(session_id: str, db) -> None
     async def step(session_id: str, db) -> StepResult
     async def step_batch(session_id: str, steps: int, db) -> StepResult
+    async def step_batch_fast(session_id: str, steps: int, db) -> BatchStepResult  # skips per-step snapshots for speed
     async def complete(session_id: str, db) -> BacktestResult
     async def cancel(session_id: str, db) -> BacktestResult
     async def execute_order(session_id, symbol, side, order_type, quantity, price) -> OrderResult
@@ -117,8 +118,9 @@ class DataReplayer:
 ```
 
 ### Key Data Classes
-- `BacktestConfig` -- session configuration (start/end time, balance, pairs, interval, strategy_label, agent_id)
+- `BacktestConfig` -- session configuration (start/end time, balance, pairs, interval, strategy_label, agent_id, fee_rate)
 - `StepResult` -- returned by step/step_batch (virtual_time, prices, filled orders, portfolio, progress)
+- `BatchStepResult` -- returned by step_batch_fast (steps_completed, virtual_time, progress_pct, fills_count, final_portfolio)
 - `BacktestResult` -- returned by complete/cancel (final equity, ROI, metrics, per-pair stats)
 - `BacktestMetrics` -- Sharpe, Sortino, max drawdown, win rate, profit factor, etc.
 - `PairStats` -- per-symbol trade count, win rate, net PnL, volume
@@ -177,6 +179,7 @@ class DataReplayer:
 
 ## Recent Changes
 
+- `2026-04-07` (V.0.0.3) — `engine.py`: Added `step_batch_fast()` which advances N steps but suppresses per-step snapshot capture and DB writes for high-speed sweeps (batch backtest feature). `BacktestConfig` gained `fee_rate: Decimal` field (default `0.001`) passed through to `BacktestSandbox`. New `BatchStepResult` dataclass returned by `step_batch_fast`.
 - `2026-04-07` — `sandbox.py`: `BacktestSandbox` now records `stop_price` on `SandboxTrade` objects for stop-loss and take-profit fills. `engine.py`: `_persist_results()` now writes `stop_price` to `BacktestTrade` DB rows. Migration 022 added the corresponding `stop_price` column to `backtest_trades`. Fixes BT-02 and BT-17 from the A-Z backtest tester report.
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Added `exchange` field to `BacktestConfig` and `BacktestCreateRequest`. `DataReplayer` accepts `exchange` param (data filtering pending DB migration — logs warning for non-Binance). Fixed backtest metrics returning None: changed `db.flush()` to `db.commit()` in `_persist_results()` so results are visible to concurrent GET requests.

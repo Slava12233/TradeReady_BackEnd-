@@ -5,7 +5,7 @@ type: task
 agent: "frontend-developer"
 phase: 2
 depends_on: [9]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[recommendations-execution/README]]"
 files:
@@ -34,13 +34,13 @@ R3 Component 3. Backend has `POST /api/v1/strategies/compare`.
 - Wire into strategies page
 
 ## Acceptance Criteria
-- [ ] Multi-select checkboxes on strategy list (2-10)
-- [ ] "Compare" button triggers comparison
-- [ ] Side-by-side table: sharpe, drawdown, win_rate, roi, DSR p-value
-- [ ] Winner row highlighted with badge
-- [ ] DSR significance: pass (green) / fail (red)
-- [ ] Recommendation text displayed
-- [ ] Metric dropdown to change ranking metric
+- [x] Multi-select checkboxes on strategy list (2-10)
+- [x] "Compare" button triggers comparison
+- [x] Side-by-side table: sharpe, drawdown, win_rate, roi, DSR p-value
+- [x] Winner row highlighted with badge
+- [x] DSR significance: pass (green) / fail (red)
+- [x] Recommendation text displayed
+- [x] Metric dropdown to change ranking metric
 
 ## Agent Instructions
 1. Read `Frontend/src/components/strategies/CLAUDE.md`

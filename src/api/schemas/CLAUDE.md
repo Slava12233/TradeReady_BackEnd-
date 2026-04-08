@@ -1,6 +1,6 @@
 # API Schemas
 
-<!-- last-updated: 2026-04-07 -->
+<!-- last-updated: 2026-04-07 (V.0.0.3) -->
 
 > Pydantic v2 request/response schemas for every REST API endpoint, with strict Decimal-as-string serialization and consistent validation patterns.
 
@@ -25,6 +25,11 @@ This package defines all Pydantic v2 `BaseModel` subclasses used as request bodi
 | `market.py` | Pairs, prices, tickers, candles, public trades, order book (`/market/*`) |
 | `trading.py` | Order placement, order detail/list, cancel, trade history (`/trade/*`) |
 | `waitlist.py` | Waitlist subscription (`/waitlist/*`) |
+| `indicators.py` | Indicator compute request + named-array response (`/indicators/*`) |
+| `metrics.py` | Agent metrics response, deflated Sharpe fields, compare response (`/metrics/*`) |
+| `webhooks.py` | `WebhookCreate`, `WebhookUpdate`, `WebhookResponse`, `WebhookDeliveryLog` (`/webhooks/*`) |
+| `strategies_compare.py` | Strategy comparison response — side-by-side metrics for up to 5 strategies |
+| `backtest_batch_fast.py` | `BatchStepResult` schema — steps_completed, virtual_time, progress_pct, fills_count, final_portfolio |
 
 ## Architecture & Patterns
 
@@ -206,6 +211,7 @@ There are no re-exports from `__init__.py`. Each file is imported individually.
 
 ## Recent Changes
 
+- `2026-04-07` (V.0.0.3) — Added 5 new schema files: `indicators.py`, `metrics.py`, `webhooks.py` (`WebhookCreate`, `WebhookUpdate`, `WebhookResponse`, `WebhookDeliveryLog`), `strategies_compare.py`, `backtest_batch_fast.py` (`BatchStepResult`). Updated `<!-- last-updated -->` timestamp.
 - `2026-04-07` — `battles.py`: Added typed `BattleLiveParticipantSchema` (13 fields) and updated `BattleLiveResponse` with `elapsed_minutes`, `remaining_minutes`, and `updated_at`. Replaces previous `dict[str, Any]` participant list that had 6 fields with different names than the frontend expected. Fixes live battle UI crash ("Cannot read properties of undefined").
 - `2026-04-02` (BUG-015) — `trading.py`: `OrderRequest.price` field now uses `AliasChoices(["price", "stop_price"])` so stop-loss/take-profit orders submitted with the `stop_price` key are accepted without a 422 validation error.
 - `2026-04-02` (BUG-001) — `auth.py`: `RegisterResponse` gained two new optional fields: `agent_id: UUID | None` and `agent_api_key: str | None`. These are populated by `AccountService.register()` when the auto-created default agent succeeds. Clients should use `agent_api_key` as `X-API-Key` for all trading endpoints going forward.

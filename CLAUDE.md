@@ -50,6 +50,7 @@ Each module has its own `CLAUDE.md` with detailed file inventories, public APIs,
 | `src/tasks/CLAUDE.md` | Celery tasks, beat schedule, cleanup jobs |
 | `src/training/CLAUDE.md` | Training run observation — tracking, learning curves, comparison |
 | `src/utils/CLAUDE.md` | Exception hierarchy, shared utilities |
+| `src/webhooks/CLAUDE.md` | Outbound webhook dispatcher — SSRF protection, HMAC signing, 4 event types, 6 endpoints |
 
 ### Tests
 
