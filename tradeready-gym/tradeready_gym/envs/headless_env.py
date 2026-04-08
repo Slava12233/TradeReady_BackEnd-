@@ -173,6 +173,11 @@ class HeadlessTradingEnv(gym.Env):
         self._episode_count: int = 0
         self._is_done: bool = False
 
+        # Long-lived DB session for the current episode.  Kept open so
+        # that the DataReplayer inside BacktestEngine._active can query
+        # through it.  Closed explicitly in _cleanup_episode().
+        self._episode_session: Any | None = None
+
         # Cached last step info for render() and observation building
         self._last_portfolio: dict[str, Any] = {}
         self._last_candles: list[dict[str, Any]] = []
@@ -234,17 +239,28 @@ class HeadlessTradingEnv(gym.Env):
         return text
 
     def close(self) -> None:
-        """Release the database connection pool.
+        """Release the current episode session and the database connection pool.
 
         The event loop is intentionally NOT closed here because SB3's
         ``Monitor`` wrapper may call ``reset()`` after ``close()`` during
         episode transitions.  The loop is only closed in ``__del__`` when
         the env instance is garbage-collected.
         """
+        if self._loop.is_closed():
+            super().close()
+            return
+
+        # Clean up the current episode (cancel engine session, close DB session)
+        try:
+            self._loop.run_until_complete(self._cleanup_episode())
+        except Exception:  # noqa: BLE001
+            logger.debug("headless_env.close: error in episode cleanup", exc_info=True)
+
+        # Dispose the connection pool.  After this, reset() will recreate
+        # the engine via _ensure_engine().
         if self._db_engine is not None:
             try:
-                if not self._loop.is_closed():
-                    self._loop.run_until_complete(self._db_engine.dispose())
+                self._loop.run_until_complete(self._db_engine.dispose())
             except Exception:  # noqa: BLE001
                 logger.debug("headless_env.close: error disposing DB engine", exc_info=True)
             self._db_engine = None
@@ -254,9 +270,22 @@ class HeadlessTradingEnv(gym.Env):
         super().close()
 
     def __del__(self) -> None:
-        """Ensure the event loop is cleaned up on garbage collection."""
+        """Ensure the event loop and connections are cleaned up on GC."""
         try:
             if hasattr(self, "_loop") and not self._loop.is_closed():
+                # Best-effort cleanup of episode session and pool
+                if hasattr(self, "_episode_session") and self._episode_session is not None:
+                    try:
+                        self._loop.run_until_complete(self._episode_session.close())
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._episode_session = None
+                if hasattr(self, "_db_engine") and self._db_engine is not None:
+                    try:
+                        self._loop.run_until_complete(self._db_engine.dispose())
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._db_engine = None
                 self._loop.close()
         except Exception:  # noqa: BLE001
             pass
@@ -291,10 +320,15 @@ class HeadlessTradingEnv(gym.Env):
 
         self._db_engine = create_async_engine(
             self.db_url,
-            # Keep pool small — each env instance has its own engine.
-            pool_size=2,
-            max_overflow=0,
+            # Each env instance has its own engine.  We need enough
+            # connections for:  1 long-lived episode session (held by
+            # DataReplayer inside BacktestEngine._active) + 1 for
+            # per-call operations (create_session, start, step, etc.)
+            # + headroom for auto-complete / webhook overlap.
+            pool_size=5,
+            max_overflow=3,
             pool_pre_ping=True,
+            pool_recycle=3600,
         )
         self._session_factory = async_sessionmaker(
             self._db_engine,
@@ -303,47 +337,89 @@ class HeadlessTradingEnv(gym.Env):
         )
         self._backtest_engine = BacktestEngine(session_factory=self._session_factory)
 
+    async def _cleanup_episode(self) -> None:
+        """Clean up the previous episode's engine state and DB session.
+
+        Must be called at the start of each reset() to release connections
+        held by the previous episode's DataReplayer and BacktestEngine._active
+        entry.
+        """
+        # Cancel the active backtest session in the engine so it releases
+        # its _active dict entry (which holds the DataReplayer with its
+        # session reference).
+        if (
+            self._session_id is not None
+            and self._backtest_engine is not None
+            and self._backtest_engine.is_active(self._session_id)
+        ):
+            try:
+                # We need a live session to call cancel() since it persists
+                # partial results to the DB.
+                if self._episode_session is not None:
+                    await self._backtest_engine.cancel(self._session_id, self._episode_session)
+                    await self._episode_session.commit()
+            except Exception:  # noqa: BLE001
+                logger.debug("headless_env: error cancelling previous session", exc_info=True)
+
+        # Close the episode-scoped DB session to return its connection
+        # to the pool.
+        if self._episode_session is not None:
+            try:
+                await self._episode_session.close()
+            except Exception:  # noqa: BLE001
+                logger.debug("headless_env: error closing episode session", exc_info=True)
+            self._episode_session = None
+
+        self._session_id = None
+
     async def _async_reset(self) -> None:
         """Async implementation of reset() — creates and starts a new session."""
         await self._ensure_engine()
 
+        # Clean up previous episode (cancel engine session, close DB session)
+        await self._cleanup_episode()
+
         # Imports deferred to match _ensure_engine() pattern
         from src.backtesting.engine import BacktestConfig  # noqa: PLC0415
+        from src.database.models import Account, Agent  # noqa: PLC0415
 
         # Parse ISO-8601 strings to timezone-aware datetimes
         start_dt = datetime.fromisoformat(self.start_time.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(self.end_time.replace("Z", "+00:00"))
 
-        # Create synthetic Account + Agent rows so the engine's FK checks pass.
-        from src.database.models import Account, Agent  # noqa: PLC0415
+        # Open ONE session for the entire episode.  This session will be
+        # captured by the DataReplayer inside BacktestEngine.start() and
+        # kept alive until _cleanup_episode() closes it at the start of
+        # the next reset() or in close().
+        self._episode_session = self._session_factory()
 
+        # Create synthetic Account + Agent rows
         synthetic_account_id = uuid4()
         synthetic_agent_id = uuid4()
 
-        async with self._session_factory() as db:
-            account = Account(
-                id=synthetic_account_id,
-                display_name="headless_gym",
-                email=f"headless-{synthetic_account_id.hex[:8]}@gym.local",
-                password_hash="not-a-real-hash",
-                api_key=f"ak_headless_{synthetic_account_id.hex[:16]}",
-                api_key_hash="not-a-real-hash",
-                api_secret_hash="not-a-real-hash",
-                starting_balance=Decimal(str(self.starting_balance)),
-            )
-            db.add(account)
-            await db.flush()
+        account = Account(
+            id=synthetic_account_id,
+            display_name="headless_gym",
+            email=f"headless-{synthetic_account_id.hex[:8]}@gym.local",
+            password_hash="not-a-real-hash",
+            api_key=f"ak_headless_{synthetic_account_id.hex[:16]}",
+            api_key_hash="not-a-real-hash",
+            api_secret_hash="not-a-real-hash",
+            starting_balance=Decimal(str(self.starting_balance)),
+        )
+        self._episode_session.add(account)
+        await self._episode_session.flush()
 
-            agent = Agent(
-                id=synthetic_agent_id,
-                account_id=synthetic_account_id,
-                display_name="headless_gym_agent",
-                api_key=f"ak_agent_headless_{synthetic_agent_id.hex[:16]}",
-                api_key_hash="not-a-real-hash",
-                starting_balance=Decimal(str(self.starting_balance)),
-            )
-            db.add(agent)
-            await db.commit()
+        agent = Agent(
+            id=synthetic_agent_id,
+            account_id=synthetic_account_id,
+            display_name="headless_gym_agent",
+            api_key=f"ak_agent_headless_{synthetic_agent_id.hex[:16]}",
+            api_key_hash="not-a-real-hash",
+            starting_balance=Decimal(str(self.starting_balance)),
+        )
+        self._episode_session.add(agent)
+        await self._episode_session.commit()
 
         config = BacktestConfig(
             start_time=start_dt,
@@ -355,18 +431,16 @@ class HeadlessTradingEnv(gym.Env):
             agent_id=synthetic_agent_id,
         )
 
-        async with self._session_factory() as db:
-            session_model = await self._backtest_engine.create_session(
-                account_id=synthetic_account_id,
-                config=config,
-                db=db,
-            )
-            session_id = str(session_model.id)
-            await db.commit()
+        session_model = await self._backtest_engine.create_session(
+            account_id=synthetic_account_id,
+            config=config,
+            db=self._episode_session,
+        )
+        session_id = str(session_model.id)
+        await self._episode_session.commit()
 
-        async with self._session_factory() as db:
-            await self._backtest_engine.start(session_id, db)
-            await db.commit()
+        await self._backtest_engine.start(session_id, self._episode_session)
+        await self._episode_session.commit()
 
         self._session_id = session_id
         self._prev_equity = self.starting_balance
@@ -385,16 +459,21 @@ class HeadlessTradingEnv(gym.Env):
         from src.backtesting.engine import StepResult  # noqa: PLC0415
 
         assert self._session_id is not None  # noqa: S101
+        assert self._episode_session is not None  # noqa: S101
 
-        async with self._session_factory() as db:
-            step_result: StepResult = await self._backtest_engine.step(self._session_id, db)
-            await db.commit()
+        step_result: StepResult = await self._backtest_engine.step(self._session_id, self._episode_session)
+        # Commit periodically to release any row-level locks from
+        # engine.step()'s DB progress writes (every 500 steps) and to
+        # ensure auto-complete results are persisted.
+        await self._episode_session.commit()
 
         self._current_prices = dict(step_result.prices)
         self._is_done = step_result.is_complete
         self._last_portfolio = self._portfolio_to_dict(step_result.portfolio)
 
-        # Fetch candles for observation (no DB hit — served from in-memory cache)
+        # Fetch candles for observation — uses the replayer's load_candles()
+        # which queries through self._episode_session (the same session the
+        # DataReplayer captured during start()).
         await self._refresh_candles()
 
     async def _refresh_candles(self) -> None:

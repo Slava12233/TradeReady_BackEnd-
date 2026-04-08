@@ -39,15 +39,11 @@ class _FakePortfolio:
 
 @dataclass
 class _FakeStepResult:
-    virtual_time: datetime = field(
-        default_factory=lambda: datetime(2025, 1, 1, 0, 1, 0, tzinfo=timezone.utc)
-    )
+    virtual_time: datetime = field(default_factory=lambda: datetime(2025, 1, 1, 0, 1, 0, tzinfo=timezone.utc))
     step: int = 1
     total_steps: int = 100
     progress_pct: Decimal = Decimal("1.0")
-    prices: dict[str, Decimal] = field(
-        default_factory=lambda: {"BTCUSDT": Decimal("97000")}
-    )
+    prices: dict[str, Decimal] = field(default_factory=lambda: {"BTCUSDT": Decimal("97000")})
     orders_filled: list[Any] = field(default_factory=list)
     portfolio: _FakePortfolio = field(default_factory=_FakePortfolio)
     is_complete: bool = False
@@ -56,9 +52,7 @@ class _FakeStepResult:
 
 @dataclass
 class _FakeCandle:
-    bucket: datetime = field(
-        default_factory=lambda: datetime(2025, 1, 1, tzinfo=timezone.utc)
-    )
+    bucket: datetime = field(default_factory=lambda: datetime(2025, 1, 1, tzinfo=timezone.utc))
     symbol: str = "BTCUSDT"
     open: Decimal = Decimal("97000")
     high: Decimal = Decimal("97100")
@@ -96,9 +90,7 @@ def _make_mock_engine(
         step_result = _FakeStepResult()
 
     fake_replayer = MagicMock()
-    fake_replayer.load_candles = AsyncMock(
-        return_value=[_FakeCandle() for _ in range(30)]
-    )
+    fake_replayer.load_candles = AsyncMock(return_value=[_FakeCandle() for _ in range(30)])
 
     fake_simulator = MagicMock()
     fake_simulator.current_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -130,13 +122,17 @@ def _make_mock_engine(
     engine.step = AsyncMock(side_effect=_step_side_effect)
     engine._active = {"sess-abc-123": fake_active}
 
+    # is_active() returns False so _cleanup_episode() skips the cancel() call
+    # on the first reset() (no prior session to cancel).
+    engine.is_active = MagicMock(return_value=False)
+    engine.cancel = AsyncMock(return_value=None)
+
     return engine
 
 
 # ---------------------------------------------------------------------------
 # Mock context for patching platform imports inside _ensure_engine()
 # ---------------------------------------------------------------------------
-
 
 
 # ---------------------------------------------------------------------------
@@ -168,12 +164,14 @@ def _make_env(
     fake_db_engine.dispose = AsyncMock()
     env._db_engine = fake_db_engine
 
-    fake_db = AsyncMock()
-    fake_db.commit = AsyncMock()
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=fake_db)
-    mock_ctx.__aexit__ = AsyncMock(return_value=False)
-    mock_session_factory = MagicMock(return_value=mock_ctx)
+    # The new code calls self._session_factory() directly (no async with),
+    # so the factory must return a session-like AsyncMock with add/flush/commit/close.
+    fake_session = AsyncMock()
+    fake_session.add = MagicMock()  # synchronous in SQLAlchemy
+    fake_session.flush = AsyncMock()
+    fake_session.commit = AsyncMock()
+    fake_session.close = AsyncMock()
+    mock_session_factory = MagicMock(return_value=fake_session)
 
     env._session_factory = mock_session_factory
     env._backtest_engine = engine
@@ -370,8 +368,8 @@ class TestStep:
     def test_buy_calls_place_order(self):
         engine = _make_mock_engine()
         # Give the sandbox a non-zero equity so the buy quantity is positive
-        engine._active["sess-abc-123"].sandbox.get_portfolio.return_value = (
-            _FakePortfolio(total_equity=Decimal("10000"), available_cash=Decimal("10000"))
+        engine._active["sess-abc-123"].sandbox.get_portfolio.return_value = _FakePortfolio(
+            total_equity=Decimal("10000"), available_cash=Decimal("10000")
         )
         env = _make_env(engine=engine)
         env.reset()
@@ -383,9 +381,7 @@ class TestStep:
 
     def test_sell_with_position_calls_place_order(self):
         engine = _make_mock_engine()
-        engine._active["sess-abc-123"].sandbox.get_positions.return_value = [
-            _FakePosition(quantity=Decimal("0.1"))
-        ]
+        engine._active["sess-abc-123"].sandbox.get_positions.return_value = [_FakePosition(quantity=Decimal("0.1"))]
         env = _make_env(engine=engine)
         env.reset()
         env.step(2)  # sell
@@ -460,15 +456,22 @@ class TestClose:
     def test_close_disposes_db_engine(self):
         env = _make_env()
         env.reset()
+        # Save mock reference before close() nulls _db_engine
+        db_engine_mock = env._db_engine
         env.close()
-        env._db_engine.dispose.assert_awaited_once()
+        db_engine_mock.dispose.assert_awaited_once()
 
-    def test_close_closes_event_loop(self):
+    def test_close_keeps_event_loop_open(self):
+        """close() intentionally does NOT close the event loop.
+
+        SB3's Monitor wrapper may call reset() after close() during episode
+        transitions.  The loop is only closed in __del__ on GC.
+        """
         env = _make_env()
         env.reset()
         loop = env._loop
         env.close()
-        assert loop.is_closed()
+        assert not loop.is_closed()
 
     def test_close_without_reset_does_not_raise(self):
         env = HeadlessTradingEnv(db_url="postgresql+asyncpg://x/y")
@@ -591,3 +594,139 @@ class TestFullEpisode:
             obs, *_ = env.step(0)
             assert env.observation_space.contains(obs)
         env.close()
+
+
+# ---------------------------------------------------------------------------
+# Tests: connection lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestConnectionLifecycle:
+    def test_multi_episode_lifecycle(self):
+        """reset() -> step x10 -> reset() -> step x10 -> close() with no exceptions.
+
+        After close(), the episode session must be None (released by _cleanup_episode).
+        """
+        env = _make_env()
+        env.reset()
+        for _ in range(10):
+            env.step(0)
+
+        env.reset()
+        for _ in range(10):
+            env.step(0)
+
+        # Capture session reference before close() so we can check it was cleaned up
+        env.close()
+
+        # After close(), _episode_session must be None (cleaned by _cleanup_episode)
+        assert env._episode_session is None
+
+    def test_close_then_reset_pattern(self):
+        """reset() -> step x5 -> close() -> reset() -> step x5 -> close() (SB3 Monitor pattern).
+
+        SB3's Monitor wrapper calls close() between episodes and then reset() again.
+        The env must recreate the engine after close() clears _db_engine.
+        """
+        env = _make_env()
+
+        # First episode
+        env.reset()
+        for _ in range(5):
+            env.step(0)
+        db_engine_mock_1 = env._db_engine
+        env.close()
+        assert env._episode_session is None
+        # close() should have cleared _db_engine
+        assert env._db_engine is None
+
+        # Inject a fresh mock engine/session so the second reset() works without a real DB
+        engine2 = _make_mock_engine()
+        fake_db_engine2 = MagicMock()
+        fake_db_engine2.dispose = AsyncMock()
+        env._db_engine = fake_db_engine2
+
+        fake_session2 = AsyncMock()
+        fake_session2.add = MagicMock()
+        fake_session2.flush = AsyncMock()
+        fake_session2.commit = AsyncMock()
+        fake_session2.close = AsyncMock()
+        env._session_factory = MagicMock(return_value=fake_session2)
+        env._backtest_engine = engine2
+
+        # Second episode — must not raise
+        env.reset()
+        for _ in range(5):
+            env.step(0)
+        env.close()
+
+        assert env._episode_session is None
+        # The first engine's dispose is called exactly once (from the first close())
+        db_engine_mock_1.dispose.assert_awaited_once()
+        # The second engine's dispose is called exactly once (from the second close())
+        fake_db_engine2.dispose.assert_awaited_once()
+
+    def test_cleanup_cancels_active_session(self):
+        """_cleanup_episode() calls engine.cancel() when the session is active.
+
+        After the first reset():
+        - is_active returns False (mock default) → cancel not called yet.
+
+        After the second reset():
+        - is_active is patched to return True for the old session_id
+        - engine.cancel() must be called exactly once.
+        """
+        engine = _make_mock_engine()
+        env = _make_env(engine=engine)
+
+        # First reset — no prior session; is_active(None) branch skipped
+        env.reset()
+        first_session_id = env._session_id
+        assert first_session_id is not None
+        engine.cancel.assert_not_awaited()
+
+        # Before second reset, make the engine report the first session as still active.
+        # This simulates a mid-episode re-reset where the engine's _active dict still
+        # has the old session.
+        engine.is_active = MagicMock(return_value=True)
+
+        env.reset()
+
+        # _cleanup_episode() should have called cancel() on the previous session
+        engine.cancel.assert_awaited_once()
+        # The call should reference the first session's id
+        call_args = engine.cancel.call_args
+        assert call_args.args[0] == first_session_id or (
+            len(call_args.args) > 0 and call_args.args[0] == first_session_id
+        )
+
+        env.close()
+
+    def test_pool_not_exhausted_across_episodes(self):
+        """5 consecutive reset() -> step(0) x20 cycles must not raise QueuePool errors.
+
+        With the long-lived _episode_session pattern (one session per episode,
+        explicitly closed in _cleanup_episode), each reset() releases the previous
+        episode's connection before acquiring a new one.  This test verifies that
+        the session factory and cleanup path work without leaking connections across
+        five back-to-back episodes.
+        """
+        # Use a fresh engine per reset so call_counts don't bleed across episodes
+        engine = _make_mock_engine()
+        env = _make_env(engine=engine)
+
+        for episode in range(5):
+            env.reset()
+            for _ in range(20):
+                env.step(0)
+            # Verify _episode_session is open (not None) during the episode
+            assert env._episode_session is not None, f"Episode {episode}: _episode_session should be open after step()"
+
+        # Capture factory reference before close() nulls it
+        session_factory = env._session_factory
+        env.close()
+
+        # After close(), session must be released
+        assert env._episode_session is None
+        # Session factory called at least 5 times (once per episode)
+        assert session_factory.call_count >= 5
