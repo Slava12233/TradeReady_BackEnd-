@@ -314,7 +314,8 @@ class HeadlessTradingEnv(gym.Env):
                 email=f"headless-{synthetic_account_id.hex[:8]}@gym.local",
                 password_hash="not-a-real-hash",
                 api_key=f"ak_headless_{synthetic_account_id.hex[:16]}",
-                api_secret="not-a-real-secret",
+                api_key_hash="not-a-real-hash",
+                api_secret_hash="not-a-real-hash",
                 starting_balance=Decimal(str(self.starting_balance)),
             )
             db.add(account)
@@ -323,8 +324,9 @@ class HeadlessTradingEnv(gym.Env):
             agent = Agent(
                 id=synthetic_agent_id,
                 account_id=synthetic_account_id,
-                name="headless_gym_agent",
+                display_name="headless_gym_agent",
                 api_key=f"ak_agent_headless_{synthetic_agent_id.hex[:16]}",
+                api_key_hash="not-a-real-hash",
                 starting_balance=Decimal(str(self.starting_balance)),
             )
             db.add(agent)
