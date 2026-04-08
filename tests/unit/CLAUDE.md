@@ -99,6 +99,14 @@ The `tests/unit/` directory contains fast, isolated unit tests that mock all ext
 | `test_intent_router.py` | 64 | `IntentRouter` — 3-layer classification, 7 intent types, routing to handlers |
 | `test_permission_enforcement.py` | 35 | `PermissionEnforcer` — action→capability mapping, TOCTOU safety, audit logging |
 | `test_strategy_manager.py` | 85 | `StrategyManager` — rolling windows, degradation detection, strategy adjustments, A/B wiring |
+| `test_deflated_sharpe.py` | ~30 | `deflated_sharpe_ratio()` — DSR formula correctness, edge cases (single trial, zero variance, negative Sharpe) |
+| `test_webhook_dispatcher.py` | ~35 | `fire_event()`, `validate_webhook_url()` — SSRF blocking, valid URLs, event enqueue, payload shape |
+| `test_webhook_tasks.py` | ~30 | `deliver_webhook` Celery task — successful delivery, retry on 5xx, permanent fail on 4xx, HMAC signature |
+| `test_indicator_api.py` | ~25 | Indicator compute endpoint — RSI/MACD/SMA payloads, unknown indicator 422, empty series edge case |
+| `test_backtest_batch_fast.py` | ~40 | `step_batch_fast()` — speed vs accuracy trade-off, correct step count, `BatchStepResult` fields, fee_rate propagation |
+| `test_strategy_compare.py` | ~20 | Strategy compare endpoint — up to 5 strategies, metric alignment, owner isolation |
+| `test_metrics_api.py` | ~25 | Agent metrics + compare endpoints — deflated Sharpe in response, missing agent 404, multi-agent compare |
+| `test_gym_enhancements.py` | ~50 | Gymnasium wrapper enhancements — new reward signal, observation space extensions, wrapper composition |
 
 ## Mock Patterns
 
@@ -202,5 +210,6 @@ pytest tests/unit/ --cov=src --cov-report=html                  # with coverage
 - `2026-03-18` — Removed duplicate inventory rows. Verified 70 files on disk match 70 entries in the table.
 - `2026-03-19` — Synced test count: 1194 → 1184 (actual grep count of `def test_` / `async def test_` functions). 70 files confirmed.
 - `2026-03-20` — Verified: still 70 test files on disk. No new unit test files added this session.
+- `2026-04-07` (V.0.0.3) — Added 8 new test files: `test_deflated_sharpe.py`, `test_webhook_dispatcher.py`, `test_webhook_tasks.py`, `test_indicator_api.py`, `test_backtest_batch_fast.py`, `test_strategy_compare.py`, `test_metrics_api.py`, `test_gym_enhancements.py`. File count: 87 → 95. Test count: 1734 → ~2280+ (550+ new tests).
 - `2026-04-06` — Added 15 new test files from agent ecosystem phases (conversation, memory, permissions) and QA sprint fixes: `test_ab_testing.py`, `test_agent_budget.py`, `test_agent_budget_repo.py`, `test_agent_decision_repo.py`, `test_agent_learning_repo.py`, `test_agent_message_repo.py`, `test_agent_permissions.py`, `test_agent_session.py`, `test_agent_session_repo.py`, `test_agent_tools.py`, `test_context_builder.py`, `test_intent_router.py`, `test_permission_enforcement.py`, `test_strategy_manager.py`. File count: 72 → 87. Test count updated to 1734.
 - `2026-03-21` — Added `test_agent_api_call_repo.py` (9 tests) and `test_agent_strategy_signal_repo.py` (10 tests) for Agent Logging System. File count: 70 → 72. Test count: 1184 → 1203.

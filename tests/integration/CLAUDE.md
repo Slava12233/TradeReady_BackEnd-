@@ -1,6 +1,6 @@
 # Integration Tests
 
-<!-- last-updated: 2026-04-06 -->
+<!-- last-updated: 2026-04-07 -->
 
 > End-to-end and API-level tests for every REST endpoint, WebSocket, and the backtesting/battle engines, using either mocked infrastructure or real Docker services.
 
@@ -41,8 +41,12 @@ Integration tests verify the full request-response cycle through the FastAPI app
 | `test_websocket.py` | 49 | WebSocket connect/disconnect, subscribe/unsubscribe, ticker/candle/order/portfolio channels, heartbeat, subscription cap, Redis bridge |
 | `test_agent_ecosystem_phase1.py` | 28 | Agent ecosystem Phase 1 E2E: session creation, memory store, conversation history, context assembly, intent routing, DB persistence |
 | `test_agent_ecosystem_phase2.py` | 22 | Agent ecosystem Phase 2 E2E: permissions enforcement, budget limits, capability grants, audit logging, trading loop integration |
+| `test_webhook_endpoints.py` | ~30 | Webhook REST endpoints: register, list, get, update, delete, test delivery; SSRF rejection; HMAC signature header |
+| `test_indicators_endpoints.py` | ~25 | Indicator compute endpoint: RSI/MACD/Bollinger payloads, unsupported indicator 422, empty-series edge case |
+| `test_batch_backtest_e2e.py` | ~20 | Batch backtest E2E (Docker): create, start, step_batch_fast, results; fee_rate propagation; BatchStepResult fields |
+| `test_strategy_compare_endpoint.py` | ~15 | Strategy compare: up to 5 strategies side-by-side, owner isolation, metric alignment |
 
-**Total: ~554 test functions across 26 files.**
+**Total: ~644 test functions across 30 files.**
 
 ## Setup & Dependencies
 
@@ -176,6 +180,7 @@ pytest tests/integration/ -v -m "not slow"
 
 ## Recent Changes
 
+- `2026-04-07` (V.0.0.3) — Added 4 new integration test files: `test_webhook_endpoints.py` (~30 tests), `test_indicators_endpoints.py` (~25 tests), `test_batch_backtest_e2e.py` (~20 tests, Docker-dependent), `test_strategy_compare_endpoint.py` (~15 tests). File count: 26 → 30. Total: ~554 → ~644 tests.
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Updated battle exception gotcha (duplicate class removed). Fixed lint: E402 in test_auth_endpoints, N801 suppressed in test_real_user_scenario_e2e.
 - `2026-03-18` -- Added `test_real_user_scenario_e2e.py` (52 tests) to inventory table. Total remains ~504 tests across 24 files (table sum verified).

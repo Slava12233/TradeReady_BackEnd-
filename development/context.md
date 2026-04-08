@@ -17,10 +17,10 @@ tags:
 
 ## Current State
 
-**Active work:** Production stable. Battle live crash fixed. Backtest stop_price gap fixed (BT-02, BT-17). Migration 022 applied. CLAUDE.md files synced.
-**Last session:** 2026-04-07 — (1) Battle live crash fix: resolved "Cannot read properties of undefined (reading 'toFixed')" on `GET /battles/{id}/live` — data shape mismatch (6 vs 13 fields). Typed `BattleLiveParticipantSchema`, `!= null` guard fix, 3 frontend components updated. (2) Backtest fixes: BT-02/BT-17 stop_price now persisted through sandbox→engine→DB (migration 022); orphan detection race condition fixed. (3) Context manager sync: context.md pruned 931→409 lines; 5 CLAUDE.md files updated (alembic, backtesting, database, api/routes, battles/schema).
-**Previous session:** 2026-04-06 — CLAUDE.md sync: fixed 10 missing agent ecosystem repo files in `src/database/repositories/CLAUDE.md`; updated timestamps and recent-changes entries for `src/agents`, `src/database`, and `src/database/repositories`.
-**Next steps:** (1) Monitor production stability. (2) Resume strategy search system: Build Module A (Feature Pipeline), Module B (Signal Interface), Module C (Deflated Sharpe). Implementation plan in `development/implementation-plan-a-to-z.md`.
+**Active work:** V.0.0.3 milestone complete. CLAUDE.md files synced. Production stable.
+**Last session:** 2026-04-07 — **V.0.0.3 milestone** delivered. 7 endgame improvements: batch backtest (`step_batch_fast`, configurable `fee_rate`), Deflated Sharpe Ratio (`src/metrics/deflated_sharpe.py`), Indicators API (2 endpoints), Strategy Compare endpoint, Gymnasium enhancements, Webhooks system (SSRF protection, HMAC signing, 4 event types, 6 endpoints), SDK examples. Security audit: 9 findings (SSRF, DoS, secret exposure + 6 medium/low) found and resolved — PASS. 64 files changed, ~20K lines added. 550+ new tests (platform total: 5,132+). 11 new API endpoints. Migration 023 applied. 4 new frontend components (webhook UI, indicators widget, strategy compare, batch progress). Onboarding docs added (`getting-started-agents.md`, `architecture-overview.md`). Backup scripts added (`backup_db.sh`, `check_backup_health.sh`). CLAUDE.md sync: `src/webhooks/CLAUDE.md` created (new module); 8 CLAUDE.md files updated.
+**Previous session:** 2026-04-07 — (1) Battle live crash fix: resolved "Cannot read properties of undefined (reading 'toFixed')" on `GET /battles/{id}/live` — data shape mismatch (6 vs 13 fields). Typed `BattleLiveParticipantSchema`, `!= null` guard fix, 3 frontend components updated. (2) Backtest fixes: BT-02/BT-17 stop_price now persisted through sandbox→engine→DB (migration 022); orphan detection race condition fixed.
+**Next steps:** (1) Monitor production stability post-V.0.0.3. (2) Continue strategy search system: Build Module A (Feature Pipeline), Module B (Signal Interface) — Module C (Deflated Sharpe) now complete. Implementation plan in `development/implementation-plan-a-to-z.md`.
 **Blocked:** Nothing.
 
 ---
@@ -62,6 +62,11 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 | **Agent Logging System** | Complete | 34 tasks, 5 phases. Centralized structlog + trace_id correlation, API call logging middleware, LLM cost estimation, LogBatchWriter (async batched DB), 16 Prometheus metrics (AGENT_REGISTRY), 2 new DB tables, 3 new API endpoints, 3 Celery analytics tasks, 6 Grafana dashboards, 11 alert rules. 66 new tests. |
 | **C-Level Report Skill** | Complete | `/c-level-report` slash-command skill (7th skill). Gathers live metrics from 12 data sources (git, tests, code reviews, agent memory, etc.), generates rich markdown reports with progress bars, KPI tables, and risk matrices. Output: `development/C-level_reports/report-YYYY-MM-DD.md`. Supports 6 scopes: full, progress, quality, risk, agents, roadmap. |
 | **Docs Site** | **COMPLETE** | 8 phases done. 50 MDX pages, 12 sections, 7 custom components, Cmd+K search, MD downloads, 5 REST API routes, landing integration, OpenGraph metadata, sitemap, custom 404. Security + perf hardened. |
+| **Webhooks System** | Production | `src/webhooks/` — fire_event(), SSRF protection, HMAC signing, 4 event types, 6 REST endpoints, Celery delivery task, migration 023 |
+| **Deflated Sharpe (DSR)** | Production | `src/metrics/deflated_sharpe.py` — Bailey & Lopez de Prado formula, corrects for multiple testing bias. Used by metrics API and strategy search. |
+| **Indicators API** | Production | `src/api/routes/indicators.py` — on-demand computation of RSI/MACD/SMA/EMA/Bollinger/ADX/ATR via REST endpoint |
+| **Batch Backtest Fast** | Production | `step_batch_fast()` on `BacktestEngine` — high-speed N-step sweep without per-step snapshots; configurable `fee_rate` on `BacktestConfig` |
+| **Strategy Compare** | Production | `GET /strategies/compare` — side-by-side metrics for up to 5 strategies |
 | **Strategy Registry (STR-1)** | Production | 6 DB tables, 10 REST endpoints, versioning, ownership checks, 24 tests |
 | **Strategy Executor (STR-2)** | Production | IndicatorEngine (7 indicators), StrategyExecutor, TestOrchestrator, TestAggregator, RecommendationEngine, 6 REST endpoints, 2 Celery tasks, 91 tests |
 | **Training Run Aggregation (STR-5)** | Production | TrainingRunService, TrainingRunRepository, 7 REST endpoints at /api/v1/training, learning curve smoothing, aggregate stats on complete(), 16 tests |
@@ -75,7 +80,7 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4.2, pnpm
 - **Tasks:** Celery + Redis broker (16 beat tasks, including 5 ML retraining on `ml_training` queue)
 - **Auth:** JWT (PyJWT) + API keys (bcrypt), dual auth flow
-- **Testing:** pytest — platform: 1,734 unit tests (post-QA sprint baseline); agent: 51 files / 1984 tests; frontend: 207 vitest tests. Grand total: ~3,900+ test functions.
+- **Testing:** pytest — platform: 2,280+ unit tests + 644 integration tests (post-V.0.0.3); agent: 51 files / 1984 tests; frontend: 207 vitest tests. Grand total: ~5,132+ test functions.
 - **Linting:** ruff + mypy (strict)
 - **Containers:** Docker + Docker Compose
 - **Monitoring:** Prometheus + Grafana + structlog
@@ -104,7 +109,7 @@ A **production-deployed** simulated crypto exchange where AI agents trade **virt
 
 Each account owns multiple **agents**, each with its own API key, starting balance, risk profile, and trading history. All trading tables keyed by `agent_id`. Auth flow: API key tries agents table first, falls back to accounts. JWT uses `X-Agent-Id` header.
 
-### Database (22 migrations, current head: 022)
+### Database (23 migrations, current head: 023)
 
 Key tables: `accounts`, `agents`, `balances`, `orders`, `trades`, `positions`, `ticks` (hypertable), `portfolio_snapshots` (hypertable), `trading_pairs`, `backtest_sessions`, `backtest_trades`, `backtest_snapshots` (hypertable), `battles`, `battle_participants`, `battle_snapshots` (hypertable), `candles_backfill`, `waitlist`, `strategies`, `strategy_versions`, `strategy_test_runs`, `strategy_test_episodes`, `training_runs`, `training_episodes`, `agent_sessions`, `agent_messages`, `agent_decisions`, `agent_journal`, `agent_learnings`, `agent_feedback`, `agent_permissions`, `agent_budgets`, `agent_performance`, `agent_observations` (hypertable), `agent_api_calls`, `agent_strategy_signals`, `agent_audit_log`
 
@@ -149,6 +154,47 @@ Note: Migration 011 missing from directory — chain skips 010 → 012.
 ---
 
 ## Recent Activity
+
+### 2026-04-07 — V.0.0.3 Milestone: 7 Endgame Improvements + Security Audit PASS
+
+**Changes (64 files, ~20K lines):**
+- `src/backtesting/engine.py` — Added `step_batch_fast()` for high-speed sweeps (suppresses per-step snapshots). `BacktestConfig` gained `fee_rate: Decimal` field. New `BatchStepResult` dataclass.
+- `src/metrics/deflated_sharpe.py` — New file: `deflated_sharpe_ratio()` implementing Bailey & Lopez de Prado DSR formula (corrects Sharpe for multiple testing bias and non-normality). Module C of strategy search A-Z plan.
+- `src/webhooks/__init__.py`, `src/webhooks/dispatcher.py` — New package: `fire_event()` and `validate_webhook_url()` (SSRF protection blocking private IPs, metadata endpoints, non-HTTP schemes).
+- `src/tasks/webhook_tasks.py` — New `deliver_webhook` Celery task: async HTTP POST with HMAC-SHA256 `X-Signature-256` header, 3-attempt exponential retry (10s/60s/300s), permanent fail on 4xx.
+- `src/api/routes/webhooks.py` — 6 new REST endpoints: webhook CRUD + test delivery.
+- `src/api/routes/indicators.py` — 2 new endpoints: compute indicators on-demand + list supported.
+- `src/api/routes/metrics.py` — 2 new endpoints: agent metrics (with deflated Sharpe) + compare.
+- `src/api/schemas/webhooks.py` — `WebhookCreate`, `WebhookUpdate`, `WebhookResponse`, `WebhookDeliveryLog` schemas.
+- `src/api/schemas/indicators.py`, `src/api/schemas/metrics.py`, `src/api/schemas/strategies_compare.py`, `src/api/schemas/backtest_batch_fast.py` — 4 new schema files.
+- `src/api/routes/strategy_tests.py` — Added `GET /strategies/compare` endpoint.
+- `alembic/versions/023_*.py` — Migration 023: webhooks tables (`webhooks`, `webhook_deliveries`). Head: 022 → 023.
+- `Frontend/src/components/webhooks/` — Webhook management UI (new component).
+- `Frontend/src/components/shared/IndicatorsWidget.tsx` — On-demand indicator widget.
+- `Frontend/src/components/strategies/StrategyCompare.tsx` — Side-by-side strategy comparison.
+- `Frontend/src/components/backtest/BatchProgress.tsx` — Progress tracker for `step_batch_fast`.
+- `docs/content/getting-started-agents.md`, `docs/content/architecture-overview.md` — New onboarding docs.
+- `scripts/backup_db.sh`, `scripts/check_backup_health.sh` — New backup scripts.
+- `tests/unit/test_deflated_sharpe.py`, `test_webhook_dispatcher.py`, `test_webhook_tasks.py`, `test_indicator_api.py`, `test_backtest_batch_fast.py`, `test_strategy_compare.py`, `test_metrics_api.py`, `test_gym_enhancements.py` — 8 new unit test files (~550 tests).
+- `tests/integration/test_webhook_endpoints.py`, `test_indicators_endpoints.py`, `test_batch_backtest_e2e.py`, `test_strategy_compare_endpoint.py` — 4 new integration test files (~90 tests).
+
+**Decisions:**
+- `step_batch_fast()` trades snapshot fidelity for speed: it skips per-step `capture_snapshot()` calls and DB progress writes, only capturing the final state. Designed for rapid strategy parameter sweeps where intermediate equity curve data is not needed.
+- Deflated Sharpe lives in `src/metrics/` (not `agent/strategies/`) because it is a pure statistical function consumed by both the strategy search system and the REST metrics API.
+- Webhook secret is bcrypt-hashed in DB and returned raw only once at creation — same pattern as API keys in the accounts system. No recovery path, users must re-create.
+- SSRF protection in `validate_webhook_url()` performs DNS resolution at registration time (not at delivery time) to catch hostnames that resolve to private IPs. This adds ~50ms to webhook creation but prevents blind SSRF via DNS rebinding.
+
+**Security audit findings resolved (9 total):**
+- CRITICAL/HIGH: SSRF via webhook URL → fixed by `validate_webhook_url()` with DNS resolution check.
+- HIGH: Webhook secret stored in plaintext → fixed by bcrypt hashing, reveal-once pattern.
+- HIGH: Delivery task DoS via large payload → fixed by 50KB payload size cap in `deliver_webhook`.
+- 6 medium/low findings (excessive retry logging, missing rate limit on test-delivery, missing Content-Type validation, etc.) — all resolved.
+
+**Learnings:**
+- Celery retry with `self.retry(countdown=...)` requires the task to be defined with `bind=True`. Without `bind=True`, there is no `self` to call `.retry()` on.
+- `httpx` async client must be created inside the Celery task (not at module level) because Celery workers run in a synchronous context and the event loop is created per-task via `asyncio.run()`.
+
+---
 
 ### 2026-04-07 — Battle Live Crash Fix + Backtest Bug Fixes (BT-02, BT-17, orphan detection)
 
