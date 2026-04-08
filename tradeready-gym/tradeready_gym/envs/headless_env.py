@@ -301,6 +301,35 @@ class HeadlessTradingEnv(gym.Env):
         start_dt = datetime.fromisoformat(self.start_time.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(self.end_time.replace("Z", "+00:00"))
 
+        # Create synthetic Account + Agent rows so the engine's FK checks pass.
+        from src.database.models import Account, Agent  # noqa: PLC0415
+
+        synthetic_account_id = uuid4()
+        synthetic_agent_id = uuid4()
+
+        async with self._session_factory() as db:
+            account = Account(
+                id=synthetic_account_id,
+                display_name="headless_gym",
+                email=f"headless-{synthetic_account_id.hex[:8]}@gym.local",
+                password_hash="not-a-real-hash",
+                api_key=f"ak_headless_{synthetic_account_id.hex[:16]}",
+                api_secret="not-a-real-secret",
+                starting_balance=Decimal(str(self.starting_balance)),
+            )
+            db.add(account)
+            await db.flush()
+
+            agent = Agent(
+                id=synthetic_agent_id,
+                account_id=synthetic_account_id,
+                name="headless_gym_agent",
+                api_key=f"ak_agent_headless_{synthetic_agent_id.hex[:16]}",
+                starting_balance=Decimal(str(self.starting_balance)),
+            )
+            db.add(agent)
+            await db.commit()
+
         config = BacktestConfig(
             start_time=start_dt,
             end_time=end_dt,
@@ -308,12 +337,12 @@ class HeadlessTradingEnv(gym.Env):
             candle_interval=self._candle_interval,
             pairs=[self.symbol],
             strategy_label="headless_gym",
-            agent_id=uuid4(),  # synthetic agent for headless mode
+            agent_id=synthetic_agent_id,
         )
 
         async with self._session_factory() as db:
             session_model = await self._backtest_engine.create_session(
-                account_id=uuid4(),  # synthetic account for headless mode
+                account_id=synthetic_account_id,
                 config=config,
                 db=db,
             )
