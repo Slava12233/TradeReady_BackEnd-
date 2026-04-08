@@ -385,7 +385,7 @@ async def _set_cached(redis: object, cache_key: str, response: IndicatorResponse
         )
 
 
-async def _fetch_candles(db: object, symbol: str, lookback: int) -> list:
+async def _fetch_candles(db: object, symbol: str, lookback: int) -> list[object]:
     """Query the last *lookback* 1-minute candles for *symbol* from TimescaleDB.
 
     Uses the ``candles_1m`` continuous-aggregate view, ordered oldest-first so
