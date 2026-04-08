@@ -5,7 +5,7 @@ type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [7]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -33,11 +33,11 @@ Task 07 creates the indicators API endpoints. This task adds SDK convenience met
 - `sdk/agentexchange/async_client.py` — Add async `get_indicators()` method
 
 ## Acceptance Criteria
-- [ ] `client.get_indicators("BTCUSDT")` returns all indicators
-- [ ] `client.get_indicators("BTCUSDT", indicators=["rsi_14", "macd_hist"])` returns filtered
-- [ ] `lookback` param passed as query parameter
-- [ ] Async client has matching method
-- [ ] `ruff check` passes
+- [x] `client.get_indicators("BTCUSDT")` returns all indicators
+- [x] `client.get_indicators("BTCUSDT", indicators=["rsi_14", "macd_hist"])` returns filtered
+- [x] `lookback` param passed as query parameter
+- [x] Async client has matching method
+- [x] `ruff check` passes
 
 ## Dependencies
 - **Task 07** must complete first

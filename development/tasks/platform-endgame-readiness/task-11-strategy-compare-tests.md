@@ -5,7 +5,7 @@ type: task
 agent: "test-runner"
 phase: 2
 depends_on: [10]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -31,9 +31,9 @@ Task 10 implements the comparison API. This task validates correctness.
 - `tests/unit/test_strategy_comparison.py` — Unit tests for service + endpoint
 
 ## Acceptance Criteria
-- [ ] Tests cover: ranking by sharpe_ratio, ranking by other metrics, 2 strategies, 10 strategies, invalid strategy ID returns 404, < 2 strategies returns 422, DSR included when available, DSR omitted when not available
-- [ ] Tests validate recommendation text format
-- [ ] All tests pass
+- [x] Tests cover: ranking by sharpe_ratio, ranking by other metrics, 2 strategies, 10 strategies, invalid strategy ID returns 404, < 2 strategies returns 422, DSR included when available, DSR omitted when not available
+- [x] Tests validate recommendation text format
+- [x] All tests pass
 
 ## Dependencies
 - **Task 10** must complete first

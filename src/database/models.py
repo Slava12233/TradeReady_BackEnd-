@@ -42,6 +42,9 @@ Agent ecosystem tables:
 - ``AgentStrategySignal`` — per-strategy signals before ensemble combination
 - ``AgentAuditLog``       — durable audit trail for all permission check outcomes (allow + deny)
 
+Webhook tables:
+- ``WebhookSubscription`` — per-account outbound webhook endpoint registrations
+
 All models inherit from the shared ``Base`` declarative base.
 """
 
@@ -331,6 +334,9 @@ class Account(Base):
         "BacktestSession", back_populates="account", cascade="all, delete-orphan"
     )
     battles: Mapped[list[Battle]] = relationship("Battle", back_populates="account", cascade="all, delete-orphan")
+    webhook_subscriptions: Mapped[list[WebhookSubscription]] = relationship(
+        "WebhookSubscription", back_populates="account", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'suspended', 'archived')", name="ck_accounts_status"),
@@ -3369,3 +3375,104 @@ class AgentAuditLog(Base):
 
     def __repr__(self) -> str:
         return f"<AgentAuditLog id={self.id} agent={self.agent_id} action={self.action!r} outcome={self.outcome!r}>"
+
+
+# ── WebhookSubscription ───────────────────────────────────────────────────────
+
+
+class WebhookSubscription(Base):
+    """An outbound webhook subscription owned by an account.
+
+    When a subscribed event fires (e.g. ``order.filled``, ``trade.executed``),
+    the platform makes a POST request to ``url`` with a JSON payload signed
+    via ``secret`` using HMAC-SHA256.  Failed deliveries increment
+    ``failure_count``; subscriptions may be auto-disabled after a threshold.
+
+    Attributes:
+        id:                Primary key (UUID v4, server-generated).
+        account_id:        Foreign key → ``accounts.id`` (cascade delete).
+        url:               HTTPS endpoint that receives webhook payloads.
+        events:            JSONB array of event name strings the client
+                           subscribes to (e.g. ``["order.filled",
+                           "trade.executed"]``).
+        secret:            HMAC-SHA256 signing key.  Stored as a plaintext
+                           secret (generated with ``secrets.token_urlsafe``).
+        description:       Optional human-readable label for the subscription.
+        active:            Whether the subscription is currently enabled.
+                           Defaults to ``True``.  Set to ``False`` after
+                           repeated delivery failures.
+        failure_count:     Running count of consecutive delivery failures.
+                           Reset to 0 on the next successful delivery.
+        created_at:        UTC timestamp of subscription creation.
+        updated_at:        UTC timestamp of last modification.
+        last_triggered_at: UTC timestamp of the most recent delivery attempt
+                           (successful or not).  ``None`` if never triggered.
+    """
+
+    __tablename__ = "webhook_subscriptions"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    url: Mapped[str] = mapped_column(
+        VARCHAR(2048),
+        nullable=False,
+    )
+    events: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="'[]'",
+    )
+    secret: Mapped[str] = mapped_column(
+        VARCHAR(128),
+        nullable=False,
+    )
+    description: Mapped[str | None] = mapped_column(
+        VARCHAR(255),
+        nullable=True,
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="TRUE",
+    )
+    failure_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    last_triggered_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+    )
+
+    account: Mapped[Account] = relationship("Account", back_populates="webhook_subscriptions")
+
+    __table_args__ = (
+        Index("idx_webhook_subscriptions_account_id", "account_id"),
+        Index("idx_webhook_subscriptions_active", "active"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<WebhookSubscription id={self.id} account={self.account_id} "
+            f"url={self.url!r} active={self.active}>"
+        )

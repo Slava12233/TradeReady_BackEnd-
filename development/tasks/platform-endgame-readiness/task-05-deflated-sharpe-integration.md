@@ -5,7 +5,7 @@ type: task
 agent: "backend-developer"
 phase: 1
 depends_on: [4]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -36,12 +36,12 @@ Task 04 creates the core DSR service. This task integrates it: (1) auto-compute 
 - `sdk/agentexchange/async_client.py` — Add async `compute_deflated_sharpe()` method
 
 ## Acceptance Criteria
-- [ ] Strategy test completion auto-computes DSR when >= 2 episode Sharpes exist
-- [ ] DSR result stored in `StrategyTestRun.results["deflated_sharpe"]` JSONB field
-- [ ] `num_trials` defaults to count of strategy versions for this strategy
-- [ ] SDK `compute_deflated_sharpe()` calls the REST endpoint and returns typed result
-- [ ] No breaking changes to existing test completion flow
-- [ ] `ruff check` passes
+- [x] Strategy test completion auto-computes DSR when >= 2 episode Sharpes exist
+- [x] DSR result stored in `StrategyTestRun.results["deflated_sharpe"]` JSONB field
+- [x] `num_trials` defaults to count of strategy versions for this strategy
+- [x] SDK `compute_deflated_sharpe()` calls the REST endpoint and returns typed result
+- [x] No breaking changes to existing test completion flow
+- [x] `ruff check` passes
 
 ## Dependencies
 - **Task 04** must complete first (provides `compute_deflated_sharpe()` function)

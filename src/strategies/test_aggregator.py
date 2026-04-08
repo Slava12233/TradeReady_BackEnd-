@@ -6,25 +6,44 @@ provides per-pair breakdowns for strategy analysis.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
+
+from src.metrics.deflated_sharpe import MIN_RETURNS, compute_deflated_sharpe
+
+logger = logging.getLogger(__name__)
 
 
 class TestAggregator:
     """Aggregates results from multiple test episodes into summary statistics."""
 
     @staticmethod
-    def aggregate(episodes: list[dict[str, Any]]) -> dict[str, Any]:
+    def aggregate(
+        episodes: list[dict[str, Any]],
+        num_trials: int = 1,
+    ) -> dict[str, Any]:
         """Aggregate episode metrics into summary statistics.
+
+        When at least ``MIN_RETURNS`` episodes with a Sharpe ratio are available,
+        this method also computes the Deflated Sharpe Ratio (DSR) to correct for
+        multiple-testing bias.  The DSR result is stored under the
+        ``"deflated_sharpe"`` key.
 
         Args:
             episodes: List of episode metric dicts, each containing at minimum:
                 ``roi_pct``, ``sharpe_ratio``, ``max_drawdown_pct``,
                 ``total_trades``, ``win_rate``.
+            num_trials: Number of strategy variants tested before selecting this
+                one.  Used as the selection-bias factor in the DSR computation.
+                Defaults to ``1`` (no selection bias correction).
 
         Returns:
             Aggregated results dict with overall and per-pair breakdowns.
+            When DSR can be computed, the dict includes a ``"deflated_sharpe"``
+            sub-dict with ``observed_sharpe``, ``deflated_sharpe``,
+            ``p_value``, ``is_significant``, and ``num_trials``.
         """
         if not episodes:
             return TestAggregator._empty_results()
@@ -54,6 +73,37 @@ class TestAggregator:
             "total_trades": int(np.sum(trade_counts)),
             "avg_win_rate": round(float(np.mean(win_rates)), 4) if win_rates else None,
         }
+
+        # Deflated Sharpe Ratio — requires at least MIN_RETURNS episode Sharpes.
+        # Each episode Sharpe is treated as a single "return observation".
+        # This corrects for multiple-testing bias when num_trials > 1.
+        if len(sharpes) >= MIN_RETURNS:
+            try:
+                dsr = compute_deflated_sharpe(
+                    returns=sharpes,
+                    num_trials=max(1, num_trials),
+                    # One observation per episode (not daily), so annualisation
+                    # factor = 1 — DSR is already in per-episode units.
+                    annualization_factor=1,
+                )
+                results["deflated_sharpe"] = {
+                    "observed_sharpe": round(dsr.observed_sharpe, 6),
+                    "expected_max_sharpe": round(dsr.expected_max_sharpe, 6),
+                    "deflated_sharpe": round(dsr.deflated_sharpe, 6),
+                    "p_value": round(dsr.p_value, 6),
+                    "is_significant": dsr.is_significant,
+                    "num_trials": dsr.num_trials,
+                    "num_returns": dsr.num_returns,
+                    "skewness": round(dsr.skewness, 6),
+                    "kurtosis": round(dsr.kurtosis, 6),
+                }
+            except ValueError as exc:
+                logger.warning(
+                    "DSR computation skipped: %s (episodes=%d, num_trials=%d)",
+                    exc,
+                    len(sharpes),
+                    num_trials,
+                )
 
         # Per-pair breakdown
         by_pair = TestAggregator._compute_by_pair(episodes)

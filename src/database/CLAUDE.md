@@ -1,6 +1,6 @@
 # Database Layer
 
-<!-- last-updated: 2026-04-07 -->
+<!-- last-updated: 2026-04-07 (task-15) -->
 
 > SQLAlchemy ORM models, async session management, and repository pattern for TimescaleDB/PostgreSQL.
 
@@ -73,6 +73,9 @@ All models inherit from `Base` (a plain `DeclarativeBase`). No mixins or abstrac
 - `TrainingRun` -- RL training run tracking
 - `TrainingEpisode` -- individual training episode results (FK to backtest_sessions)
 
+**Webhooks:**
+- `WebhookSubscription` -- per-account outbound webhook endpoint registrations (FK → accounts.id, cascade delete)
+
 **Reference/utility:**
 - `Tick` -- raw Binance trade ticks (hypertable, 1-hour chunks; composite PK: time+symbol+trade_id)
 - `TradingPair` -- Binance USDT pair reference data (symbol is PK)
@@ -114,7 +117,7 @@ Trading tables (`balances`, `orders`, `trades`, `positions`, `portfolio_snapshot
 | Export | Description |
 |--------|-------------|
 | `Base` | Declarative base for Alembic `target_metadata` |
-| 27 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode`, `AgentApiCall`, `AgentStrategySignal`, `AgentAuditLog` |
+| 28 model classes | `Tick`, `TradingPair`, `Account`, `Agent`, `Balance`, `TradingSession`, `Order`, `Trade`, `Position`, `PortfolioSnapshot`, `AuditLog`, `WaitlistEntry`, `BacktestSession`, `BacktestTrade`, `BacktestSnapshot`, `Battle`, `BattleParticipant`, `BattleSnapshot`, `Strategy`, `StrategyVersion`, `StrategyTestRun`, `StrategyTestEpisode`, `TrainingRun`, `TrainingEpisode`, `AgentApiCall`, `AgentStrategySignal`, `AgentAuditLog`, `WebhookSubscription` |
 
 ## Dependencies
 
@@ -157,6 +160,7 @@ Tests use mocked sessions from `tests/conftest.py`. The `get_async_session` depe
 
 ## Recent Changes
 
+- `2026-04-07` — Migration 023: added `WebhookSubscription` model (`webhook_subscriptions` table). Per-account outbound webhook endpoint registrations with JSONB events array, HMAC-SHA256 secret, active flag, failure_count, and last_triggered_at. FK → accounts.id with CASCADE delete. Two indexes: account_id and active. Model count: 27 → 28. Alembic head: 022 → 023.
 - `2026-04-07` — Migration 022: added `stop_price NUMERIC(20,8)` nullable column to `BacktestTrade` model and `backtest_trades` table. Persists trigger price for stop-loss and take-profit sandbox trades. Alembic head: 021 → 022.
 - `2026-04-02` — Migration 021: fixed CASCADE DELETE on agent foreign keys (`orders`, `trades`, `positions`, `balances`, `trading_sessions`, `portfolio_snapshots`). No new tables; enforces correct cascade behavior so deleting an agent removes all associated rows. Alembic head: 020 → 021.
 - `2026-03-23` — Migration 020: added `AgentAuditLog` model (`agent_audit_log` table) for durable, complete permission audit trail (all outcomes, not just denials). 3 indexes on `agent_id`, `created_at`, and `(agent_id, created_at)` composite. Model count: 26 → 27. Alembic head: 020.

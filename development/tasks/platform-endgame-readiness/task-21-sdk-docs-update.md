@@ -5,7 +5,7 @@ type: task
 agent: "doc-updater"
 phase: 3
 depends_on: [20]
-status: "pending"
+status: "done"
 priority: "low"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -31,10 +31,10 @@ Task 20 creates 5 example scripts. This task updates the SDK docs to reference t
 - `sdk/README.md` — Add: examples section with descriptions, quickstart for each example, new methods reference (batch_step_fast, compute_deflated_sharpe, get_indicators, compare_strategies, webhook CRUD)
 
 ## Acceptance Criteria
-- [ ] SDK README has an "Examples" section listing all 5 examples with descriptions
-- [ ] Each example has a brief description of what it demonstrates
-- [ ] New SDK methods are documented in the README
-- [ ] Quickstart instructions (prerequisites, env vars, how to run)
+- [x] SDK README has an "Examples" section listing all 5 examples with descriptions
+- [x] Each example has a brief description of what it demonstrates
+- [x] New SDK methods are documented in the README
+- [x] Quickstart instructions (prerequisites, env vars, how to run)
 
 ## Dependencies
 - **Task 20** must complete first (creates the examples)

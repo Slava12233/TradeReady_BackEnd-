@@ -369,6 +369,61 @@ class AgentExchangeClient:
         )
         return data
 
+    def get_indicators(
+        self,
+        symbol: str,
+        indicators: list[str] | None = None,
+        lookback: int = 200,
+    ) -> dict[str, Any]:
+        """Fetch technical indicator values for a symbol.
+
+        Args:
+            symbol:     Uppercase trading pair, e.g. ``"BTCUSDT"``.
+            indicators: Optional list of indicator names to return, e.g.
+                        ``["rsi_14", "macd_hist"]``.  When ``None`` all
+                        available indicators are returned.
+            lookback:   Number of candles used to compute the indicators.
+                        Defaults to ``200``.
+
+        Returns:
+            Dict with ``symbol``, ``lookback``, and ``indicators`` mapping
+            each requested indicator name to its current value.
+
+        Example::
+
+            result = client.get_indicators("BTCUSDT")
+            print(result["indicators"]["rsi_14"])
+
+            result = client.get_indicators(
+                "BTCUSDT",
+                indicators=["rsi_14", "macd_hist"],
+                lookback=100,
+            )
+        """
+        params: dict[str, Any] = {"lookback": lookback}
+        if indicators is not None:
+            params["indicators"] = ",".join(indicators)
+        return self._request(
+            "GET",
+            f"/api/v1/market/indicators/{symbol}",
+            params=params,
+        )
+
+    def get_available_indicators(self) -> dict[str, Any]:
+        """Fetch the list of all indicators supported by the platform.
+
+        Returns:
+            Dict with an ``indicators`` list; each entry describes the
+            indicator name, display label, and parameter defaults.
+
+        Example::
+
+            info = client.get_available_indicators()
+            for ind in info["indicators"]:
+                print(ind["name"], ind["label"])
+        """
+        return self._request("GET", "/api/v1/market/indicators/available")
+
     # ------------------------------------------------------------------
     # Trading (8 methods)
     # ------------------------------------------------------------------
@@ -896,6 +951,48 @@ class AgentExchangeClient:
             "POST", f"/api/v1/strategies/{strategy_id}/undeploy"
         )
 
+    def compare_strategies(
+        self,
+        strategy_ids: list[str | UUID],
+        ranking_metric: str = "sharpe_ratio",
+    ) -> dict[str, Any]:
+        """Rank and compare multiple strategies by their latest test results.
+
+        Accepts 2–10 strategy UUIDs, fetches their latest completed test runs,
+        and ranks them by the chosen metric.  Returns a ranked list with
+        per-strategy metrics, optional Deflated Sharpe data, and a one-line
+        recommendation identifying the winner.
+
+        Args:
+            strategy_ids:   List of 2–10 strategy UUIDs to compare.
+            ranking_metric: Metric used to rank strategies.  Allowed values:
+                            ``"sharpe_ratio"``, ``"sortino_ratio"``,
+                            ``"max_drawdown_pct"``, ``"win_rate"``,
+                            ``"roi_pct"``, ``"profit_factor"``.
+                            Defaults to ``"sharpe_ratio"``.
+
+        Returns:
+            Dict with keys ``strategies`` (ranked list), ``winner_id``,
+            ``ranking_metric``, and ``recommendation``.
+
+        Example::
+
+            result = client.compare_strategies(
+                [strategy_a_id, strategy_b_id],
+                ranking_metric="sharpe_ratio",
+            )
+            print(result["winner_id"])
+            print(result["recommendation"])
+        """
+        return self._request(
+            "POST",
+            "/api/v1/strategies/compare",
+            json={
+                "strategy_ids": [str(sid) for sid in strategy_ids],
+                "ranking_metric": ranking_metric,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Strategy Testing (4 methods)
     # ------------------------------------------------------------------
@@ -1034,6 +1131,253 @@ class AgentExchangeClient:
             "GET", "/api/v1/training/compare",
             params={"run_ids": ids_str},
         )
+
+    # ------------------------------------------------------------------
+    # Backtesting (1 method)
+    # ------------------------------------------------------------------
+
+    def batch_step_fast(
+        self,
+        session_id: str,
+        steps: int,
+        include_intermediate_trades: bool = False,
+    ) -> dict[str, Any]:
+        """Advance a backtest session N candles using the optimised fast-batch path.
+
+        The fast-batch endpoint defers per-step overhead (snapshots, portfolio
+        computation, DB progress writes) to the end of the batch, making it
+        suitable for RL training loops that issue hundreds of thousands of
+        sequential step calls.
+
+        Args:
+            session_id:                   Backtest session UUID string.
+            steps:                        Number of candle steps to advance
+                                          (1 – 100 000).
+            include_intermediate_trades:  When ``True``, all order fills from
+                                          every step in the batch are included
+                                          in ``orders_filled``.  When ``False``
+                                          (default), only fills from the final
+                                          step are returned, reducing response
+                                          payload size.
+
+        Returns:
+            Dict matching the ``BatchStepFastResponse`` schema with keys:
+            ``virtual_time``, ``step``, ``total_steps``, ``progress_pct``,
+            ``prices``, ``orders_filled``, ``portfolio``, ``is_complete``,
+            ``remaining_steps``, and ``steps_executed``.
+
+        Raises:
+            NotFoundError: If no backtest session with this ID exists.
+            ServerError:   On engine-level failures.
+
+        Example::
+
+            result = client.batch_step_fast(session_id, steps=500)
+            print(result["steps_executed"], result["is_complete"])
+        """
+        return self._request(
+            "POST",
+            f"/api/v1/backtest/{session_id}/step/batch/fast",
+            json={
+                "steps": steps,
+                "include_intermediate_trades": include_intermediate_trades,
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Metrics (1 method)
+    # ------------------------------------------------------------------
+
+    def compute_deflated_sharpe(
+        self,
+        returns: list[float],
+        num_trials: int,
+        annualization_factor: int = 252,
+    ) -> dict[str, Any]:
+        """Compute the Deflated Sharpe Ratio for a return series.
+
+        The Deflated Sharpe Ratio (Bailey & Lopez de Prado, 2014) corrects the
+        observed Sharpe Ratio for multiple-testing bias.  Use this when you have
+        tested multiple strategy variants and want to know whether the best-looking
+        one is genuinely skilled or just lucky.
+
+        Args:
+            returns:              List of per-period returns (not percentages).
+                                  Requires at least 10 observations.
+            num_trials:           Number of strategy variants tested before
+                                  selecting this one.  Must be ≥ 1.
+            annualization_factor: Number of return periods per year.  Use 252
+                                  for daily returns, 52 for weekly, 12 for
+                                  monthly.  Defaults to ``252``.
+
+        Returns:
+            Dict with DSR result fields: ``observed_sharpe``,
+            ``expected_max_sharpe``, ``deflated_sharpe``, ``p_value``,
+            ``is_significant``, ``num_trials``, ``num_returns``,
+            ``skewness``, and ``kurtosis``.
+
+        Raises:
+            ValidationError: If the request body is rejected by the server
+                (e.g., fewer than 10 returns).
+            AgentExchangeError subclasses: For all other HTTP error responses.
+
+        Example::
+
+            result = client.compute_deflated_sharpe(
+                returns=[0.001, -0.002, 0.003] * 10,
+                num_trials=5,
+                annualization_factor=252,
+            )
+            print(result["is_significant"], result["p_value"])
+        """
+        return self._request(
+            "POST",
+            "/api/v1/metrics/deflated-sharpe",
+            json={
+                "returns": returns,
+                "num_trials": num_trials,
+                "annualization_factor": annualization_factor,
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Webhooks (6 methods)
+    # ------------------------------------------------------------------
+
+    def create_webhook(
+        self,
+        url: str,
+        events: list[str],
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new webhook subscription.
+
+        The HMAC-SHA256 signing ``secret`` is returned **only** in this
+        response.  Store it securely — it cannot be retrieved again.
+
+        Args:
+            url:         HTTPS endpoint that will receive webhook payloads.
+            events:      List of event names to subscribe to.
+                         Supported: ``backtest.completed``,
+                         ``strategy.test.completed``,
+                         ``strategy.deployed``, ``battle.completed``.
+            description: Optional human-readable label.
+
+        Returns:
+            Webhook creation response dict including the one-time ``secret``.
+
+        Example::
+
+            result = client.create_webhook(
+                url="https://example.com/hooks",
+                events=["backtest.completed"],
+            )
+            print(result["secret"])  # store this!
+        """
+        body: dict[str, Any] = {"url": url, "events": events}
+        if description is not None:
+            body["description"] = description
+        return self._request("POST", "/api/v1/webhooks", json=body)
+
+    def list_webhooks(self) -> dict[str, Any]:
+        """List all webhook subscriptions for the authenticated account.
+
+        Returns:
+            Dict with ``webhooks`` list and ``total`` count.  The signing
+            ``secret`` is NOT included in list responses.
+
+        Example::
+
+            result = client.list_webhooks()
+            for wh in result["webhooks"]:
+                print(wh["id"], wh["url"])
+        """
+        return self._request("GET", "/api/v1/webhooks")
+
+    def get_webhook(self, webhook_id: str | UUID) -> dict[str, Any]:
+        """Get detail for a single webhook subscription.
+
+        Args:
+            webhook_id: UUID of the webhook subscription.
+
+        Returns:
+            Webhook detail dict (without the signing secret).
+
+        Example::
+
+            wh = client.get_webhook("550e8400-e29b-41d4-a716-446655440000")
+            print(wh["active"], wh["failure_count"])
+        """
+        return self._request("GET", f"/api/v1/webhooks/{webhook_id}")
+
+    def update_webhook(
+        self,
+        webhook_id: str | UUID,
+        *,
+        url: str | None = None,
+        events: list[str] | None = None,
+        active: bool | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a webhook subscription (partial update).
+
+        Only fields explicitly passed are modified.
+
+        Args:
+            webhook_id:  UUID of the webhook subscription.
+            url:         New HTTPS endpoint URL.
+            events:      Replacement event list.
+            active:      Enable (``True``) or disable (``False``) the subscription.
+            description: New optional label.
+
+        Returns:
+            Updated webhook detail dict.
+
+        Example::
+
+            client.update_webhook(webhook_id, active=False)
+        """
+        body: dict[str, Any] = {}
+        if url is not None:
+            body["url"] = url
+        if events is not None:
+            body["events"] = events
+        if active is not None:
+            body["active"] = active
+        if description is not None:
+            body["description"] = description
+        return self._request("PUT", f"/api/v1/webhooks/{webhook_id}", json=body)
+
+    def delete_webhook(self, webhook_id: str | UUID) -> None:
+        """Delete a webhook subscription.
+
+        Args:
+            webhook_id: UUID of the webhook subscription.
+
+        Example::
+
+            client.delete_webhook("550e8400-e29b-41d4-a716-446655440000")
+        """
+        self._request("DELETE", f"/api/v1/webhooks/{webhook_id}")
+
+    def test_webhook(self, webhook_id: str | UUID) -> dict[str, Any]:
+        """Send a test event delivery to a webhook endpoint.
+
+        Enqueues a ``webhook.test`` payload so you can verify your endpoint
+        receives and validates HMAC-SHA256 signatures correctly.
+
+        Args:
+            webhook_id: UUID of the webhook subscription to test.
+
+        Returns:
+            Dict with ``enqueued`` count and ``webhook_id``.
+
+        Example::
+
+            result = client.test_webhook("550e8400-e29b-41d4-a716-446655440000")
+            print(result["enqueued"])
+        """
+        return self._request("POST", f"/api/v1/webhooks/{webhook_id}/test")
 
     # ------------------------------------------------------------------
     # Analytics (3 methods)

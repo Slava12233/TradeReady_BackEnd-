@@ -30,12 +30,15 @@ from src.api.routes.analytics import router as analytics_router
 from src.api.routes.auth import router as auth_router
 from src.api.routes.backtest import router as backtest_router
 from src.api.routes.battles import router as battles_router
+from src.api.routes.indicators import router as indicators_router
 from src.api.routes.market import router as market_router
+from src.api.routes.metrics import router as metrics_router
 from src.api.routes.strategies import router as strategies_router
 from src.api.routes.strategy_tests import router as strategy_tests_router
 from src.api.routes.trading import router as trading_router
 from src.api.routes.training import router as training_router
 from src.api.routes.waitlist import router as waitlist_router
+from src.api.routes.webhooks import router as webhooks_router
 from src.api.websocket.handlers import (
     handle_message,
     start_redis_bridge,
@@ -230,6 +233,8 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(market_router)
+    application.include_router(indicators_router)
+    application.include_router(metrics_router)
     application.include_router(trading_router)
     application.include_router(account_router)
     application.include_router(agents_router)
@@ -240,6 +245,7 @@ def create_app() -> FastAPI:
     application.include_router(strategy_tests_router)
     application.include_router(training_router)
     application.include_router(waitlist_router)
+    application.include_router(webhooks_router)
 
     # ── WebSocket endpoint ────────────────────────────────────────────────────
     @application.websocket("/ws/v1")

@@ -5,7 +5,7 @@ type: task
 agent: "backend-developer"
 phase: 3
 depends_on: [1, 4, 7, 10, 17]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -40,13 +40,13 @@ Improvement 7: No example projects exist showing how to build an agent on top of
 - `sdk/examples/webhook_integration.py` — Register webhook → start local HTTP server → kick off backtest → wait for completion event
 
 ## Acceptance Criteria
-- [ ] Each script is self-contained (single file, runnable with `python examples/X.py`)
-- [ ] Each script has clear comments explaining each step
-- [ ] Each script uses real SDK methods (not mocked)
-- [ ] Each script includes basic error handling
-- [ ] Each script has `if __name__ == "__main__"` block
-- [ ] Each script has a docstring at the top explaining what it demonstrates
-- [ ] `ruff check` passes on all files
+- [x] Each script is self-contained (single file, runnable with `python examples/X.py`)
+- [x] Each script has clear comments explaining each step
+- [x] Each script uses real SDK methods (not mocked)
+- [x] Each script includes basic error handling
+- [x] Each script has `if __name__ == "__main__"` block
+- [x] Each script has a docstring at the top explaining what it demonstrates
+- [x] `ruff check` passes on all files
 
 ## Dependencies
 - **Task 01** (batch backtest), **Task 04** (DSR), **Task 07** (indicators), **Task 10** (strategy compare), **Task 17** (webhooks) — examples use features from all improvements

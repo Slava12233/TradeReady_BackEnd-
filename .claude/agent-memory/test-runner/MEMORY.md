@@ -46,9 +46,19 @@ When testing `src/tasks/*.py` from `agent/tests/`, Celery is NOT installed. Use 
 
 `compare_training_runs` validates each run_id as a UUID. Use real UUIDs (e.g. `"550e8400-e29b-41d4-a716-446655440001"`) in tests, not short strings like `"run-1"`.
 
-## Test Counts (last verified 2026-04-06)
+## Test Counts (last verified 2026-04-08)
 
-- Unit tests: 74 files, 1751 tests (`tests/unit/`) — added `test_backtest_schemas.py` (9 tests), 6 sandbox tests to `test_backtest_sandbox.py`, 2 results tests to `test_backtest_results.py`
+- Unit tests: 80 files — added `test_webhook_dispatcher.py` (8 tests) and `test_webhook_task.py` (21 tests) on 2026-04-08; previously 78 files (added `test_batch_step_fast.py` 22 tests same day)
+- Integration tests: 27 files — added `test_webhooks_api.py` (32 tests, 2026-04-08); previously 26 files
+- Integration tests: 29 files — added `test_batch_step_fast_api.py` (17 tests, 2026-04-08) for `POST /backtest/{id}/step/batch/fast`; previously 28 files
+- tradeready-gym tests: added `test_configurable_fees.py` (39 tests, 2026-04-07) — fee_rate threading; existing `test_headless_env.py` (52 tests) already existed
+
+## Constant-Returns Zero-Variance Gotcha (2026-04-08)
+
+`compute_deflated_sharpe` sets `observed_sharpe=0.0` when all returns are identical (zero variance). Tests asserting SR > 0 (positive returns) or SR < 0 (negative returns) MUST use a series with **non-zero variance**. Use alternating values: `[0.005 if i%2==0 else 0.001 for i in range(50)]`, not `[0.001]*50`.
+
+**Why:** The implementation explicitly guards `if variance == 0.0: SR=0` to avoid division by zero.
+**How to apply:** Any test validating SR sign must ensure the input series has variance > 0.
 
 ## QA Bugfix Sprint Patterns (2026-04-01)
 
@@ -144,6 +154,18 @@ Agent tests use `monkeypatch` to set env vars and pass `_env_file=None` to `Agen
 `log_api_call()` in `agent/logging_middleware.py` accepts an optional keyword-only `writer: LogBatchWriter | None = None` parameter. When provided, a record dict with `channel`, `endpoint`, `method`, `latency_ms`, and error info is passed to `writer.add_api_call(record)` after the body completes (success or failure). Writer errors are always swallowed.
 
 `AgentServer` in `agent/server.py` has a `batch_writer` property backed by `_batch_writer: LogBatchWriter | None`. The writer is created and started in `_init_dependencies()` when DB is available, and `writer.stop()` is called first in `_shutdown()` (before `_persist_state`) so buffered records are drained before closing connections. Writer stop errors are swallowed and logged.
+## SQLAlchemy ORM Model Patching — Never Patch the Model Itself (2026-04-08)
+
+When testing code that builds SQLAlchemy SELECT/UPDATE statements using ORM column attributes (e.g. `select(WebhookSubscription).where(WebhookSubscription.active.is_(True))`), **never patch the ORM model class** (`patch("src.database.models.WebhookSubscription")`). Replacing it with a MagicMock breaks SQLAlchemy's column attribute access and raises `ArgumentError: Column-based expression object expected for argument 'whereclause'`.
+
+The correct approach:
+1. **Mock `db.execute` directly** to return pre-built subscription mock objects — the SELECT statement is built but executed against the mock.
+2. For DB helper functions (`_record_success`, `_record_failure`) that also build UPDATE statements, **call the real function** (no model patching needed) and provide a mock session factory — the `session.execute(stmt)` call receives the real compiled UPDATE but is swallowed by the AsyncMock.
+3. When testing the CALLER of these helpers, **patch the helper function itself** (`patch("src.tasks.webhook_tasks._record_success", AsyncMock(...))`), not the model.
+
+**Why:** SQLAlchemy builds SQL expressions at Python object level using real ORM column descriptors. A MagicMock replacing the class has no column descriptors.
+**How to apply:** Any test for a function that uses `select(Model).where(Model.field == ...)` or `update(Model).where(...)` — mock the session, not the model.
+
 ## sa_inspect + MagicMock Pattern (2026-04-07)
 
 `sa_inspect(obj)` raises `NoInspectionAvailable` when `obj` is a `MagicMock(spec=SomeOrmModel)`. Any route helper that calls `sa_inspect()` must wrap it in `try/except NoInspectionAvailable` and fall back to direct attribute access. The pattern:

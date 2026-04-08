@@ -62,6 +62,9 @@ class BaseTradingEnv(gym.Env):
         end_time:            Backtest end time (ISO 8601 string).
         track_training:      Whether to report episodes to the training API.
         strategy_label:      Label for backtest sessions (default ``"gym_training"``).
+        fee_rate:            Trading fee rate as a fraction (e.g. ``0.001`` = 0.1%).
+                             Passed to the backtest API on session creation.
+                             Defaults to ``None`` (platform uses 0.001).
     """
 
     metadata = {"render_modes": ["human", "ansi"]}
@@ -81,6 +84,7 @@ class BaseTradingEnv(gym.Env):
         track_training: bool = True,
         strategy_label: str = "gym_training",
         render_mode: str | None = None,
+        fee_rate: float | None = None,
     ) -> None:
         super().__init__()
         self._api_key = api_key
@@ -97,6 +101,9 @@ class BaseTradingEnv(gym.Env):
         self.end_time = end_time
         self.strategy_label = strategy_label
         self.render_mode = render_mode
+        # fee_rate stored as float for RL framework compatibility; converted to a
+        # precise Decimal string when sent to the API.
+        self.fee_rate: float | None = fee_rate
 
         self._http = httpx.Client(
             base_url=self.base_url,
@@ -153,6 +160,10 @@ class BaseTradingEnv(gym.Env):
             "pairs": self.pairs,
             "strategy_label": self.strategy_label,
         }
+        # Pass fee_rate only when explicitly set; omitting it lets the platform
+        # use its default (0.001 = 0.1 %).
+        if self.fee_rate is not None:
+            body["fee_rate"] = str(Decimal(str(self.fee_rate)))
         data = self._api_call("POST", "/api/v1/backtest/create", json=body)
         session_id = data["session_id"]
         self._api_call("POST", f"/api/v1/backtest/{session_id}/start")

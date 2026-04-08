@@ -1,6 +1,6 @@
 # AgentExchange Python SDK
 
-<!-- last-updated: 2026-03-23 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Universal Python client library for the AgentExchange AI crypto trading platform -- sync, async, and WebSocket.
 
@@ -13,8 +13,13 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 | File | Purpose |
 |------|---------|
 | `agentexchange/__init__.py` | Package root; re-exports all 3 clients, 13 models, 9 exceptions; defines `__version__` |
-| `agentexchange/client.py` | `AgentExchangeClient` -- synchronous REST client (httpx, 37 methods) |
-| `agentexchange/async_client.py` | `AsyncAgentExchangeClient` -- async REST client (httpx async, 37 methods) |
+| `agentexchange/client.py` | `AgentExchangeClient` -- synchronous REST client (httpx, 48 methods) |
+| `agentexchange/async_client.py` | `AsyncAgentExchangeClient` -- async REST client (httpx async, 48 methods) |
+| `examples/basic_backtest.py` | Runnable example: batch_step_fast backtest workflow |
+| `examples/rl_training.py` | Runnable example: PPO training with SB3 + TradeReady gym |
+| `examples/genetic_optimization.py` | Runnable example: 10-variant genetic search with DSR filter |
+| `examples/strategy_tester.py` | Runnable example: strategy lifecycle (create → test → DSR gate → deploy) |
+| `examples/webhook_integration.py` | Runnable example: local webhook receiver + HMAC validation |
 | `agentexchange/ws_client.py` | `AgentExchangeWS` -- WebSocket client (websockets lib, decorator-based subscriptions) |
 | `agentexchange/models.py` | 13 frozen dataclasses: `Price`, `Ticker`, `Candle`, `Balance`, `Position`, `Portfolio`, `PnL`, `Order`, `Trade`, `Performance`, `Snapshot`, `LeaderboardEntry`, `AccountInfo` |
 | `agentexchange/exceptions.py` | Exception hierarchy (10 classes) + `raise_for_response()` factory |
@@ -26,15 +31,18 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 
 ### Client Design
 
-Both REST clients (`AgentExchangeClient` and `AsyncAgentExchangeClient`) share an identical public API surface of 37 methods organized into 7 groups:
+Both REST clients (`AgentExchangeClient` and `AsyncAgentExchangeClient`) share an identical public API surface of 48 methods organized into 10 groups:
 
-- **Market data** (6): `get_price`, `get_all_prices`, `get_candles`, `get_ticker`, `get_recent_trades`, `get_orderbook`
+- **Market data** (8): `get_price`, `get_all_prices`, `get_candles`, `get_ticker`, `get_recent_trades`, `get_orderbook`, `get_indicators`, `get_available_indicators`
 - **Trading** (9): `place_market_order`, `place_limit_order`, `place_stop_loss`, `place_take_profit`, `get_order`, `get_open_orders`, `cancel_order`, `cancel_all_orders`, `get_trade_history`
 - **Account** (6): `get_account_info`, `get_balance`, `get_positions`, `get_portfolio`, `get_pnl`, `reset_account`
 - **Analytics** (3): `get_performance`, `get_portfolio_history`, `get_leaderboard`
-- **Strategies** (6): `create_strategy`, `get_strategies`, `get_strategy`, `create_version`, `deploy_strategy`, `undeploy_strategy`
+- **Strategies** (7): `create_strategy`, `get_strategies`, `get_strategy`, `create_version`, `deploy_strategy`, `undeploy_strategy`, `compare_strategies`
 - **Strategy Testing** (4): `run_test`, `get_test_status`, `get_test_results`, `compare_versions`
 - **Training** (3): `get_training_runs`, `get_training_run`, `compare_training_runs`
+- **Backtesting** (1): `batch_step_fast`
+- **Metrics** (1): `compute_deflated_sharpe`
+- **Webhooks** (6): `create_webhook`, `list_webhooks`, `get_webhook`, `update_webhook`, `delete_webhook`, `test_webhook`
 
 ### Authentication Flow
 
@@ -182,5 +190,6 @@ cd sdk && ruff check . && mypy agentexchange/
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Fixed model count: 12 -> 13 frozen dataclasses (AccountInfo was undercounted)
 - `2026-03-19` -- Synced with codebase: confirmed 6 Python files and all documented items exist. No changes needed.
+- `2026-04-07` — 11 new methods added (both sync and async clients). Market data: `get_indicators`, `get_available_indicators`. Strategies: `compare_strategies`. Backtesting: `batch_step_fast`. Metrics: `compute_deflated_sharpe`. Webhooks: `create_webhook`, `list_webhooks`, `get_webhook`, `update_webhook`, `delete_webhook`, `test_webhook`. Total method count: 37 → 48. Added `examples/` directory with 5 runnable scripts. `README.md` updated with Prerequisites, Examples, and full API reference table.
 - `2026-03-23` — R1-09: `AsyncAgentExchangeClient` now handles agent-key fallback for authentication. When JWT login fails with a 401 that signals the key is an agent key (not an account key), the client sets `_api_key_only=True` and uses the persistent `X-API-Key` header for all subsequent requests, bypassing the JWT flow. This allows agent keys (`ak_live_...`) to authenticate directly without a registered account login endpoint.
 - `2026-03-21` -- Added `trace_id_provider: Callable[[], str] | None = None` to `AsyncAgentExchangeClient.__init__`. When provided and the returned string is non-empty, `X-Trace-Id` is injected into every outbound request header. `agent/tools/sdk_tools.py` passes `get_trace_id` from `agent.logging` as the provider.

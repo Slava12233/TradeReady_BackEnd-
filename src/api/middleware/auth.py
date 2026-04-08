@@ -78,6 +78,7 @@ _PUBLIC_PREFIXES: tuple[str, ...] = (
     "/redoc",
     "/metrics",  # Prometheus scrape endpoint — must be unauthenticated
     "/api/v1/market/",
+    "/api/v1/metrics/",  # Statistical metrics endpoints — pure computation, no auth required
 )
 
 

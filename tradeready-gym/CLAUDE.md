@@ -1,6 +1,6 @@
 # tradeready-gym/ — Gymnasium RL Environments
 
-<!-- last-updated: 2026-04-06 -->
+<!-- last-updated: 2026-04-07 -->
 
 > Standalone Python package providing OpenAI Gymnasium-compatible trading environments backed by the TradeReady backtest REST API, for training RL agents on real crypto market data.
 
@@ -21,6 +21,7 @@ tradeready-gym/
 │   ├── envs/
 │   │   ├── __init__.py
 │   │   ├── base_trading_env.py       # BaseTradingEnv — abstract base, HTTP client, session lifecycle
+│   │   ├── headless_env.py           # HeadlessTradingEnv — in-process engine calls, no HTTP, requires src/ on PYTHONPATH
 │   │   ├── single_asset_env.py       # SingleAssetTradingEnv — discrete or continuous single pair
 │   │   ├── multi_asset_env.py        # MultiAssetTradingEnv — portfolio weight allocation (N assets)
 │   │   └── live_env.py               # LiveTradingEnv — real-time paper trading with step intervals
@@ -71,6 +72,7 @@ All environments require at minimum an `api_key` kwarg passed to `gym.make()`.
 | `TradeReady-ETH-Continuous-v0` | `SingleAssetTradingEnv` | `Box(-1, 1, (1,))` | ETHUSDT | Negative=sell, positive=buy, magnitude=size |
 | `TradeReady-Portfolio-v0` | `MultiAssetTradingEnv` | `Box(0, 1, (3,))` | BTC+ETH+SOL | Each element = target portfolio weight |
 | `TradeReady-Live-v0` | `LiveTradingEnv` | `Discrete(3)` | BTCUSDT | Real-time; blocks per candle interval |
+| `TradeReady-BTC-Headless-v0` | `HeadlessTradingEnv` | `Discrete(3)` | BTCUSDT | In-process; requires `db_url` kwarg and `src/` on PYTHONPATH |
 
 ## `BaseTradingEnv` Constructor Parameters
 
@@ -254,7 +256,17 @@ The package registers its environments via the `gymnasium.envs` entry point in `
 - **`MultiAssetTradingEnv` portfolio weights are not constrained to sum to 1.** The env accepts any non-negative weight vector. Weights are normalized internally before computing order sizes.
 - **`observation_features` default includes `rsi_14` and `macd`.** These require enough historical candles to compute (14 for RSI, 26 for slow MACD EMA). If `lookback_window` is set below 26, the computed values will be NaN or zero for early candles.
 
+## Gotchas (Headless Env)
+
+- **`src/` must be on PYTHONPATH.** `HeadlessTradingEnv` defers `from src.backtesting.engine import BacktestEngine` to the first `reset()` call. If `src/` is not importable, a clear `ImportError` is raised at that point rather than at `gym.make()` time.
+- **`db_url` must use `asyncpg` driver.** Use `postgresql+asyncpg://...`, not `postgresql://...`.
+- **Synthetic `account_id`.** `reset()` generates a random UUID for the synthetic account used by `create_session()`. The DB must allow inserts without a pre-existing accounts row — or the engine must be patched in tests.
+- **Per-instance event loop.** Each `HeadlessTradingEnv` owns its own `asyncio` event loop so multiple envs can run in different threads (SB3 `SubprocVecEnv`).
+- **`episode_length` is truncation, not termination.** When `episode_length` steps are reached, `truncated=True` is returned. The backtest session is still running in memory — call `env.reset()` or `env.close()` to release it.
+- **Action space and observation space are identical to `SingleAssetTradingEnv`.** All existing wrappers (`NormalizationWrapper`, `BatchStepWrapper`, `FeatureEngineeringWrapper`) work without modification.
+
 ## Recent Changes
 
+- `2026-04-07` — Added `HeadlessTradingEnv` (`envs/headless_env.py`). Registered as `TradeReady-BTC-Headless-v0`. 52-test suite in `tests/test_headless_env.py`. All 52 tests passing.
 - `2026-03-20` — Initial CLAUDE.md created.
 - `2026-03-22` — Added `CompositeReward` class (rewards/composite.py). Updated rewards/__init__.py and tradeready_gym/__init__.py to export it. Added 41-test suite in tests/test_composite_reward.py.

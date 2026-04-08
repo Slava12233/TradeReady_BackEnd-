@@ -28,6 +28,8 @@ from src.api.schemas.strategies import (
     CreateStrategyRequest,
     CreateVersionRequest,
     DeployRequest,
+    StrategyComparisonRequest,
+    StrategyComparisonResponse,
     StrategyDetailResponse,
     StrategyListResponse,
     StrategyResponse,
@@ -35,7 +37,7 @@ from src.api.schemas.strategies import (
     UpdateStrategyRequest,
 )
 from src.database.models import Strategy, StrategyVersion
-from src.dependencies import StrategyServiceDep
+from src.dependencies import DbSessionDep, StrategyServiceDep
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +188,43 @@ async def archive_strategy(
 
 
 # ---------------------------------------------------------------------------
+# Strategy comparison
+# ---------------------------------------------------------------------------
+
+
+@router.post("/compare", response_model=StrategyComparisonResponse)
+async def compare_strategies(
+    body: StrategyComparisonRequest,
+    account: CurrentAccountDep,
+    service: StrategyServiceDep,
+) -> StrategyComparisonResponse:
+    """Rank and compare multiple strategies by their latest test results.
+
+    Accepts 2–10 strategy IDs, fetches their latest completed test runs,
+    and ranks them by the chosen metric.  The response includes per-strategy
+    metrics, optional Deflated Sharpe data, and a one-line recommendation
+    identifying the winner.
+
+    Strategies with no completed test run are included but ranked last.
+    """
+    # Ownership check: every strategy must belong to the calling account
+    for sid in body.strategy_ids:
+        await service.get_strategy(account.id, sid)
+
+    result = await service.compare_strategies(
+        list(body.strategy_ids),
+        ranking_metric=body.ranking_metric,
+    )
+
+    return StrategyComparisonResponse(
+        strategies=result["strategies"],
+        winner_id=result["winner_id"],
+        ranking_metric=result["ranking_metric"],
+        recommendation=result["recommendation"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Version endpoints
 # ---------------------------------------------------------------------------
 
@@ -245,9 +284,31 @@ async def deploy_strategy(
     body: DeployRequest,
     account: CurrentAccountDep,
     service: StrategyServiceDep,
+    db: DbSessionDep,
 ) -> StrategyResponse:
     """Deploy a strategy version to live trading."""
     strategy = await service.deploy(account.id, strategy_id, body.version)
+
+    # Fire strategy.deployed webhook event (fire-and-forget; errors are swallowed)
+    try:
+        from src.webhooks.dispatcher import fire_event  # noqa: PLC0415
+
+        await fire_event(
+            account_id=account.id,
+            event_name="strategy.deployed",
+            payload={
+                "strategy_id": str(strategy_id),
+                "version": body.version,
+                "status": "deployed",
+            },
+            db=db,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "Failed to fire strategy.deployed webhook for strategy %s",
+            strategy_id,
+        )
+
     return _strategy_to_response(strategy)
 
 

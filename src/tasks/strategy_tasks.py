@@ -245,8 +245,20 @@ async def _aggregate_async(
 
             episode_metrics = [ep.metrics for ep in episodes_rows if ep.metrics]
 
+            # Determine num_trials = number of versions for the parent strategy.
+            # This is the selection-bias factor used by the Deflated Sharpe Ratio.
+            num_trials = 1
+            if test_run.strategy_id is not None:
+                try:
+                    num_trials = max(1, await repo.get_max_version(test_run.strategy_id))
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "Could not fetch version count for strategy %s; defaulting num_trials=1",
+                        test_run.strategy_id,
+                    )
+
             # Aggregate
-            aggregated = TestAggregator.aggregate(episode_metrics)
+            aggregated = TestAggregator.aggregate(episode_metrics, num_trials=num_trials)
             by_pair = aggregated.get("by_pair", {})
 
             # Generate recommendations
@@ -260,6 +272,35 @@ async def _aggregate_async(
                 await repo.update(test_run.strategy_id, status="validated")
 
             await db.commit()
+
+            # Fire strategy.test.completed webhook event (fire-and-forget)
+            if test_run.strategy_id:
+                try:
+                    from sqlalchemy import select as _select  # noqa: PLC0415
+
+                    from src.database.models import Strategy  # noqa: PLC0415
+                    from src.webhooks.dispatcher import fire_event  # noqa: PLC0415
+
+                    async with session_factory() as wh_db:
+                        _stmt = _select(Strategy).where(Strategy.id == test_run.strategy_id)
+                        _result = await wh_db.execute(_stmt)
+                        _strategy = _result.scalars().first()
+                        if _strategy is not None:
+                            await fire_event(
+                                account_id=_strategy.account_id,
+                                event_name="strategy.test.completed",
+                                payload={
+                                    "test_run_id": test_run_id,
+                                    "strategy_id": str(test_run.strategy_id),
+                                    "status": "completed",
+                                },
+                                db=wh_db,
+                            )
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to fire strategy.test.completed webhook for test_run %s",
+                        test_run_id,
+                    )
 
             return aggregated
 

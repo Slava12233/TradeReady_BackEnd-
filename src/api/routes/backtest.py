@@ -26,13 +26,15 @@ from src.api.schemas.backtest import (
     BacktestListResponse,
     BacktestOrderRequest,
     BacktestResultsResponse,
+    BacktestStepBatchFastRequest,
     BacktestStepBatchRequest,
+    BatchStepFastResponse,
     DataRangeResponse,
     ModeSwitchRequest,
     StepResponse,
 )
 from src.backtesting.data_replayer import DataReplayer
-from src.backtesting.engine import BacktestConfig
+from src.backtesting.engine import BacktestConfig, BatchStepResult
 from src.dependencies import BacktestEngineDep, BacktestRepoDep, DbSessionDep
 from src.utils.exceptions import BacktestInvalidStateError, BacktestNotFoundError
 
@@ -90,6 +92,38 @@ def _step_to_response(result: Any) -> StepResponse:  # noqa: ANN401
         },
         is_complete=result.is_complete,
         remaining_steps=result.remaining_steps,
+    )
+
+
+def _batch_fast_to_response(result: BatchStepResult) -> BatchStepFastResponse:
+    """Convert engine BatchStepResult to fast-batch API response."""
+    return BatchStepFastResponse(
+        virtual_time=result.virtual_time,
+        step=result.step,
+        total_steps=result.total_steps,
+        progress_pct=str(result.progress_pct),
+        prices={k: str(v) for k, v in result.prices.items()},
+        orders_filled=[
+            {
+                "order_id": o.order_id,
+                "status": o.status,
+                "executed_price": str(o.executed_price) if o.executed_price else None,
+                "executed_qty": str(o.executed_qty) if o.executed_qty else None,
+                "fee": str(o.fee) if o.fee else None,
+            }
+            for o in result.orders_filled
+        ],
+        portfolio={
+            "total_equity": str(result.portfolio.total_equity),
+            "available_cash": str(result.portfolio.available_cash),
+            "position_value": str(result.portfolio.position_value),
+            "unrealized_pnl": str(result.portfolio.unrealized_pnl),
+            "realized_pnl": str(result.portfolio.realized_pnl),
+            "positions": result.portfolio.positions,
+        },
+        is_complete=result.is_complete,
+        remaining_steps=result.remaining_steps,
+        steps_executed=result.steps_executed,
     )
 
 
@@ -157,6 +191,7 @@ async def create_backtest(
         strategy_label=body.strategy_label,
         agent_id=agent_id,
         exchange=body.exchange,
+        fee_rate=body.fee_rate,
     )
 
     session = await engine.create_session(account_id, config, db)
@@ -217,6 +252,38 @@ async def step_batch_backtest(
         await _raise_if_terminal(session_id, db)
         raise
     return _step_to_response(result)
+
+
+@router.post("/backtest/{session_id}/step/batch/fast", response_model=BatchStepFastResponse)
+async def step_batch_fast_backtest(
+    request: Request,
+    session_id: str,
+    body: BacktestStepBatchFastRequest,
+    engine: BacktestEngineDep,
+    db: DbSessionDep,
+) -> BatchStepFastResponse:
+    """Advance N candle steps using the optimized fast-batch path.
+
+    This endpoint eliminates per-step overhead (snapshot every 60 steps,
+    portfolio computation per step, DB write every 500 steps) and instead
+    defers all of that work to the end of the batch. Intended for RL training
+    loops that issue hundreds of thousands of sequential step calls.
+
+    Returns the same state fields as ``/step/batch`` plus ``steps_executed``
+    indicating how many steps were actually run (may be less than requested if
+    the simulation reached its end).
+    """
+    try:
+        result = await engine.step_batch_fast(
+            session_id,
+            body.steps,
+            db,
+            include_intermediate_trades=body.include_intermediate_trades,
+        )
+    except BacktestNotFoundError:
+        await _raise_if_terminal(session_id, db)
+        raise
+    return _batch_fast_to_response(result)
 
 
 @router.post("/backtest/{session_id}/cancel")

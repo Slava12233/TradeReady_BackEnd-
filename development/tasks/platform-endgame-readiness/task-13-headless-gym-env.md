@@ -5,7 +5,7 @@ type: task
 agent: "ml-engineer"
 phase: 2
 depends_on: [1]
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -33,14 +33,14 @@ Improvement 5d: Even with batch stepping, there's still HTTP overhead. For same-
 - `tradeready-gym/tradeready_gym/__init__.py` — Register as `TradeReady-BTC-Headless-v0`
 
 ## Acceptance Criteria
-- [ ] `HeadlessTradingEnv` class extends Gymnasium `Env`
-- [ ] Constructor accepts `db_url: str` (database connection string for price data)
-- [ ] `reset()` creates engine, replayer, sandbox in-process
-- [ ] `step()` calls engine methods directly (no HTTP)
-- [ ] Observation and action spaces match existing `BaseTradingEnv`
-- [ ] Registered as `TradeReady-BTC-Headless-v0` via `gymnasium.register()`
-- [ ] Handles `close()` cleanup properly (close DB connections)
-- [ ] `ruff check` passes
+- [x] `HeadlessTradingEnv` class extends Gymnasium `Env`
+- [x] Constructor accepts `db_url: str` (database connection string for price data)
+- [x] `reset()` creates engine, replayer, sandbox in-process
+- [x] `step()` calls engine methods directly (no HTTP)
+- [x] Observation and action spaces match existing `BaseTradingEnv`
+- [x] Registered as `TradeReady-BTC-Headless-v0` via `gymnasium.register()`
+- [x] Handles `close()` cleanup properly (close DB connections)
+- [x] `ruff check` passes
 
 ## Dependencies
 - **Task 01** (batch backtest engine) — uses same engine internals

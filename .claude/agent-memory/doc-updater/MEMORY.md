@@ -1,6 +1,6 @@
 # doc-updater — Persistent Memory
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-04-07 -->
 
 ## Documentation Inventory
 
@@ -25,8 +25,9 @@
 
 ### SDK docs (sdk/)
 
-- `sdk/CLAUDE.md` — sync client patterns, async client, WebSocket client
+- `sdk/CLAUDE.md` — sync client patterns, async client, WebSocket client (48 methods across 10 groups as of 2026-04-07)
 - SDK install: `pip install -e sdk/`; package: `AgentExchangeClient`, `AsyncAgentExchangeClient`, `AgentExchangeWS`
+- `sdk/examples/` — 5 runnable scripts (basic_backtest, rl_training, genetic_optimization, strategy_tester, webhook_integration)
 
 ### Fumadocs site (Frontend/content/docs/)
 

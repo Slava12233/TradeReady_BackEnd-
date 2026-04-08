@@ -11,6 +11,7 @@ Registered Environments:
     - ``TradeReady-ETH-Continuous-v0`` — Single-asset ETH continuous trading
     - ``TradeReady-Portfolio-v0`` — Multi-asset portfolio allocation
     - ``TradeReady-Live-v0`` — Live single-asset trading (real-time)
+    - ``TradeReady-BTC-Headless-v0`` — Zero-HTTP in-process BTC backtest
 
 Quick Start::
 
@@ -34,6 +35,7 @@ from __future__ import annotations
 import gymnasium
 
 from tradeready_gym.envs.base_trading_env import BaseTradingEnv
+from tradeready_gym.envs.headless_env import HeadlessTradingEnv
 from tradeready_gym.envs.live_env import LiveTradingEnv
 from tradeready_gym.envs.multi_asset_env import MultiAssetTradingEnv
 from tradeready_gym.envs.single_asset_env import SingleAssetTradingEnv
@@ -52,6 +54,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "BaseTradingEnv",
+    "HeadlessTradingEnv",
     "SingleAssetTradingEnv",
     "MultiAssetTradingEnv",
     "LiveTradingEnv",
@@ -114,6 +117,38 @@ gymnasium.register(
 gymnasium.register(
     id="TradeReady-Live-v0",
     entry_point="tradeready_gym.envs.live_env:LiveTradingEnv",
+    kwargs={"symbol": "BTCUSDT"},
+)
+
+# Custom multi-asset portfolio environment with configurable symbols.
+# Symbols are provided via ``gym.make()`` kwargs; defaults to BTC+ETH+SOL.
+#
+# Example::
+#
+#     env = gym.make(
+#         "TradeReady-Portfolio-Custom-v0",
+#         api_key="ak_live_...",
+#         symbols=["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+#     )
+gymnasium.register(
+    id="TradeReady-Portfolio-Custom-v0",
+    entry_point="tradeready_gym.envs.multi_asset_env:MultiAssetTradingEnv",
+)
+
+
+# Headless in-process environment — requires db_url kwarg at gym.make() time.
+#
+# Example::
+#
+#     env = gym.make(
+#         "TradeReady-BTC-Headless-v0",
+#         db_url="postgresql+asyncpg://user:pass@localhost/tradeready",
+#         start_time="2025-01-01T00:00:00Z",
+#         end_time="2025-02-01T00:00:00Z",
+#     )
+gymnasium.register(
+    id="TradeReady-BTC-Headless-v0",
+    entry_point="tradeready_gym.envs.headless_env:HeadlessTradingEnv",
     kwargs={"symbol": "BTCUSDT"},
 )
 

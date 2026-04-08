@@ -43,8 +43,9 @@ Manages all database schema changes for the AI Agent Crypto Trading Platform. Mi
 | 020 | `020_add_agent_audit_log.py` | `agent_audit_log` table for complete permission audit trail (all outcomes); 3 indexes on agent_id, created_at, and composite |
 | 021 | `021_fix_cascade_delete_agent_fks.py` | Add `ON DELETE CASCADE` to 6 FK constraints on `balances`, `orders`, `trades`, `positions`, `trading_sessions`, `portfolio_snapshots` that reference the `agents` table. Allows `DELETE FROM agents` to cleanly cascade without FK violations. |
 | 022 | `022_add_stop_price_to_backtest_trades.py` | Add nullable `stop_price NUMERIC(20,8)` column to `backtest_trades` table. Persists the trigger price for stop-loss and take-profit sandbox trades so results analysis can show the actual stop level. |
+| 023 | `023_add_webhook_subscriptions.py` | `webhook_subscriptions` table for per-account outbound webhook endpoint registrations. FK → accounts.id CASCADE. Two indexes on account_id and active. |
 
-**Current head:** `022`
+**Current head:** `023`
 
 **Note:** Migration `011` (drop legacy account trading columns) is missing from the versions directory but is referenced in the chain. The chain skips from `010` directly to `012` via `down_revision`. Total migration files on disk: 18 (001-022, no 011).
 
@@ -137,6 +138,7 @@ alembic downgrade 010      # Roll back to specific revision
 
 ## Recent Changes
 
+- `2026-04-07` — Migration 023 added: `webhook_subscriptions` table. Per-account outbound webhook endpoint registrations with JSONB events, HMAC secret, active flag, failure_count, last_triggered_at. FK → accounts.id CASCADE. Head: 022 → 023.
 - `2026-04-07` — Migration 022 added: `stop_price NUMERIC(20,8)` nullable column on `backtest_trades`. Persists stop/take-profit trigger price so backtest results analysis can display the actual stop level. Head: 021 → 022.
 - `2026-04-02` — Migration 021 added: `ON DELETE CASCADE` for 6 FK constraints on agent-scoped trading tables (`balances`, `orders`, `trades`, `positions`, `trading_sessions`, `portfolio_snapshots`). Fixes BUG-004 where deleting an agent raised FK violation errors. Head: 020 → 021. Applied to production.
 - `2026-03-23` — Migration 020 added: `agent_audit_log` table for durable permission audit trail (allow + deny outcomes). Head: 019 → 020. 16 numbered migration files on disk (001-020, no 011).

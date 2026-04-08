@@ -5,7 +5,7 @@ type: task
 agent: "backend-developer"
 phase: 2
 depends_on: []
-status: "pending"
+status: "done"
 priority: "medium"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -43,13 +43,13 @@ Improvement 5a+5b: The `BacktestSandbox` hardcodes `_FEE_FRACTION = Decimal("0.0
 - `tradeready-gym/tradeready_gym/envs/multi_asset_env.py` — Accept `symbols` kwarg in registration
 
 ## Acceptance Criteria
-- [ ] `BacktestSandbox(fee_rate=Decimal("0.0005"))` uses the provided fee rate
-- [ ] Default remains `Decimal("0.001")` — no breaking change
-- [ ] `BacktestCreateRequest` accepts optional `fee_rate` field
-- [ ] API passes fee_rate through to engine config
-- [ ] Gym base env accepts `fee_rate` param, passes to API on session creation
-- [ ] `TradeReady-Portfolio-Custom-v0` registered with configurable `symbols` kwarg
-- [ ] `ruff check` and `mypy` pass
+- [x] `BacktestSandbox(fee_rate=Decimal("0.0005"))` uses the provided fee rate
+- [x] Default remains `Decimal("0.001")` — no breaking change
+- [x] `BacktestCreateRequest` accepts optional `fee_rate` field
+- [x] API passes fee_rate through to engine config
+- [x] Gym base env accepts `fee_rate` param, passes to API on session creation
+- [x] `TradeReady-Portfolio-Custom-v0` registered with configurable `symbols` kwarg
+- [x] `ruff check` and `mypy` pass
 
 ## Dependencies
 None — can run in parallel with other Phase 2 tasks.

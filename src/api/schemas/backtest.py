@@ -49,6 +49,16 @@ class BacktestCreateRequest(_BaseSchema):
         description="Exchange to use for historical data (e.g. binance, okx, bybit).",
         examples=["binance", "okx", "bybit"],
     )
+    fee_rate: Decimal | None = Field(
+        default=None,
+        ge=Decimal("0"),
+        le=Decimal("0.1"),
+        description=(
+            "Trading fee rate as a fraction (e.g. 0.001 = 0.1%). "
+            "Defaults to 0.001 when omitted."
+        ),
+        examples=[None, 0.001, 0.0005],
+    )
 
     @model_validator(mode="after")
     def validate_date_range(self) -> Self:
@@ -78,11 +88,40 @@ class BacktestCreateRequest(_BaseSchema):
     def _ser_balance(self, v: Decimal) -> str:
         return str(v)
 
+    @field_serializer("fee_rate")
+    def _ser_fee_rate(self, v: Decimal | None) -> str | None:  # noqa: PLR6301
+        return str(v) if v is not None else None
+
 
 class BacktestStepBatchRequest(_BaseSchema):
     """Request to advance N steps."""
 
     steps: int = Field(ge=1, le=10000)
+
+
+class BacktestStepBatchFastRequest(_BaseSchema):
+    """Request to advance N steps using the optimized fast-batch path.
+
+    The fast-batch path defers per-step overhead (snapshots, portfolio
+    computation, DB progress writes) to the end of the batch, making it
+    suitable for RL training loops that issue thousands of sequential calls.
+    """
+
+    steps: int = Field(
+        ge=1,
+        le=100000,
+        description="Number of candle steps to advance in this batch.",
+        examples=[500, 1000],
+    )
+    include_intermediate_trades: bool = Field(
+        default=False,
+        description=(
+            "When true, all order fills from every step in the batch are "
+            "included in orders_filled. When false (default), only fills from "
+            "the final step are returned, reducing response payload size."
+        ),
+        examples=[False],
+    )
 
 
 class BacktestOrderRequest(_BaseSchema):
@@ -131,6 +170,26 @@ class StepResponse(_BaseSchema):
     portfolio: dict[str, Any]
     is_complete: bool
     remaining_steps: int
+
+
+class BatchStepFastResponse(_BaseSchema):
+    """Response from the optimized fast-batch step endpoint.
+
+    Mirrors :class:`StepResponse` but adds ``steps_executed`` so the caller
+    knows how many candles were actually advanced (may be less than requested
+    if the simulation reached its end during the batch).
+    """
+
+    virtual_time: datetime
+    step: int
+    total_steps: int
+    progress_pct: str
+    prices: dict[str, str]
+    orders_filled: list[dict[str, Any]]
+    portfolio: dict[str, Any]
+    is_complete: bool
+    remaining_steps: int
+    steps_executed: int
 
 
 class BacktestResultsResponse(_BaseSchema):

@@ -5,7 +5,7 @@ type: task
 agent: "test-runner"
 phase: 1
 depends_on: [1, 2]
-status: "pending"
+status: "done"
 priority: "high"
 board: "[[platform-endgame-readiness/README]]"
 files:
@@ -33,10 +33,10 @@ Tasks 01-02 implement the batch fast stepping across engine, API, SDK, and gym. 
 - `tests/integration/test_batch_step_fast_api.py` — API endpoint integration tests
 
 ## Acceptance Criteria
-- [ ] Unit tests cover: basic batch execution, fill accumulation, portfolio computed once at end, is_complete flag, include_intermediate_trades toggle
-- [ ] Integration tests cover: endpoint returns correct response shape, error on invalid session_id, error on steps <= 0, batch completes session correctly
-- [ ] All tests pass with `pytest`
-- [ ] Tests follow `tests/CLAUDE.md` conventions (async fixtures, `create_app()` factory for integration)
+- [x] Unit tests cover: basic batch execution, fill accumulation, portfolio computed once at end, is_complete flag, include_intermediate_trades toggle
+- [x] Integration tests cover: endpoint returns correct response shape, error on invalid session_id, error on steps <= 0, batch completes session correctly
+- [x] All tests pass with `pytest`
+- [x] Tests follow `tests/CLAUDE.md` conventions (async fixtures, `create_app()` factory for integration)
 
 ## Dependencies
 - **Task 01** and **Task 02** must complete first

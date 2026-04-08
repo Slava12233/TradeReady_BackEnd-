@@ -55,6 +55,8 @@ _INCLUDE_MODULES = [
     "src.tasks.agent_analytics",
     # ML retraining tasks — long-running; routed to ml_training queue
     "src.tasks.retrain_tasks",
+    # Outbound webhook delivery with HMAC-SHA256 signing and retry logic
+    "src.tasks.webhook_tasks",
 ]
 
 # Agent ecosystem tasks (agent/ package) — optional; only available when the

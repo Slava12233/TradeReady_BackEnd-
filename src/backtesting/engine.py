@@ -54,6 +54,7 @@ class BacktestConfig:
     strategy_label: str = "default"
     agent_id: UUID | None = None
     exchange: str = "binance"
+    fee_rate: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,26 @@ class StepResult:
     portfolio: PortfolioSummary
     is_complete: bool
     remaining_steps: int
+
+
+@dataclass(frozen=True, slots=True)
+class BatchStepResult:
+    """Result of a fast batch step — defers per-step overhead to the end.
+
+    Unlike :class:`StepResult`, this is returned by :meth:`BacktestEngine.step_batch_fast`
+    which skips intermediate snapshots, portfolio queries, and DB writes.
+    """
+
+    virtual_time: datetime
+    step: int
+    total_steps: int
+    progress_pct: Decimal
+    prices: dict[str, Decimal]
+    orders_filled: list[OrderResult]
+    portfolio: PortfolioSummary
+    is_complete: bool
+    remaining_steps: int
+    steps_executed: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +152,9 @@ class BacktestEngine:
     def __init__(self, session_factory: Any) -> None:  # noqa: ANN401
         self._session_factory = session_factory
         self._active: dict[str, _ActiveSession] = {}
+        # Stores optional fee_rate overrides between create_session() and start().
+        # Keyed by session_id string; consumed (and removed) in start().
+        self._pending_fee_rates: dict[str, Decimal] = {}
 
     async def create_session(self, account_id: UUID, config: BacktestConfig, db: AsyncSession) -> BacktestSessionModel:
         """Create a new backtest session in the database.
@@ -205,6 +229,11 @@ class BacktestEngine:
         db.add(session)
         await db.flush()
 
+        # Stash optional fee_rate override so start() can pick it up.
+        # The DB has no fee_rate column, so we bridge via an engine-internal dict.
+        if config.fee_rate is not None:
+            self._pending_fee_rates[str(session.id)] = config.fee_rate
+
         logger.info(
             "backtest.session_created",
             session_id=str(session.id),
@@ -254,10 +283,14 @@ class BacktestEngine:
         if session.agent_id is not None:
             risk_limits = await self._load_agent_risk_profile(session.agent_id, db)
 
+        # Consume any fee_rate stashed during create_session().
+        fee_rate = self._pending_fee_rates.pop(session_id, None)
+
         sandbox = BacktestSandbox(
             session_id=session_id,
             starting_balance=config.starting_balance,
             risk_limits=risk_limits,
+            fee_fraction=fee_rate if fee_rate is not None else Decimal("0.001"),
         )
 
         replayer = DataReplayer(db, config.pairs, step_interval=config.candle_interval, exchange=config.exchange)
@@ -404,6 +437,156 @@ class BacktestEngine:
             )
         return result
 
+    async def step_batch_fast(
+        self,
+        session_id: str,
+        steps: int,
+        db: AsyncSession,
+        *,
+        include_intermediate_trades: bool = False,
+    ) -> BatchStepResult:
+        """Advance multiple candle steps with minimal per-step overhead.
+
+        Designed for RL training loops that issue thousands of batch calls.
+        Compared to :meth:`step_batch`, this method:
+
+        - **Skips** the periodic ``step_num % 60`` snapshot; only captures a
+          snapshot when an order fills or on the final step of the batch.
+        - **Skips** the periodic ``step_num % 500`` DB progress write; writes
+          progress exactly once at the end of the batch.
+        - **Skips** intermediate :meth:`~BacktestSandbox.get_portfolio` calls;
+          computes the portfolio summary once at the end.
+        - **Accumulates** order fills into a flat ``list[OrderResult]`` rather
+          than constructing a :class:`StepResult` on every iteration.
+
+        When the backtest reaches its final step, :meth:`complete` is called
+        automatically (same behaviour as :meth:`step` and :meth:`step_batch`).
+
+        Args:
+            session_id:                  UUID string of the active session.
+            steps:                       Maximum number of candle steps to advance.
+            db:                          Active database session.
+            include_intermediate_trades: When *True*, all fill details from every
+                                         step are included in ``orders_filled``.
+                                         When *False* (default), only fills from
+                                         the final step are returned — saving
+                                         serialization overhead for callers that
+                                         only care about the terminal state.
+
+        Returns:
+            :class:`BatchStepResult` describing the state after the last step
+            executed.
+
+        Raises:
+            :class:`~src.utils.exceptions.BacktestNotFoundError`: Session is
+                not active in memory.
+            :class:`~src.utils.exceptions.BacktestInvalidStateError`: Session
+                has already completed all steps before this call.
+        """
+        active = self._get_active(session_id)
+
+        if active.simulator.is_complete:
+            raise BacktestInvalidStateError(
+                "Backtest has already completed all steps.",
+                current_status="complete",
+            )
+
+        accumulated_fills: list[OrderResult] = []
+        steps_executed = 0
+
+        for _ in range(steps):
+            # Session may have been removed from _active by auto-complete inside
+            # this loop — check before each iteration.
+            if session_id not in self._active:
+                break
+            active = self._active[session_id]
+            if active.simulator.is_complete:
+                break
+
+            # Advance virtual clock (raises StopIteration if already done — but
+            # we guard above, so this should never fire).
+            virtual_time = active.simulator.step()
+
+            # Load prices from in-memory cache (zero DB round-trips after preload).
+            active.current_prices = await active.replayer.load_prices(virtual_time)
+
+            # Check and fill pending orders.
+            filled = active.sandbox.check_pending_orders(active.current_prices, virtual_time)
+
+            # Snapshot only on fills or the last step of the batch — skip the
+            # every-60-steps modulo that step() uses, which would create up to
+            # N/60 snapshots per call.
+            step_num = active.simulator.current_step
+            is_last_in_batch = step_num >= (active.simulator.total_steps) or active.simulator.is_complete
+            if filled or is_last_in_batch:
+                active.sandbox.capture_snapshot(active.current_prices, virtual_time)
+
+            if include_intermediate_trades:
+                accumulated_fills.extend(filled)
+            else:
+                # Replace with latest fills so the caller always sees the
+                # most recent step's fills when not accumulating.
+                accumulated_fills = filled
+
+            steps_executed += 1
+
+            # Auto-complete on the final step — same semantics as step().
+            if active.simulator.is_complete:
+                await self.complete(session_id, db)
+                break
+
+        # --- Single DB progress write at end of batch ---
+        # Re-read active since complete() may have removed it.
+        if session_id in self._active:
+            active = self._active[session_id]
+            session = await self._load_session(session_id, db)
+            session.virtual_clock = active.simulator.current_time
+            session.current_step = active.simulator.current_step
+            session.progress_pct = active.simulator.progress_pct
+            await db.flush()
+
+            portfolio = active.sandbox.get_portfolio(active.current_prices)
+            is_complete = active.simulator.is_complete
+            current_step = active.simulator.current_step
+            total_steps = active.simulator.total_steps
+            progress_pct = active.simulator.progress_pct
+            remaining_steps = active.simulator.remaining_steps
+            virtual_time = active.simulator.current_time
+            current_prices = active.current_prices
+        else:
+            # Session was auto-completed inside the loop; read final state from
+            # the last known active snapshot (captured before complete() ran).
+            # The session is gone from _active so we reconstruct from DB.
+            session = await self._load_session(session_id, db)
+            is_complete = True
+            remaining_steps = 0
+            current_step = session.current_step or 0
+            total_steps = session.total_steps or 0
+            progress_pct = Decimal(str(session.progress_pct or "100")).quantize(_QUANT2)
+            virtual_time = session.virtual_clock or session.end_time
+            current_prices = {}
+            portfolio = PortfolioSummary(
+                total_equity=session.final_equity or Decimal("0"),
+                available_cash=Decimal("0"),
+                position_value=Decimal("0"),
+                unrealized_pnl=Decimal("0"),
+                realized_pnl=Decimal("0"),
+                positions=[],
+            )
+
+        return BatchStepResult(
+            virtual_time=virtual_time,
+            step=current_step,
+            total_steps=total_steps,
+            progress_pct=progress_pct,
+            prices=current_prices,
+            orders_filled=accumulated_fills,
+            portfolio=portfolio,
+            is_complete=is_complete,
+            remaining_steps=remaining_steps,
+            steps_executed=steps_executed,
+        )
+
     async def get_price(self, session_id: str, symbol: str) -> PriceAtTime:
         """Get the current price for a symbol in the backtest.
 
@@ -509,8 +692,32 @@ class BacktestEngine:
             session_id, db, active, portfolio, metrics, total_pnl, roi_pct, wall_duration
         )
 
-        # Remove from active
+        # Remove from active before firing webhooks so the session is fully done
         self._active.pop(session_id, None)
+
+        # Fire backtest.completed webhook event (fire-and-forget; errors are swallowed)
+        try:
+            from src.webhooks.dispatcher import fire_event  # noqa: PLC0415
+
+            await fire_event(
+                account_id=active.account_id,
+                event_name="backtest.completed",
+                payload={
+                    "backtest_id": result.session_id,
+                    "status": "completed",
+                    "roi_pct": str(result.roi_pct),
+                    "total_trades": result.total_trades,
+                    "final_equity": str(result.final_equity),
+                },
+                db=db,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "backtest.webhook_fire_failed",
+                session_id=session_id,
+                account_id=str(active.account_id),
+            )
+
         return result
 
     async def cancel(self, session_id: str, db: AsyncSession) -> BacktestResult:
