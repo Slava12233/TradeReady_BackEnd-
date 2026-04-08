@@ -250,10 +250,10 @@ async def get_indicators(
         engine.update(
             symbol,
             {
-                "high": float(row.high),
-                "low": float(row.low),
-                "close": float(row.close),
-                "volume": float(row.volume),
+                "high": float(row.high),  # type: ignore[attr-defined]
+                "low": float(row.low),  # type: ignore[attr-defined]
+                "close": float(row.close),  # type: ignore[attr-defined]
+                "volume": float(row.volume),  # type: ignore[attr-defined]
             },
         )
 
