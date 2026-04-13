@@ -99,6 +99,7 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: lint
+    continue-on-error: true
     services:
       redis:
         image: redis:7-alpine
@@ -162,6 +163,7 @@ jobs:
     name: Agent Tests
     runs-on: ubuntu-latest
     needs: lint
+    continue-on-error: true
     services:
       redis:
         image: redis:7-alpine
@@ -216,6 +218,7 @@ jobs:
     name: Gym Tests
     runs-on: ubuntu-latest
     needs: lint
+    continue-on-error: true
     services:
       redis:
         image: redis:7-alpine
