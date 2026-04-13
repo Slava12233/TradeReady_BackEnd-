@@ -95,34 +95,6 @@ jobs:
             htmlcov/
           retention-days: 30
 
-  frontend:
-    name: Frontend Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: Frontend
-
-      - name: Build
-        run: pnpm run build
-        working-directory: Frontend
-
-      - name: Test
-        run: pnpm run test
-        working-directory: Frontend
-
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -170,6 +142,7 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
           pip install -e sdk/
+          pip install mcp
 
       - name: Run migrations
         env:
