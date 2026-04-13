@@ -139,10 +139,10 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install mcp
+          pip install -e sdk/
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-          pip install -e sdk/
-          pip install mcp
 
       - name: Run migrations
         env:
