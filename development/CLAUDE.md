@@ -1,6 +1,6 @@
 # development/ — Development Planning & Progress
 
-<!-- last-updated: 2026-04-07 -->
+<!-- last-updated: 2026-04-12 -->
 
 ## Purpose
 
@@ -56,7 +56,7 @@ This directory doubles as an **Obsidian vault** for human knowledge management. 
 | `plans/` | Active implementation plans for bug-fix sprints and feature work (e.g., `fix-battle-live-crash.md`) |
 | `reports/` | Tester reports and generated output files (e.g., `tester-guide.md`, `REPORT-backtest-final.md`) |
 | `docs-development/` | Docs site rebuild plan and task tracker (Fumadocs, 3 delivery modes, ~45 pages) |
-| `tasks/` | Task boards: `tradeready-test-agent/` (V1 agent, DONE), `agent-strategies/` (5 strategies, 29 tasks, DONE), `frontend-performance-fixes/` (23 tasks, DONE), `agent-deployment-training/` (23 tasks), `agent-ecosystem/` (36 tasks, DONE), `agent-memory-system/` (14 tasks, DONE), `agent-logging-system/` (34 tasks, DONE), `obsidian-integration/` (32 tasks, IN PROGRESS), `c-level-report-skill/` (5 tasks, DONE), `c-level-recommendations/` (39 tasks — 5 phases: infrastructure, security, training, retraining, quality gate, **DONE**), `qa-bugfix-sprint/` (13 tasks + README + run-tasks, **DONE**), `fix-battle-live-crash/` (8 tasks, **DONE**), `agent-strategies-tasks.md` (high-level checklist) |
+| `tasks/` | Task boards: `tradeready-test-agent/` (V1 agent, DONE), `agent-strategies/` (5 strategies, 29 tasks, DONE), `frontend-performance-fixes/` (23 tasks, DONE), `agent-deployment-training/` (23 tasks), `agent-ecosystem/` (36 tasks, DONE), `agent-memory-system/` (14 tasks, DONE), `agent-logging-system/` (34 tasks, DONE), `obsidian-integration/` (32 tasks, IN PROGRESS), `c-level-report-skill/` (5 tasks, DONE), `c-level-recommendations/` (39 tasks — 5 phases: infrastructure, security, training, retraining, quality gate, **DONE**), `qa-bugfix-sprint/` (13 tasks + README + run-tasks, **DONE**), `fix-battle-live-crash/` (8 tasks, **DONE**), `agent-strategies-tasks.md` (high-level checklist), `april-2026-execution/` (47 tasks, 5 tracks: data loading, PPO training, live trading, frontend tests, CI/CD, **ACTIVE**) |
 
 ## Archived Planning Docs
 
@@ -89,6 +89,7 @@ These were created during specific development phases. They are **archived** —
 | `agent-trading-strategy-report.md` | Research | Agent trading strategy research report |
 | `data-pipeline-report.md` | Research | Data pipeline research report |
 | `plan.md` | Deployment | Agent deployment + training plan (Docker, data loading, regime/PPO/evo/ensemble pipeline) |
+| `april-2026-execution-plan.md` | Planning | **ACTIVE** — 5-track, 47-task execution plan from April 2026 C-level recommendations (data loading, PPO training, live trading, frontend tests, CI/CD) |
 | `executive-summary.md` | Planning | C-level executive summary of the platform |
 | `agent-ecosystem-plan.md` | Planning | Master plan for agent ecosystem expansion (36 tasks covering DB migrations, conversation system, memory, multi-agent coordination) — **COMPLETE as of 2026-03-21** |
 | `agent-development/battle-historical-investigation.md` | Research | Investigation report on battle historical mode 500 error |
