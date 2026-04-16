@@ -13,6 +13,11 @@ The API key auth path is also exercised to confirm it remains unchanged.
 
 from __future__ import annotations
 
+try:
+    import src.database.session  # noqa: F401  # register submodule for mock.patch resolution
+except ImportError:
+    pass  # asyncpg not available on Windows — CI has it
+
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
