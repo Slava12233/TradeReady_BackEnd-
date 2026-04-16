@@ -13,6 +13,7 @@ from uuid import uuid4
 from starlette.testclient import TestClient
 
 from src.config import Settings
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 
 _TEST_JWT_SECRET = "test_secret_that_is_at_least_32_chars_long!!"
 

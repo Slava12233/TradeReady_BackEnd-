@@ -319,11 +319,13 @@ class CandleChannel:
 
 
 class OrderChannel:
-    """Per-account order-status update channel (private).
+    """Per-agent order-status update channel (private).
 
-    This channel is **per-account** — messages are pushed via
+    This channel is **per-agent** — messages are pushed via
+    :meth:`~src.api.websocket.manager.ConnectionManager.broadcast_to_agent`
+    when an ``agent_id`` is available, falling back to
     :meth:`~src.api.websocket.manager.ConnectionManager.broadcast_to_account`
-    rather than :meth:`~src.api.websocket.manager.ConnectionManager.broadcast_to_channel`.
+    for legacy account-only connections.
 
     Clients subscribe by sending ``{"action": "subscribe", "channel": "orders"}``.
     No ``symbol`` is required.
@@ -382,7 +384,8 @@ class OrderChannel:
             raw: Raw order event dict from the order engine or route handler.
 
         Returns:
-            Envelope dict ready for :meth:`ConnectionManager.broadcast_to_account`.
+            Envelope dict ready for :meth:`ConnectionManager.broadcast_to_agent`
+            (or :meth:`ConnectionManager.broadcast_to_account` as fallback).
         """
         data: dict[str, Any] = {
             "order_id": str(raw.get("order_id", "")),
@@ -418,11 +421,13 @@ class OrderChannel:
 
 
 class PortfolioChannel:
-    """Per-account portfolio-equity snapshot channel (private).
+    """Per-agent portfolio-equity snapshot channel (private).
 
-    Like :class:`OrderChannel`, this is a **per-account** channel.  The
-    server pushes updates approximately every 5 seconds (driven by a Celery
-    beat task or an asyncio loop in the handler).
+    Like :class:`OrderChannel`, this is a **per-agent** channel — use
+    :meth:`~src.api.websocket.manager.ConnectionManager.broadcast_to_agent`
+    when an ``agent_id`` is available.  The server pushes updates
+    approximately every 5 seconds (driven by a Celery beat task or an
+    asyncio loop in the handler).
 
     Clients subscribe by sending
     ``{"action": "subscribe", "channel": "portfolio"}``.
@@ -472,7 +477,8 @@ class PortfolioChannel:
                  Celery snapshot task.
 
         Returns:
-            Envelope dict ready for :meth:`ConnectionManager.broadcast_to_account`.
+            Envelope dict ready for :meth:`ConnectionManager.broadcast_to_agent`
+            (or :meth:`ConnectionManager.broadcast_to_account` as fallback).
         """
         timestamp = raw.get("timestamp") or datetime.datetime.now(datetime.UTC)
 

@@ -60,6 +60,12 @@ class Settings(BaseSettings):
         description="Comma-separated list of additional exchange IDs for multi-exchange ingestion.",
     )
 
+    # ── Environment ───────────────────────────────────────────────────────────
+    environment: str = Field(
+        default="development",
+        description="Deployment environment: development | staging | production.",
+    )
+
     # ── API Server ────────────────────────────────────────────────────────────
     api_host: str = Field(default="0.0.0.0")  # noqa: S104
     api_port: int = Field(default=8000, ge=1, le=65535)

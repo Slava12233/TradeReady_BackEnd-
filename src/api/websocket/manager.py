@@ -4,27 +4,42 @@ Responsibilities
 ----------------
 1. ``ConnectionManager`` — tracks every live WebSocket connection, keyed by a
    unique ``connection_id``.  Each connection carries its authenticated
-   ``account_id``, an open :class:`~fastapi.WebSocket` object, the set of
+   ``account_id``, an optional ``agent_id`` (set when authenticated via an
+   agent API key), an open :class:`~fastapi.WebSocket` object, the set of
    active subscriptions, and the asyncio tasks (heartbeat, Redis listener) that
    serve it.
 2. ``connect()`` — authenticates the connection via the ``api_key`` query
    parameter, accepts the WebSocket, registers the connection, and starts the
    heartbeat task.
 3. ``disconnect()`` — cancels all per-connection tasks, removes the connection
-   from the registry, and updates the per-account connection count.
-4. ``broadcast_to_account()`` — push a JSON payload to all connections belonging
-   to a specific account (order/portfolio events).
-5. ``broadcast_to_channel()`` — push a payload to all connections subscribed to
+   from the registry, and updates the per-account and per-agent connection counts.
+4. ``broadcast_to_agent()`` — push a JSON payload only to connections belonging
+   to a specific agent (order/portfolio events scoped to one agent).
+5. ``broadcast_to_account()`` — push a JSON payload to all connections belonging
+   to a specific account; falls back to account-level fan-out when no agent
+   context is available.
+6. ``broadcast_to_channel()`` — push a payload to all connections subscribed to
    a given channel name (ticker price updates).
-6. Heartbeat loop — sends ``{"type": "ping"}`` every 30 seconds and disconnects
+7. Heartbeat loop — sends ``{"type": "ping"}`` every 30 seconds and disconnects
    the client if no ``{"type": "pong"}`` is received within 10 seconds.
+
+Agent scoping
+-------------
+When a client authenticates via an agent API key the resolved ``agent_id`` is
+stored on the :class:`Connection`.  Private channels (``orders``,
+``portfolio``) should broadcast via :meth:`broadcast_to_agent` so that two
+agents belonging to the same account cannot observe each other's data — which
+is critical for battle fairness.
+
+If ``agent_id`` cannot be determined (legacy account-only auth) the caller
+should fall back to :meth:`broadcast_to_account`.
 
 Connection lifecycle
 --------------------
 ::
 
     Client connects → ws://.../ws/v1?api_key=ak_live_...
-    Server accepts   → validates api_key via DB lookup
+    Server accepts   → validates api_key via DB lookup (agent first, then account)
     Server registers → assigns connection_id, starts heartbeat
     Client messages  → forwarded to handlers.py for subscribe/unsubscribe
     Server pushes    → ticker/orders/portfolio events forwarded to subscribed ws
@@ -91,17 +106,20 @@ class Connection:
     """State container for a single WebSocket connection.
 
     Attributes:
-        connection_id: Unique identifier assigned on connect.
-        account_id:    UUID of the authenticated account.
-        websocket:     The live FastAPI WebSocket object.
-        subscriptions: Set of channel strings the client has subscribed to.
+        connection_id:  Unique identifier assigned on connect.
+        account_id:     UUID of the authenticated account.
+        agent_id:       UUID of the authenticated agent, or ``None`` when the
+                        client authenticated via a legacy account-only API key.
+        websocket:      The live FastAPI WebSocket object.
+        subscriptions:  Set of channel strings the client has subscribed to.
         heartbeat_task: asyncio Task running the ping/pong loop.
-        _pong_event:   Internal event set when the client sends a pong.
+        _pong_event:    Internal event set when the client sends a pong.
     """
 
     connection_id: str
     account_id: UUID
     websocket: WebSocket
+    agent_id: UUID | None = field(default=None)
     subscriptions: set[str] = field(default_factory=set)
     heartbeat_task: asyncio.Task[None] | None = field(default=None, repr=False)
     _pong_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
@@ -175,6 +193,8 @@ class ConnectionManager:
         self._connections: dict[str, Connection] = {}
         # account_id → {connection_id, ...}  (one account may have many tabs)
         self._account_index: dict[UUID, set[str]] = {}
+        # agent_id → {connection_id, ...}  (one agent may have many tabs)
+        self._agent_index: dict[UUID, set[str]] = {}
         self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -206,10 +226,12 @@ class ConnectionManager:
             code 4401 in that case).
         """
         # Authenticate before accepting — avoids allocating state for bad keys
-        account_id = await self._authenticate(api_key)
-        if account_id is None:
+        auth_result = await self._authenticate(api_key)
+        if auth_result is None:
             await websocket.close(code=_WS_CLOSE_AUTH_FAILED)
             return None
+
+        account_id, agent_id = auth_result
 
         # Accept the WebSocket upgrade
         await websocket.accept()
@@ -219,11 +241,14 @@ class ConnectionManager:
             connection_id=connection_id,
             account_id=account_id,
             websocket=websocket,
+            agent_id=agent_id,
         )
 
         async with self._lock:
             self._connections[connection_id] = conn
             self._account_index.setdefault(account_id, set()).add(connection_id)
+            if agent_id is not None:
+                self._agent_index.setdefault(agent_id, set()).add(connection_id)
 
         # Start heartbeat in the background
         conn.heartbeat_task = asyncio.create_task(
@@ -236,6 +261,7 @@ class ConnectionManager:
             extra={
                 "connection_id": connection_id,
                 "account_id": str(account_id),
+                "agent_id": str(agent_id) if agent_id is not None else None,
                 "total_connections": len(self._connections),
             },
         )
@@ -263,6 +289,12 @@ class ConnectionManager:
             if not account_connections:
                 self._account_index.pop(conn.account_id, None)
 
+            if conn.agent_id is not None:
+                agent_connections = self._agent_index.get(conn.agent_id, set())
+                agent_connections.discard(connection_id)
+                if not agent_connections:
+                    self._agent_index.pop(conn.agent_id, None)
+
         # Cancel heartbeat outside the lock to avoid deadlock
         if conn.heartbeat_task is not None and not conn.heartbeat_task.done():
             conn.heartbeat_task.cancel()
@@ -283,6 +315,7 @@ class ConnectionManager:
             extra={
                 "connection_id": connection_id,
                 "account_id": str(conn.account_id),
+                "agent_id": str(conn.agent_id) if conn.agent_id is not None else None,
                 "subscriptions": list(conn.subscriptions),
                 "total_connections": len(self._connections),
             },
@@ -306,6 +339,35 @@ class ConnectionManager:
     # Public: broadcasting
     # ------------------------------------------------------------------
 
+    async def broadcast_to_agent(
+        self,
+        agent_id: UUID,
+        payload: dict[str, Any],
+    ) -> int:
+        """Send *payload* to all connections authenticated with *agent_id*'s API key.
+
+        Used for per-agent private events such as order status changes and
+        portfolio snapshots.  This is the preferred broadcast method for
+        private channels (``orders``, ``portfolio``) because it scopes delivery
+        to a single agent, preventing agents belonging to the same account from
+        seeing each other's data (important for battle fairness).
+
+        Args:
+            agent_id: The agent whose connections should receive the message.
+            payload:  A JSON-serialisable dict.
+
+        Returns:
+            The number of connections the message was successfully sent to.
+        """
+        async with self._lock:
+            ids = set(self._agent_index.get(agent_id, set()))
+
+        sent = 0
+        for connection_id in ids:
+            if await self._send(connection_id, payload):
+                sent += 1
+        return sent
+
     async def broadcast_to_account(
         self,
         account_id: UUID,
@@ -313,8 +375,11 @@ class ConnectionManager:
     ) -> int:
         """Send *payload* to all connections belonging to *account_id*.
 
-        Used for per-account events such as order status changes and portfolio
-        snapshots.
+        Sends to every connection for the account regardless of which agent's
+        API key was used.  Prefer :meth:`broadcast_to_agent` for private
+        channels (orders, portfolio) when an ``agent_id`` is available.  Use
+        this method as a fallback when no agent context can be determined
+        (e.g. legacy account-only API key auth).
 
         Args:
             account_id: The account whose connections should receive the message.
@@ -454,12 +519,31 @@ class ConnectionManager:
         """
         return set(self._account_index.get(account_id, set()))
 
+    def agent_connection_ids(self, agent_id: UUID) -> set[str]:
+        """Return all ``connection_id`` values authenticated with *agent_id*'s API key.
+
+        Args:
+            agent_id: The agent to look up.
+
+        Returns:
+            Set of connection IDs; empty set if the agent has no connections.
+        """
+        return set(self._agent_index.get(agent_id, set()))
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _authenticate(self, api_key: str) -> UUID | None:
-        """Validate *api_key* and return the account UUID, or ``None`` on failure.
+    async def _authenticate(self, api_key: str) -> tuple[UUID, UUID | None] | None:
+        """Validate *api_key* and return ``(account_id, agent_id)`` on success.
+
+        First tries to resolve the key against the ``agents`` table (new
+        multi-agent flow).  If found, returns the agent's owning account ID
+        together with the agent's own ID so that the connection can be
+        indexed under both account and agent.
+
+        Falls back to the legacy ``accounts`` table lookup when the key does
+        not match any agent.  In that case ``agent_id`` is ``None``.
 
         A fresh DB session is created per connection attempt so that the
         manager does not depend on FastAPI's per-request DI machinery.
@@ -468,9 +552,11 @@ class ConnectionManager:
             api_key: Raw API key string from the WebSocket query parameter.
 
         Returns:
-            The ``account_id`` UUID on success, or ``None`` if the key is
-            invalid, the account is not found, or the account is not active.
+            A ``(account_id, agent_id)`` tuple on success, or ``None`` if the
+            key is invalid, the account is not found, or the account is not
+            active.  ``agent_id`` is ``None`` for legacy account-only keys.
         """
+        from src.database.repositories.agent_repo import AgentNotFoundError, AgentRepository  # noqa: PLC0415
         from src.database.session import get_session_factory  # noqa: PLC0415
 
         if not api_key:
@@ -480,8 +566,48 @@ class ConnectionManager:
         try:
             session_factory = get_session_factory()
             async with session_factory() as session:
-                repo = AccountRepository(session)
-                account = await repo.get_by_api_key(api_key)
+                account_repo = AccountRepository(session)
+                agent_repo = AgentRepository(session)
+
+                # Try agent lookup first (multi-agent flow)
+                try:
+                    agent = await agent_repo.get_by_api_key(api_key)
+
+                    # Resolve the owning account
+                    try:
+                        account = await account_repo.get_by_id(agent.account_id)
+                    except AccountNotFoundError:
+                        logger.warning(
+                            "ws.auth_failed",
+                            extra={"reason": "agent_account_not_found", "agent_id": str(agent.id)},
+                        )
+                        return None
+
+                    if account.status != "active":
+                        logger.warning(
+                            "ws.auth_failed",
+                            extra={"reason": "account_not_active", "account_id": str(account.id)},
+                        )
+                        return None
+
+                    if agent.status == "archived":
+                        logger.warning(
+                            "ws.auth_failed",
+                            extra={"reason": "agent_archived", "agent_id": str(agent.id)},
+                        )
+                        return None
+
+                    return account.id, agent.id
+
+                except AgentNotFoundError:
+                    pass  # Fall through to legacy account lookup
+
+                # Legacy: try accounts table directly
+                try:
+                    account = await account_repo.get_by_api_key(api_key)
+                except AccountNotFoundError:
+                    logger.warning("ws.auth_failed", extra={"reason": "unknown_api_key"})
+                    return None
 
                 if account.status != "active":
                     logger.warning(
@@ -490,11 +616,8 @@ class ConnectionManager:
                     )
                     return None
 
-                return account.id
+                return account.id, None
 
-        except AccountNotFoundError:
-            logger.warning("ws.auth_failed", extra={"reason": "unknown_api_key"})
-            return None
         except AuthenticationError as exc:
             logger.warning("ws.auth_failed", extra={"reason": exc.message})
             return None

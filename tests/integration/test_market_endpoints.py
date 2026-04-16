@@ -37,6 +37,7 @@ from src.accounts.auth import create_jwt
 from src.cache.price_cache import TickerData
 from src.config import Settings
 from src.database.models import Account
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 
 pytestmark = pytest.mark.slow
 

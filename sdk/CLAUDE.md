@@ -20,6 +20,7 @@ The SDK provides three client classes that wrap the platform's REST and WebSocke
 | `examples/genetic_optimization.py` | Runnable example: 10-variant genetic search with DSR filter |
 | `examples/strategy_tester.py` | Runnable example: strategy lifecycle (create → test → DSR gate → deploy) |
 | `examples/webhook_integration.py` | Runnable example: local webhook receiver + HMAC validation |
+| `examples/getting_started.py` | Runnable example: Steps 4-6 from getting-started guide (price fetch, trade, backtest) |
 | `agentexchange/ws_client.py` | `AgentExchangeWS` -- WebSocket client (websockets lib, decorator-based subscriptions) |
 | `agentexchange/models.py` | 13 frozen dataclasses: `Price`, `Ticker`, `Candle`, `Balance`, `Position`, `Portfolio`, `PnL`, `Order`, `Trade`, `Performance`, `Snapshot`, `LeaderboardEntry`, `AccountInfo` |
 | `agentexchange/exceptions.py` | Exception hierarchy (10 classes) + `raise_for_response()` factory |
@@ -191,5 +192,6 @@ cd sdk && ruff check . && mypy agentexchange/
 - `2026-03-18` -- Fixed model count: 12 -> 13 frozen dataclasses (AccountInfo was undercounted)
 - `2026-03-19` -- Synced with codebase: confirmed 6 Python files and all documented items exist. No changes needed.
 - `2026-04-07` — 11 new methods added (both sync and async clients). Market data: `get_indicators`, `get_available_indicators`. Strategies: `compare_strategies`. Backtesting: `batch_step_fast`. Metrics: `compute_deflated_sharpe`. Webhooks: `create_webhook`, `list_webhooks`, `get_webhook`, `update_webhook`, `delete_webhook`, `test_webhook`. Total method count: 37 → 48. Added `examples/` directory with 5 runnable scripts. `README.md` updated with Prerequisites, Examples, and full API reference table.
+- `2026-04-07` — Added `examples/getting_started.py` (Task 15): companion script for getting-started-agents.md Steps 4-6. examples count: 5 → 6.
 - `2026-03-23` — R1-09: `AsyncAgentExchangeClient` now handles agent-key fallback for authentication. When JWT login fails with a 401 that signals the key is an agent key (not an account key), the client sets `_api_key_only=True` and uses the persistent `X-API-Key` header for all subsequent requests, bypassing the JWT flow. This allows agent keys (`ak_live_...`) to authenticate directly without a registered account login endpoint.
 - `2026-03-21` -- Added `trace_id_provider: Callable[[], str] | None = None` to `AsyncAgentExchangeClient.__init__`. When provided and the returned string is non-empty, `X-Trace-Id` is injected into every outbound request header. `agent/tools/sdk_tools.py` passes `get_trace_id` from `agent.logging` as the provider.

@@ -21,9 +21,13 @@ Data flow::
       → PortfolioHistoryResponse (HTTP 200)
 
     GET /api/v1/analytics/leaderboard?period=30d
+      → Redis cache lookup (key: leaderboard:{period}, TTL 60 s)
       → AccountRepository.list_by_status("active")
+      → SnapshotRepository.get_latest() per account (daily snapshot → total_equity)
       → PerformanceMetrics.calculate() per account (bounded)
+      → ROI = (total_equity − starting_balance) / starting_balance × 100
       → LeaderboardResponse sorted by ROI descending (HTTP 200)
+      → Store result in Redis cache
 
 Example::
 
@@ -62,10 +66,11 @@ from src.api.schemas.analytics import (
     SnapshotInterval,
     SnapshotItem,
 )
-from src.database.models import Account
+from src.database.models import Account, PortfolioSnapshot
 from src.dependencies import (
     DbSessionDep,
     PerformanceMetricsDep,
+    RedisDep,
     SnapshotServiceDep,
 )
 from src.portfolio.metrics import Metrics
@@ -82,6 +87,12 @@ _LEADERBOARD_MAX_ACCOUNTS: int = 200
 
 # Default snapshot limit for portfolio history.
 _DEFAULT_HISTORY_LIMIT: int = 100
+
+# Redis cache key prefix for leaderboard results (keyed by period).
+_LEADERBOARD_CACHE_PREFIX: str = "leaderboard"
+
+# Leaderboard cache TTL in seconds.
+_LEADERBOARD_CACHE_TTL: int = 60
 
 
 # ---------------------------------------------------------------------------
@@ -384,12 +395,14 @@ async def get_portfolio_history(
     description=(
         "Return cross-account performance rankings sorted by ROI descending for "
         "the requested period.  Only active accounts with at least one closed "
-        "trade in the period are included.  Up to 50 entries are returned."
+        "trade in the period are included.  Up to 50 entries are returned.  "
+        "Results are cached in Redis for 60 seconds."
     ),
 )
 async def get_leaderboard(
     account: CurrentAccountDep,  # noqa: ARG001  (auth gate — result is public aggregate)
     db: DbSessionDep,
+    redis: RedisDep,
     period: Annotated[
         AnalyticsPeriod,
         Query(
@@ -401,24 +414,28 @@ async def get_leaderboard(
     """Return the global agent performance leaderboard for the requested period.
 
     Steps:
-    1. Load up to :data:`_LEADERBOARD_MAX_ACCOUNTS` active accounts from the DB.
-    2. For each account, compute performance metrics for the requested period.
-    3. Filter out accounts with zero closed trades (no activity in the period).
-    4. Sort by ROI descending (highest return first).
-    5. Assign sequential rank numbers (1-based) after sorting.
-    6. Return the top 50 entries.
+    1. Check Redis cache (key ``leaderboard:{period}``); return cached response if present.
+    2. Load up to :data:`_LEADERBOARD_MAX_ACCOUNTS` active accounts from the DB.
+    3. For each account, fetch the most recent daily portfolio snapshot to obtain
+       ``total_equity``, then compute performance metrics for the requested period.
+    4. Filter out accounts with zero closed trades (no activity in the period).
+    5. Compute ROI = (total_equity − starting_balance) / starting_balance × 100.
+    6. Sort by ROI descending (highest return first).
+    7. Assign sequential rank numbers (1-based) after sorting.
+    8. Return the top 50 entries and write the result to Redis with a 60-second TTL.
 
     ROI is computed as::
 
         roi_pct = (total_equity - starting_balance) / starting_balance * 100
 
-    where ``total_equity`` is approximated from the most recent daily snapshot
-    (or the ``starting_balance`` if no snapshot exists yet).
+    where ``total_equity`` comes from the most recent daily portfolio snapshot.
+    Falls back to ``starting_balance`` (0% ROI) for accounts that have no snapshots yet.
 
     Args:
         account: Injected authenticated account (auth gate — identity not used
                  in the response; leaderboard data is public aggregate).
         db:      Injected async database session.
+        redis:   Injected Redis client for leaderboard result caching.
         period:  Lookback window.  Defaults to ``"30d"``.
 
     Returns:
@@ -442,10 +459,31 @@ async def get_leaderboard(
           ]
         }
     """
+    from src.database.repositories.snapshot_repo import SnapshotRepository  # noqa: PLC0415
     from src.portfolio.metrics import PerformanceMetrics  # noqa: PLC0415
 
+    cache_key = f"{_LEADERBOARD_CACHE_PREFIX}:{period}"
+
     # ------------------------------------------------------------------
-    # 1. Load active accounts (bounded to avoid unbounded metric queries)
+    # 1. Redis cache lookup — serve stale-tolerable leaderboard quickly
+    # ------------------------------------------------------------------
+    try:
+        cached = await redis.get(cache_key)
+        if cached is not None:
+            logger.debug(
+                "analytics.leaderboard.cache_hit",
+                extra={"period": period, "cache_key": cache_key},
+            )
+            return LeaderboardResponse.model_validate_json(cached)
+    except Exception:
+        # Cache miss on Redis error — fall through to DB computation.
+        logger.warning(
+            "analytics.leaderboard.cache_read_failed",
+            extra={"period": period},
+        )
+
+    # ------------------------------------------------------------------
+    # 2. Load active accounts (bounded to avoid unbounded metric queries)
     # ------------------------------------------------------------------
     try:
         stmt = (
@@ -464,9 +502,10 @@ async def get_leaderboard(
         raise DatabaseError("Failed to load accounts for leaderboard.") from exc
 
     # ------------------------------------------------------------------
-    # 2. Compute metrics per account and build candidate entries
+    # 3. Compute metrics + ROI per account and build candidate entries
     # ------------------------------------------------------------------
     perf_svc = PerformanceMetrics(db)
+    snap_repo = SnapshotRepository(db)
     candidates: list[tuple[Decimal, Account, Metrics]] = []
 
     for acct in active_accounts:
@@ -484,11 +523,21 @@ async def get_leaderboard(
         if m.total_trades == 0:
             continue
 
-        roi_pct = _compute_roi(acct)
+        # Fetch the most recent daily snapshot to get current total equity.
+        latest_snap: PortfolioSnapshot | None = None
+        try:
+            latest_snap = await snap_repo.get_latest(acct.id, "daily")
+        except Exception:
+            logger.warning(
+                "analytics.leaderboard.snapshot_failed",
+                extra={"account_id": str(acct.id)},
+            )
+
+        roi_pct = _compute_roi(acct, latest_snap)
         candidates.append((roi_pct, acct, m))
 
     # ------------------------------------------------------------------
-    # 3. Sort by ROI descending, assign ranks, cap at 50 entries
+    # 4. Sort by ROI descending, assign ranks, cap at 50 entries
     # ------------------------------------------------------------------
     candidates.sort(key=lambda t: t[0], reverse=True)
     top_50 = candidates[:50]
@@ -506,6 +555,8 @@ async def get_leaderboard(
         )
         rankings.append(entry)
 
+    response = LeaderboardResponse(period=period, rankings=rankings)
+
     logger.info(
         "analytics.leaderboard",
         extra={
@@ -515,7 +566,22 @@ async def get_leaderboard(
         },
     )
 
-    return LeaderboardResponse(period=period, rankings=rankings)
+    # ------------------------------------------------------------------
+    # 5. Write result to Redis cache (best-effort — never blocks response)
+    # ------------------------------------------------------------------
+    try:
+        await redis.setex(
+            cache_key,
+            _LEADERBOARD_CACHE_TTL,
+            response.model_dump_json(),
+        )
+    except Exception:
+        logger.warning(
+            "analytics.leaderboard.cache_write_failed",
+            extra={"period": period},
+        )
+
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -523,35 +589,39 @@ async def get_leaderboard(
 # ---------------------------------------------------------------------------
 
 
-def _compute_roi(account: Account) -> Decimal:
-    """Compute a simple ROI percentage for *account* from DB columns.
+def _compute_roi(account: Account, latest_snapshot: PortfolioSnapshot | None) -> Decimal:
+    """Compute a simple ROI percentage for *account* using portfolio snapshot equity.
 
-    Uses ``starting_balance`` stored on the account row as the cost basis.
-    The current equity is not available here without a price lookup, so ROI
-    is approximated as zero (starting state) and downstream callers should
-    use the metrics-computed values where precision matters.
+    ROI formula::
 
-    In the leaderboard context, ROI is used purely for ranking order — the
-    absolute value will be refined in future iterations when a lightweight
-    equity snapshot is available without a full Redis + DB round-trip per
-    account.
+        roi_pct = (total_equity − starting_balance) / starting_balance × 100
 
-    For now, we derive ROI from the account's stored ``starting_balance``
-    and assume the account currently holds exactly that (conservative
-    baseline).  Accounts with actual trades will be differentiated by the
-    trade-based win-rate and Sharpe ratio computed by
-    :class:`~src.portfolio.metrics.PerformanceMetrics`.
+    ``total_equity`` is taken from the most recent daily
+    :class:`~src.database.models.PortfolioSnapshot` for the account.  When no
+    snapshot is available (e.g. the account has never triggered a Celery beat
+    snapshot), the function falls back to ``starting_balance`` which produces a
+    ``0%`` ROI — a conservative baseline that is replaced as soon as the first
+    snapshot is captured.
 
     Args:
-        account: The :class:`~src.database.models.Account` ORM row.
+        account:         The :class:`~src.database.models.Account` ORM row.
+        latest_snapshot: The most recent daily
+                         :class:`~src.database.models.PortfolioSnapshot` for the
+                         account, or ``None`` when no snapshot exists yet.
 
     Returns:
-        ROI as a ``Decimal`` percentage.  Returns ``Decimal("0")`` when
-        ``starting_balance`` is zero or not set.
+        ROI as a ``Decimal`` percentage rounded to 8 decimal places.
+        Returns ``Decimal("0")`` when ``starting_balance`` is zero or not set.
     """
     starting = Decimal(str(account.starting_balance)) if account.starting_balance else Decimal("0")
     if starting == Decimal("0"):
         return Decimal("0")
-    # The baseline ROI for the leaderboard — will be replaced with live equity
-    # lookups once PortfolioTracker is wired into the leaderboard (Phase 5 task).
-    return Decimal("0")
+
+    if latest_snapshot is not None:
+        current_equity = Decimal(str(latest_snapshot.total_equity))
+    else:
+        # No snapshot yet — assume equity equals starting balance (0% ROI).
+        current_equity = starting
+
+    roi_pct = (current_equity - starting) / starting * Decimal("100")
+    return Decimal(str(round(roi_pct, 8)))

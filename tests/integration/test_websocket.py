@@ -47,6 +47,7 @@ from src.api.websocket.channels import (
 from src.api.websocket.manager import ConnectionManager
 from src.config import Settings
 from src.database.models import Account
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 
 pytestmark = pytest.mark.slow
 
@@ -151,7 +152,8 @@ def _build_client(
     mock_session.commit = AsyncMock()
     mock_session.rollback = AsyncMock()
 
-    auth_return = authenticated_account.id if authenticated_account is not None else None
+    # _authenticate now returns (account_id, agent_id) or None
+    auth_return = (authenticated_account.id, None) if authenticated_account is not None else None
 
     # Use an ExitStack so all patches survive beyond this function's scope.
     stack = contextlib.ExitStack()

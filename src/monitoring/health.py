@@ -119,6 +119,10 @@ async def _probe_ingestion() -> tuple[bool, list[str], int]:
 
         stale_pairs = await cache.get_stale_pairs(threshold_seconds=60)
 
+        if stale_pairs is None:
+            # Redis error — staleness check is degraded, assume not fully active
+            return False, ["<staleness_check_unavailable>"], total_pairs
+
         # Ingestion is active when at least one pair has a fresh tick, i.e. not
         # every tracked pair is stale (and there's at least one pair tracked).
         ingestion_active = total_pairs > 0 and len(stale_pairs) < total_pairs

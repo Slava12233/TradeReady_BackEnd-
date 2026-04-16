@@ -68,8 +68,8 @@ Error codes: `UNKNOWN_ACTION`, `INVALID_CHANNEL`, `SUBSCRIPTION_LIMIT`.
 |---------|-----------|------|-----------------|
 | **TickerChannel** | `ticker:{SYMBOL}` or `ticker:all` | Public | `broadcast_to_channel()` |
 | **CandleChannel** | `candles:{SYMBOL}:{interval}` | Public | `broadcast_to_channel()` |
-| **OrderChannel** | `orders` | Private (per-account) | `broadcast_to_account()` |
-| **PortfolioChannel** | `portfolio` | Private (per-account) | `broadcast_to_account()` |
+| **OrderChannel** | `orders` | Private (per-agent) | `broadcast_to_agent()` (fallback: `broadcast_to_account()`) |
+| **PortfolioChannel** | `portfolio` | Private (per-agent) | `broadcast_to_agent()` (fallback: `broadcast_to_account()`) |
 | **BattleChannel** | `battle:{battle_id}` | Public | `broadcast_to_channel()` |
 
 Valid candle intervals: `1m`, `5m`, `1h`, `1d`.
@@ -88,6 +88,8 @@ Auto-reconnects on Redis errors with a 2-second delay.
 
 - `ConnectionManager._connections`: `dict[str, Connection]` keyed by `connection_id`
 - `ConnectionManager._account_index`: `dict[UUID, set[str]]` mapping `account_id` to connection IDs (one account can have many tabs)
+- `ConnectionManager._agent_index`: `dict[UUID, set[str]]` mapping `agent_id` to connection IDs (populated only for agent-key auth; absent for legacy account-only keys)
+- `Connection.agent_id`: `UUID | None` — set when authenticated via an agent API key, `None` for legacy account keys
 - All mutations to these dicts are protected by an `asyncio.Lock`
 
 ## Public API / Interfaces
@@ -95,16 +97,19 @@ Auto-reconnects on Redis errors with a 2-second delay.
 ### ConnectionManager
 
 ```python
-await manager.connect(websocket, api_key) -> str | None     # Returns connection_id or None
+await manager.connect(websocket, api_key) -> str | None         # Returns connection_id or None
 await manager.disconnect(connection_id) -> None
-await manager.disconnect_all() -> None                       # Shutdown hook
-await manager.broadcast_to_account(account_id, payload) -> int  # Returns send count
+await manager.disconnect_all() -> None                           # Shutdown hook
+await manager.broadcast_to_agent(agent_id, payload) -> int      # Per-agent push (private channels)
+await manager.broadcast_to_account(account_id, payload) -> int  # Per-account push (fallback)
 await manager.broadcast_to_channel(channel, payload) -> int     # Returns send count
 await manager.subscribe(connection_id, channel) -> bool
 await manager.unsubscribe(connection_id, channel) -> None
 manager.get_connection(connection_id) -> Connection | None
 manager.notify_pong(connection_id) -> None
 manager.active_count -> int
+manager.agent_connection_ids(agent_id) -> set[str]
+manager.account_connection_ids(account_id) -> set[str]
 ```
 
 ### Channel Classes
@@ -153,9 +158,13 @@ channel_key = resolve_channel_name({"channel": "ticker", "symbol": "BTCUSDT"})
 envelope = TickerChannel.serialize(symbol, data)
 await manager.broadcast_to_channel(TickerChannel.channel_name(symbol), envelope)
 
-# Private per-account channel
+# Private per-agent channel (preferred — scopes to one agent, battle-safe)
 envelope = OrderChannel.serialize(order_data)
-await manager.broadcast_to_account(account_id, envelope)
+if agent_id is not None:
+    await manager.broadcast_to_agent(agent_id, envelope)
+else:
+    # Legacy fallback — account-only auth (no agent context)
+    await manager.broadcast_to_account(account_id, envelope)
 ```
 
 **Testing**: The `ConnectionManager` can be instantiated directly in tests. Mock the `_authenticate` method to bypass DB lookup. The bridge requires a mock Redis client with a `.pubsub()` method.
@@ -163,6 +172,9 @@ await manager.broadcast_to_account(account_id, envelope)
 ## Gotchas & Pitfalls
 
 - **Auth creates its own DB session** via `get_session_factory()` (lazy import inside `_authenticate`), not through FastAPI DI. This is intentional since the WebSocket endpoint is outside the normal request lifecycle.
+- **`_authenticate` now tries the agents table first** (multi-agent flow) before falling back to the accounts table (legacy). Returns `(account_id, agent_id)` on success — `agent_id` is `None` for legacy account keys.
+- **Agent index is only populated for agent-key auth.** If a client connects with a legacy account-level API key, `Connection.agent_id` is `None` and no entry is added to `_agent_index`. `broadcast_to_agent()` will return 0 for such connections; use `broadcast_to_account()` as the fallback.
+- **Private channels should use `broadcast_to_agent()`.** Callers that push to `orders`/`portfolio` channels should prefer `broadcast_to_agent(agent_id, ...)` over `broadcast_to_account(account_id, ...)` to prevent agents under the same account from seeing each other's data (battle isolation).
 - **Subscription cap is 10** per connection. Re-subscribing to the same channel is idempotent (returns `True`, does not count toward the cap).
 - **`_send()` auto-disconnects** on any send failure by scheduling `disconnect()` as a fire-and-forget task. This means a dead connection is cleaned up on the next attempted broadcast rather than waiting for the heartbeat to detect it.
 - **Bridge is a module-level singleton** (`_bridge_instance`). `start_redis_bridge()` is idempotent; calling it while already running is a no-op.
@@ -173,4 +185,5 @@ await manager.broadcast_to_account(account_id, envelope)
 
 ## Recent Changes
 
+- `2026-04-16` — Agent-scoped WebSocket channels (P1 security). `Connection` now carries `agent_id: UUID | None`. `_authenticate()` tries agents table first, returning `(account_id, agent_id)`; falls back to account table. New `_agent_index` tracks connections per agent. New `broadcast_to_agent(agent_id, payload)` method for battle-safe private channel delivery. `agent_connection_ids(agent_id)` introspection added. `OrderChannel` and `PortfolioChannel` docstrings updated to reference `broadcast_to_agent`.
 - `2026-03-17` -- Initial CLAUDE.md created

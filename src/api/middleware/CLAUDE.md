@@ -1,6 +1,6 @@
 # API Middleware
 
-<!-- last-updated: 2026-03-21 -->
+<!-- last-updated: 2026-04-15 -->
 
 > Authentication, rate limiting, and structured request logging middleware for the FastAPI/Starlette API layer.
 
@@ -129,10 +129,12 @@ All three are registered via `app.add_middleware(ClassName)` in `src/main.py`. T
 - **`get_settings()` is `lru_cache`d.** In tests, patch it before the cached instance is created or JWT verification will use real config values.
 - **Rate limiter fails open.** If Redis is down, all requests are allowed through with `current_count = 0`. This is by design but means rate limits are not enforced during Redis outages.
 - **Agent resolution differs by auth method.** API-key auth resolves the agent in the middleware itself. JWT auth only resolves the agent lazily when `get_current_agent` reads the `X-Agent-Id` header, so `request.state.agent` may be `None` even when an agent header is present until the dependency runs.
+- **JWT + `X-Agent-Id` ownership is enforced in `get_current_agent`.** After resolving the agent from the header, the dependency checks `agent.account_id == request.state.account.id`. If the agent belongs to a different account, `PermissionDeniedError` (HTTP 403) is raised. This prevents cross-account agent scope injection. The check is skipped when `request.state.account` is `None` (middleware-bypassed test scenarios).
 - **Lazy imports** in `_authenticate_request` and `get_current_agent` (`get_session_factory`, `UUID`) are intentional to avoid circular imports. Do not move them to module level.
 
 ## Recent Changes
 
+- `2026-04-15` — **P0 security fix**: `get_current_agent` now enforces agent ownership in the JWT auth path. After fetching the agent by `X-Agent-Id` header, the dependency verifies `agent.account_id == request.state.account.id`; raises `PermissionDeniedError` (403) on mismatch. Regression test: `tests/unit/test_jwt_agent_scope.py` (12 tests).
 - `2026-03-21` — `LoggingMiddleware` now reads `X-Trace-Id` header; stored as `request.state.trace_id` and added to log records when non-empty. Also increments `platform_api_errors` Prometheus metric on 4xx/5xx responses.
 - `2026-03-21` — `audit.py` added: `AuditMiddleware` is a fire-and-forget Starlette middleware that writes every non-health request to the `audit_log` table. Registered in `src/main.py`.
 - `2026-03-20` — Added `backtest` (6000/min) and `training` (3000/min) rate limit tiers; rate tier count increased from 3 to 5.

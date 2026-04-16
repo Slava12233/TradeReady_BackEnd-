@@ -36,6 +36,7 @@ import pytest
 from src.accounts.auth import create_jwt
 from src.config import Settings
 from src.database.models import Account
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 
 pytestmark = pytest.mark.slow
 
@@ -292,15 +293,21 @@ class TestResolveTier:
 class TestIsPublicPath:
     """Unit tests for the ``_is_public_path()`` helper."""
 
-    def test_register_is_public(self) -> None:
+    def test_register_not_in_public_bypass(self) -> None:
+        """Auth paths now use IP-based rate limiting; they are NOT in the public bypass list.
+
+        The rate-limit middleware routes auth endpoints through ``_enforce_auth_rate_limit``
+        instead of the public bypass. ``_is_public_path`` correctly returns False for them.
+        """
         from src.api.middleware.rate_limit import _is_public_path
 
-        assert _is_public_path("/api/v1/auth/register") is True
+        assert _is_public_path("/api/v1/auth/register") is False
 
-    def test_login_is_public(self) -> None:
+    def test_login_not_in_public_bypass(self) -> None:
+        """Auth paths use IP-based rate limiting; ``_is_public_path`` returns False."""
         from src.api.middleware.rate_limit import _is_public_path
 
-        assert _is_public_path("/api/v1/auth/login") is True
+        assert _is_public_path("/api/v1/auth/login") is False
 
     def test_health_is_public(self) -> None:
         from src.api.middleware.rate_limit import _is_public_path
@@ -596,18 +603,46 @@ class TestPublicPathBypass:
         client = _build_client(mock_redis)
         return getattr(client, method)(path)
 
-    def test_register_not_rate_limited(self) -> None:
-        """POST /api/v1/auth/register is exempt from rate limiting."""
+    def test_register_ip_rate_limited(self) -> None:
+        """POST /api/v1/auth/register uses IP-based rate limiting (3/min) not account-based.
+
+        With a very high Redis counter the IP-based limiter returns 429 — confirming
+        the auth path is rate-limited by IP rather than being completely exempt.
+        """
         mock_redis = _make_redis_mock(incr_value=999_999)
         client = _build_client(mock_redis)
         resp = client.post("/api/v1/auth/register", json={})
-        assert resp.status_code != 429
+        # Auth paths now use IP-based rate limiting (3/min for register);
+        # a very high counter triggers 429 from the IP-based enforcer.
+        assert resp.status_code == 429
 
-    def test_login_not_rate_limited(self) -> None:
-        """POST /api/v1/auth/login is exempt from rate limiting."""
+    def test_login_ip_rate_limited(self) -> None:
+        """POST /api/v1/auth/login uses IP-based rate limiting (5/min) not account-based.
+
+        With a very high Redis counter the IP-based limiter returns 429 — confirming
+        the auth path is rate-limited by IP rather than being completely exempt.
+        """
         mock_redis = _make_redis_mock(incr_value=999_999)
         client = _build_client(mock_redis)
         resp = client.post("/api/v1/auth/login", json={})
+        # Auth paths now use IP-based rate limiting (5/min for login);
+        # a very high counter triggers 429 from the IP-based enforcer.
+        assert resp.status_code == 429
+
+    def test_register_low_count_not_rate_limited(self) -> None:
+        """POST /api/v1/auth/register is NOT rate-limited when the counter is within the 3/min limit."""
+        mock_redis = _make_redis_mock(incr_value=1)
+        client = _build_client(mock_redis)
+        resp = client.post("/api/v1/auth/register", json={})
+        # 1 request well within the 3/min register limit — not 429.
+        assert resp.status_code != 429
+
+    def test_login_low_count_not_rate_limited(self) -> None:
+        """POST /api/v1/auth/login is NOT rate-limited when the counter is within the 5/min limit."""
+        mock_redis = _make_redis_mock(incr_value=1)
+        client = _build_client(mock_redis)
+        resp = client.post("/api/v1/auth/login", json={})
+        # 1 request well within the 5/min login limit — not 429.
         assert resp.status_code != 429
 
     def test_health_not_rate_limited(self) -> None:

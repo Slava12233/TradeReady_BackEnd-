@@ -1,6 +1,6 @@
 # development/ — Development Planning & Progress
 
-<!-- last-updated: 2026-04-12 -->
+<!-- last-updated: 2026-04-15 -->
 
 ## Purpose
 
@@ -56,7 +56,7 @@ This directory doubles as an **Obsidian vault** for human knowledge management. 
 | `plans/` | Active implementation plans for bug-fix sprints and feature work (e.g., `fix-battle-live-crash.md`) |
 | `reports/` | Tester reports and generated output files (e.g., `tester-guide.md`, `REPORT-backtest-final.md`) |
 | `docs-development/` | Docs site rebuild plan and task tracker (Fumadocs, 3 delivery modes, ~45 pages) |
-| `tasks/` | Task boards: `tradeready-test-agent/` (V1 agent, DONE), `agent-strategies/` (5 strategies, 29 tasks, DONE), `frontend-performance-fixes/` (23 tasks, DONE), `agent-deployment-training/` (23 tasks), `agent-ecosystem/` (36 tasks, DONE), `agent-memory-system/` (14 tasks, DONE), `agent-logging-system/` (34 tasks, DONE), `obsidian-integration/` (32 tasks, IN PROGRESS), `c-level-report-skill/` (5 tasks, DONE), `c-level-recommendations/` (39 tasks — 5 phases: infrastructure, security, training, retraining, quality gate, **DONE**), `qa-bugfix-sprint/` (13 tasks + README + run-tasks, **DONE**), `fix-battle-live-crash/` (8 tasks, **DONE**), `agent-strategies-tasks.md` (high-level checklist), `april-2026-execution/` (47 tasks, 5 tracks: data loading, PPO training, live trading, frontend tests, CI/CD, **ACTIVE**) |
+| `tasks/` | Task boards: `tradeready-test-agent/` (V1 agent, DONE), `agent-strategies/` (5 strategies, 29 tasks, DONE), `frontend-performance-fixes/` (23 tasks, DONE), `agent-deployment-training/` (23 tasks), `agent-ecosystem/` (36 tasks, DONE), `agent-memory-system/` (14 tasks, DONE), `agent-logging-system/` (34 tasks, DONE), `obsidian-integration/` (32 tasks, IN PROGRESS), `c-level-report-skill/` (5 tasks, DONE), `c-level-recommendations/` (39 tasks — 5 phases: infrastructure, security, training, retraining, quality gate, **DONE**), `qa-bugfix-sprint/` (13 tasks + README + run-tasks, **DONE**), `fix-battle-live-crash/` (8 tasks, **DONE**), `agent-strategies-tasks.md` (high-level checklist), `april-2026-execution/` (47 tasks, 5 tracks: data loading, PPO training, live trading, frontend tests, CI/CD, **ACTIVE**), `customer-readiness-audit/` (12 tasks, 8 workstreams: live health, E2E, tests, security, UX, infra, features, marketing, **DONE**), `customer-launch-fixes/` (37 tasks, 3 phases: P0 blockers, P1 high priority, P2 medium priority, **DONE**), `production-deployment/` (18 tasks, 3 phases: pre-deploy config, deploy + smoke tests, post-deploy monitoring, **ACTIVE**) |
 
 ## Archived Planning Docs
 

@@ -36,6 +36,7 @@ import pytest
 from src.accounts.auth import create_jwt
 from src.config import Settings
 from src.database.models import Account, Order, Trade
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 from src.order_engine.engine import OrderResult
 from src.utils.exceptions import (
     InsufficientBalanceError,

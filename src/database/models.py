@@ -283,6 +283,11 @@ class Account(Base):
         VARCHAR(255),
         nullable=True,
     )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+    )
     starting_balance: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,

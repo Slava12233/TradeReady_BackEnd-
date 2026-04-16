@@ -37,7 +37,7 @@ This guide takes a Python developer from a fresh install to a working trading ag
 Clone the repository and start all services with Docker Compose:
 
 ```bash
-git clone https://github.com/your-org/agentexchange.git
+git clone https://github.com/tradeready/platform.git
 cd agentexchange
 cp .env.example .env
 docker compose up -d

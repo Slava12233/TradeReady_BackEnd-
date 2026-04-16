@@ -28,6 +28,12 @@ from uuid import UUID, uuid4
 
 import pytest
 
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
+
+# Skip entire module when the agent package is not installed (e.g. integration CI
+# that installs only platform requirements, not agent/).
+pytest.importorskip("agent.config", reason="agent package not installed — skip agent ecosystem tests")
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

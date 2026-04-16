@@ -536,3 +536,73 @@ class TradeRepository:
         except SQLAlchemyError as exc:
             logger.exception("trade.list_by_agent.db_error", extra={"agent_id": str(agent_id)})
             raise DatabaseError("Failed to list trades by agent.") from exc
+
+    async def get_pnl_stats_by_period(
+        self,
+        account_id: UUID,
+        *,
+        agent_id: UUID | None = None,
+        since: datetime | None = None,
+    ) -> tuple[Decimal, int, int, int]:
+        """Aggregate PnL statistics for the requested time window in a single SQL query.
+
+        Computes fees paid and win/loss/breakeven trade counts entirely in the
+        database, avoiding large result-set transfers for high-volume accounts.
+
+        Uses the composite index ``idx_trades_account_time`` on
+        ``(account_id, created_at)`` for efficient time-bounded scans.
+
+        Args:
+            account_id: The owning account's UUID.
+            agent_id:   Optional agent UUID for per-agent scoping.
+            since:      Lower-bound timestamp (inclusive).  When ``None``,
+                        no lower bound is applied (i.e. the entire trade
+                        history is aggregated — equivalent to period ``"all"``).
+
+        Returns:
+            A 4-tuple ``(fees_paid, winning_trades, losing_trades,
+            breakeven_trades)`` where monetary values are ``Decimal`` and
+            counts are ``int``.  Returns ``(Decimal("0"), 0, 0, 0)`` when no
+            matching trades exist.
+
+        Raises:
+            DatabaseError: On any SQLAlchemy / database error.
+
+        Example::
+
+            from datetime import UTC, datetime, timedelta
+            since = datetime.now(tz=UTC) - timedelta(days=7)
+            fees, wins, losses, breakeven = await repo.get_pnl_stats_by_period(
+                account_id=acct.id, since=since
+            )
+        """
+        try:
+            filters = [Trade.account_id == account_id]
+            if agent_id is not None:
+                filters.append(Trade.agent_id == agent_id)
+            if since is not None:
+                filters.append(Trade.created_at >= since)
+
+            stmt = select(
+                sa_func.coalesce(sa_func.sum(Trade.fee), 0).label("fees_paid"),
+                sa_func.count().filter(Trade.realized_pnl.is_not(None), Trade.realized_pnl > 0).label("winning_trades"),
+                sa_func.count().filter(Trade.realized_pnl.is_not(None), Trade.realized_pnl < 0).label("losing_trades"),
+                sa_func.count()
+                .filter(Trade.realized_pnl.is_not(None), Trade.realized_pnl == 0)
+                .label("breakeven_trades"),
+            ).where(*filters)
+
+            result = await self._session.execute(stmt)
+            row = result.one()
+            return (
+                Decimal(str(row.fees_paid)),
+                int(row.winning_trades),
+                int(row.losing_trades),
+                int(row.breakeven_trades),
+            )
+        except SQLAlchemyError as exc:
+            logger.exception(
+                "trade.get_pnl_stats_by_period.db_error",
+                extra={"account_id": str(account_id), "error": str(exc)},
+            )
+            raise DatabaseError("Failed to aggregate PnL stats for account.") from exc

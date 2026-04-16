@@ -45,12 +45,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-import logging
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.cache.price_cache import PriceCache
 from src.config import Settings
@@ -59,7 +59,7 @@ from src.database.repositories.balance_repo import BalanceRepository
 from src.database.repositories.trade_repo import TradeRepository
 from src.utils.exceptions import AccountNotFoundError, CacheError, DatabaseError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
@@ -240,12 +240,10 @@ class PortfolioTracker:
 
         logger.debug(
             "portfolio.get_portfolio",
-            extra={
-                "account_id": str(account_id),
-                "total_equity": str(total_equity),
-                "roi_pct": str(roi_pct),
-                "open_positions": len(positions),
-            },
+            account_id=str(account_id),
+            total_equity=str(total_equity),
+            roi_pct=str(roi_pct),
+            open_positions=len(positions),
         )
         return PortfolioSummary(
             account_id=account_id,
@@ -353,12 +351,10 @@ class PortfolioTracker:
 
         logger.debug(
             "portfolio.get_pnl",
-            extra={
-                "account_id": str(account_id),
-                "unrealized_pnl": str(unrealized_pnl),
-                "realized_pnl": str(realized_pnl),
-                "daily_realized": str(daily_realized),
-            },
+            account_id=str(account_id),
+            unrealized_pnl=str(unrealized_pnl),
+            realized_pnl=str(realized_pnl),
+            daily_realized=str(daily_realized),
         )
         return PnLBreakdown(
             unrealized_pnl=unrealized_pnl,
@@ -397,7 +393,8 @@ class PortfolioTracker:
         except SQLAlchemyError as exc:
             logger.exception(
                 "portfolio.get_starting_balance.db_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise DatabaseError(f"Failed to fetch starting balance for account '{account_id}'.") from exc
 
@@ -420,7 +417,8 @@ class PortfolioTracker:
         except SQLAlchemyError as exc:
             logger.exception(
                 "portfolio.get_usdt_balance.db_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise DatabaseError(f"Failed to fetch USDT balance for account '{account_id}'.") from exc
 
@@ -440,7 +438,8 @@ class PortfolioTracker:
         except SQLAlchemyError as exc:
             logger.exception(
                 "portfolio.fetch_positions.db_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise DatabaseError(f"Failed to fetch positions for account '{account_id}'.") from exc
 
@@ -479,7 +478,8 @@ class PortfolioTracker:
         except SQLAlchemyError as exc:
             logger.exception(
                 "portfolio.sum_all_realized_pnl.db_error",
-                extra={"account_id": str(account_id), "error": str(exc)},
+                account_id=str(account_id),
+                error=str(exc),
             )
             raise DatabaseError(f"Failed to sum realized PnL for account '{account_id}'.") from exc
 
@@ -509,14 +509,15 @@ class PortfolioTracker:
         except Exception as exc:
             logger.exception(
                 "portfolio.get_price_safe.cache_error",
-                extra={"symbol": symbol, "error": str(exc)},
+                symbol=symbol,
+                error=str(exc),
             )
             raise CacheError(f"Redis error while fetching price for '{symbol}'.") from exc
 
         if price is None:
             logger.warning(
                 "portfolio.get_price_safe.price_missing",
-                extra={"symbol": symbol},
+                symbol=symbol,
             )
             return _ZERO, False
         return price, True

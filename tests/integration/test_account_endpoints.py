@@ -34,6 +34,7 @@ import pytest
 from src.accounts.auth import create_jwt
 from src.config import Settings
 from src.database.models import Account, TradingSession
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 
 pytestmark = pytest.mark.slow
 
@@ -538,23 +539,15 @@ class TestPnL:
     """Tests for ``GET /api/v1/account/pnl``."""
 
     def test_get_pnl(self) -> None:
-        """GET /account/pnl returns 200 with PnL breakdown."""
+        """GET /account/pnl returns 200 with PnL breakdown aggregated in SQL."""
         account = _make_account()
 
         mock_tracker = AsyncMock()
         mock_tracker.get_pnl = AsyncMock(return_value=_make_pnl())
 
-        # Create mock trades with fee and realized_pnl attributes
-        trade_win = MagicMock()
-        trade_win.fee = Decimal("10.50")
-        trade_win.realized_pnl = Decimal("150.00")
-
-        trade_loss = MagicMock()
-        trade_loss.fee = Decimal("8.30")
-        trade_loss.realized_pnl = Decimal("-50.00")
-
         mock_trade_repo = AsyncMock()
-        mock_trade_repo.list_by_account = AsyncMock(return_value=[trade_win, trade_loss])
+        # get_pnl_stats_by_period returns (fees_paid, wins, losses, breakeven)
+        mock_trade_repo.get_pnl_stats_by_period = AsyncMock(return_value=(Decimal("18.80"), 1, 1, 0))
 
         client = _build_client(
             mock_account=account,
@@ -573,15 +566,20 @@ class TestPnL:
         assert data["losing_trades"] == 1
         assert Decimal(data["fees_paid"]) == Decimal("18.80")
 
-    def test_get_pnl_by_period(self) -> None:
-        """GET /account/pnl?period=7d filters by period."""
+        # Verify the repo method was called (with no since= for "all" period)
+        mock_trade_repo.get_pnl_stats_by_period.assert_called_once()
+        call_kwargs = mock_trade_repo.get_pnl_stats_by_period.call_args
+        assert call_kwargs.kwargs.get("since") is None
+
+    def test_get_pnl_by_period_uses_time_based_filter(self) -> None:
+        """GET /account/pnl?period=7d passes a time-based ``since`` cutoff, not a row limit."""
         account = _make_account()
 
         mock_tracker = AsyncMock()
         mock_tracker.get_pnl = AsyncMock(return_value=_make_pnl())
 
         mock_trade_repo = AsyncMock()
-        mock_trade_repo.list_by_account = AsyncMock(return_value=[])
+        mock_trade_repo.get_pnl_stats_by_period = AsyncMock(return_value=(Decimal("0"), 0, 0, 0))
 
         client = _build_client(
             mock_account=account,
@@ -593,15 +591,38 @@ class TestPnL:
         assert resp.status_code == 200
         data = resp.json()
         assert data["period"] == "7d"
-        # With no trades in the period, win rate should be 0
         assert data["winning_trades"] == 0
         assert data["losing_trades"] == 0
         assert data["win_rate"] == "0"
 
-        # Verify the trade_repo was called with the correct limit for 7d
-        mock_trade_repo.list_by_account.assert_called_once()
-        call_kwargs = mock_trade_repo.list_by_account.call_args
-        assert call_kwargs.kwargs.get("limit") == 2000 or call_kwargs[1].get("limit") == 2000
+        # Verify get_pnl_stats_by_period was called with a non-None ``since``
+        # datetime (time-based filter), not list_by_account with a row limit.
+        mock_trade_repo.get_pnl_stats_by_period.assert_called_once()
+        call_kwargs = mock_trade_repo.get_pnl_stats_by_period.call_args
+        since = call_kwargs.kwargs.get("since")
+        assert since is not None, "Expected a time-based 'since' cutoff for period='7d'"
+        assert isinstance(since, datetime)
+
+    def test_get_pnl_period_all_sends_no_since(self) -> None:
+        """GET /account/pnl?period=all passes since=None (no time lower bound)."""
+        account = _make_account()
+
+        mock_tracker = AsyncMock()
+        mock_tracker.get_pnl = AsyncMock(return_value=_make_pnl())
+
+        mock_trade_repo = AsyncMock()
+        mock_trade_repo.get_pnl_stats_by_period = AsyncMock(return_value=(Decimal("5.00"), 3, 1, 1))
+
+        client = _build_client(
+            mock_account=account,
+            tracker=mock_tracker,
+            trade_repo=mock_trade_repo,
+        )
+        resp = _authed_request(client, "get", "/api/v1/account/pnl?period=all", account=account)
+
+        assert resp.status_code == 200
+        call_kwargs = mock_trade_repo.get_pnl_stats_by_period.call_args
+        assert call_kwargs.kwargs.get("since") is None
 
 
 # ===========================================================================

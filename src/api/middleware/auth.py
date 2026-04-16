@@ -31,13 +31,13 @@ Example::
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Annotated
 
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+import structlog
 
 from src.accounts.auth import verify_jwt
 from src.config import get_settings
@@ -48,10 +48,11 @@ from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,
     AuthenticationError,
+    PermissionDeniedError,
     TradingPlatformError,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public endpoint whitelist — no authentication required
@@ -62,6 +63,9 @@ _PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/v1/auth/register",
         "/api/v1/auth/login",
         "/api/v1/auth/user-login",
+        "/api/v1/auth/forgot-password",
+        "/api/v1/auth/reset-password",
+        "/api/v1/auth/verify-email",
         "/health",
         "/docs",
         "/redoc",
@@ -334,17 +338,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         except TradingPlatformError as exc:
             logger.warning(
                 "auth.failed",
-                extra={
-                    "path": request.url.path,
-                    "code": exc.code,
-                    "error_message": exc.message,
-                },
+                path=request.url.path,
+                code=exc.code,
+                error_message=exc.message,
             )
             return JSONResponse(exc.to_dict(), status_code=exc.http_status)
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "auth.unexpected_error",
-                extra={"path": request.url.path, "error": str(exc)},
+                path=request.url.path,
+                error=str(exc),
             )
             return JSONResponse(
                 {"error": {"code": "INTERNAL_ERROR", "message": "Authentication service error."}},
@@ -405,16 +408,25 @@ async def get_current_agent(request: Request) -> Agent | None:
     """FastAPI dependency that returns the currently authenticated agent.
 
     Reads ``request.state.agent`` populated by :class:`AuthMiddleware`.
-    For JWT auth, resolves agent from the ``X-Agent-Id`` header.
+    For JWT auth, resolves agent from the ``X-Agent-Id`` header **and
+    enforces ownership** — the resolved agent must belong to the
+    authenticated account.  If the agent exists but belongs to a different
+    account a ``PermissionDeniedError`` (HTTP 403) is raised to prevent
+    cross-account agent scope injection.
 
-    Returns ``None`` when no agent context exists (e.g. legacy account-only auth
-    or JWT auth without an agent header).
+    Returns ``None`` when no agent context exists (e.g. legacy account-only
+    auth or JWT auth without an agent header).
 
     Args:
         request: Injected by FastAPI automatically.
 
     Returns:
-        The authenticated Agent ORM instance, or None.
+        The authenticated :class:`~src.database.models.Agent` ORM instance,
+        or ``None`` when no agent context is present.
+
+    Raises:
+        PermissionDeniedError: When the ``X-Agent-Id`` header references an
+            agent that does not belong to the currently authenticated account.
     """
     agent: Agent | None = getattr(request.state, "agent", None)
     if agent is not None:
@@ -425,20 +437,35 @@ async def get_current_agent(request: Request) -> Agent | None:
     if agent_id_raw:
         from uuid import UUID as _UUID  # noqa: PLC0415
 
-        from src.database.session import get_session_factory  # noqa: PLC0415
-
         try:
             agent_uuid = _UUID(agent_id_raw)
         except ValueError:
             return None
 
+        from src.database.session import get_session_factory  # noqa: PLC0415
+
         session_factory = get_session_factory()
         async with session_factory() as session:
             agent_repo = AgentRepository(session)
             try:
-                return await agent_repo.get_by_id(agent_uuid)
+                resolved_agent = await agent_repo.get_by_id(agent_uuid)
             except AgentNotFoundError:
                 return None
+
+        # Ownership check: the agent must belong to the authenticated account.
+        # This prevents a JWT holder from accessing another account's agents
+        # by spoofing the X-Agent-Id header.
+        account: Account | None = getattr(request.state, "account", None)
+        if account is not None and resolved_agent.account_id != account.id:
+            logger.warning(
+                "auth.agent_ownership_violation",
+                requested_agent_id=str(agent_uuid),
+                agent_owner_account_id=str(resolved_agent.account_id),
+                authenticated_account_id=str(account.id),
+            )
+            raise PermissionDeniedError("Agent does not belong to this account.")
+
+        return resolved_agent
 
     return None
 

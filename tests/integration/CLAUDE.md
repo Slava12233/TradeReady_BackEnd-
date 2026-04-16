@@ -1,6 +1,6 @@
 # Integration Tests
 
-<!-- last-updated: 2026-04-07 -->
+<!-- last-updated: 2026-04-14 -->
 
 > End-to-end and API-level tests for every REST endpoint, WebSocket, and the backtesting/battle engines, using either mocked infrastructure or real Docker services.
 
@@ -42,9 +42,10 @@ Integration tests verify the full request-response cycle through the FastAPI app
 | `test_agent_ecosystem_phase1.py` | 28 | Agent ecosystem Phase 1 E2E: session creation, memory store, conversation history, context assembly, intent routing, DB persistence |
 | `test_agent_ecosystem_phase2.py` | 22 | Agent ecosystem Phase 2 E2E: permissions enforcement, budget limits, capability grants, audit logging, trading loop integration |
 | `test_webhook_endpoints.py` | ~30 | Webhook REST endpoints: register, list, get, update, delete, test delivery; SSRF rejection; HMAC signature header |
-| `test_indicators_endpoints.py` | ~25 | Indicator compute endpoint: RSI/MACD/Bollinger payloads, unsupported indicator 422, empty-series edge case |
-| `test_batch_backtest_e2e.py` | ~20 | Batch backtest E2E (Docker): create, start, step_batch_fast, results; fee_rate propagation; BatchStepResult fields |
-| `test_strategy_compare_endpoint.py` | ~15 | Strategy compare: up to 5 strategies side-by-side, owner isolation, metric alignment |
+| `test_indicators_endpoint.py` | ~25 | Indicator compute endpoint: RSI/MACD/Bollinger payloads, unsupported indicator 422, empty-series edge case |
+| `test_batch_step_fast_api.py` | ~20 | Batch backtest E2E (Docker): create, start, step_batch_fast, results; fee_rate propagation; BatchStepResult fields |
+| `test_metrics_api.py` | ~15 | Agent metrics endpoints: deflated Sharpe in response, missing agent 404, multi-agent compare |
+| `test_webhooks_api.py` | ~30 | Webhook REST endpoints: register, list, get, update, delete, test delivery; SSRF rejection; HMAC signature |
 
 **Total: ~644 test functions across 30 files.**
 
@@ -107,12 +108,14 @@ with patch("src.database.session.init_db", new_callable=AsyncMock), ...:
 Used by `test_backtest_e2e.py`, `test_no_lookahead.py`, `test_concurrent_backtests.py`, `test_agent_backtest_workflow.py`, `test_agent_scoped_backtest.py`.
 
 ```python
+from httpx import ASGITransport, AsyncClient
+
 from src.main import create_app
 
 @pytest.fixture
 async def client():
     app = create_app()
-    async with AsyncClient(app=app, base_url="http://test") as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 ```
 
@@ -178,9 +181,21 @@ pytest tests/integration/ -v -m "not slow"
 
 - **Backtest tests create real accounts**: The Docker-dependent backtest tests register accounts via the API. If the DB is not clean between runs, you may get `DuplicateAccountError`. Each test uses a unique `display_name` to mitigate this.
 
+- **`import src.database.session  # noqa: F401` required for patch targets**: Any test file that uses `patch("src.database.session.init_db", ...)` or any other `src.database.session.*` target must include `import src.database.session` in its first-party import block. Root cause: `src/database/__init__.py` is empty, so `src.database.session` is not registered as an attribute of `src.database` until explicitly imported. `unittest.mock.patch()` uses `pkgutil.resolve_name()` which calls `getattr(src.database, "session")` — this fails with `AttributeError` if the submodule hasn't been imported. Place the import in the first-party `from src.*` block; ruff isort will sort it there automatically.
+
+- **Docker-backtest tests use `ASGITransport`**: `httpx` 0.24+ removed the `app=` shortcut. All Docker-dependent backtest test fixtures must use `AsyncClient(transport=ASGITransport(app=app), base_url="http://test")` and import `from httpx import ASGITransport, AsyncClient`.
+
+- **Auth endpoints are rate-limited, NOT public**: As of 2026-04-13 (Task 08 fix), `POST /api/v1/auth/register` and `POST /api/v1/auth/login` are NOT in the public path bypass list. They go through IP-based rate limiting: 3/min for register, 5/min for login. `_is_public_path()` returns `False` for these paths. Tests asserting bypass behavior must be updated accordingly.
+
+- **MCP tool count is 58 (not 12)**: The MCP server expanded from 12 tools (initial) to 58 tools as of Phase STR-4 (2026-03-18). Any test asserting tool counts must use 58. The full tool list is in `src/mcp/tools.py` (`_TOOL_DEFINITIONS`).
+
+- **Agent ecosystem tests require `agent/` package**: `test_agent_ecosystem_phase1.py` and `test_agent_ecosystem_phase2.py` use `pytest.importorskip("agent.config", ...)` at module level. In CI environments where the `agent/` package is not installed, the entire file is skipped cleanly rather than erroring with `ModuleNotFoundError`.
+
 ## Recent Changes
 
-- `2026-04-07` (V.0.0.3) — Added 4 new integration test files: `test_webhook_endpoints.py` (~30 tests), `test_indicators_endpoints.py` (~25 tests), `test_batch_backtest_e2e.py` (~20 tests, Docker-dependent), `test_strategy_compare_endpoint.py` (~15 tests). File count: 26 → 30. Total: ~554 → ~644 tests.
+- `2026-04-16` — Fixed 27 pre-existing CI integration test failures: (1) `import src.database.session` added to 18 files so `patch("src.database.session.*")` resolves correctly; (2) `httpx.ASGITransport` fix in 6 Docker-dependent backtest test files; (3) MCP tool count updated 12→58 in `test_agent_connectivity.py`; (4) auth rate-limit assertions updated in `test_rate_limiting.py`; (5) `pytest.importorskip("agent.config")` added to agent ecosystem tests. Removed `continue-on-error: true` from CI integration-tests job.
+- `2026-04-14` — Corrected file names to match actual disk: `test_indicators_endpoint.py`, `test_batch_step_fast_api.py`, `test_metrics_api.py`, `test_webhooks_api.py`. (Previous entry had incorrect names from initial documentation.)
+- `2026-04-07` (V.0.0.3) — Added 4 new integration test files. File count: 26 → 30. Total: ~554 → ~644 tests.
 - `2026-03-17` -- Initial CLAUDE.md created
 - `2026-03-18` -- Updated battle exception gotcha (duplicate class removed). Fixed lint: E402 in test_auth_endpoints, N801 suppressed in test_real_user_scenario_e2e.
 - `2026-03-18` -- Added `test_real_user_scenario_e2e.py` (52 tests) to inventory table. Total remains ~504 tests across 24 files (table sum verified).

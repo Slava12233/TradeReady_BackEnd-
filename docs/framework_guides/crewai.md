@@ -33,7 +33,7 @@ All on simulated funds — prices are real Binance data, but no real money is at
 Start the platform with Docker Compose if you haven't already:
 
 ```bash
-git clone https://github.com/your-org/agent-exchange
+git clone https://github.com/tradeready/platform
 cd agent-exchange
 cp .env.example .env   # fill in JWT_SECRET and other required vars
 docker compose up -d

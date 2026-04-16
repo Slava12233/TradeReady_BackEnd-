@@ -181,6 +181,10 @@ class AccountService:
             creds = await svc.register("AlphaBot", email="alpha@example.com")
             # → AccountCredentials(account_id=UUID(...), api_key="ak_live_...", ...)
         """
+        # Default display_name when empty (field is now optional in schema)
+        if not display_name:
+            display_name = "Agent"
+
         balance_amount = starting_balance if starting_balance is not None else self._settings.default_starting_balance
 
         loop = asyncio.get_event_loop()
@@ -606,3 +610,325 @@ class AccountService:
             await self._session.rollback()
             raise DatabaseError("Failed to unsuspend account.") from exc
         log.info("account.unsuspended", account_id=str(account_id))
+
+    # ------------------------------------------------------------------
+    # Password reset
+    # ------------------------------------------------------------------
+
+    async def request_password_reset(
+        self,
+        username_or_email: str,
+        redis: object,
+    ) -> None:
+        """Generate a password-reset token, store it in Redis, and log the link.
+
+        Looks up the account by ``username_or_email`` (tried as email first,
+        then as display_name).  When no account is found the method returns
+        silently to avoid leaking account existence.
+
+        The token is stored in Redis under ``password_reset:{token}`` with a
+        1-hour TTL.  For the MVP the reset URL is logged via structlog rather
+        than emailed.
+
+        Args:
+            username_or_email: The email address or display name submitted by
+                               the user in the forgot-password form.
+            redis:             An active ``redis.asyncio.Redis`` client.  The
+                               ``Any`` type is used here because the
+                               ``async_sessionmaker`` pattern does not expose
+                               the generic parameter at call sites.
+
+        Returns:
+            ``None`` — always, regardless of whether an account was found.
+
+        Example::
+
+            await svc.request_password_reset("alice@example.com", redis_client)
+        """
+        import secrets  # noqa: PLC0415
+
+        from redis.asyncio import Redis  # noqa: PLC0415
+        from redis.exceptions import RedisError  # noqa: PLC0415
+
+        # Attempt email lookup first, then fall back to display_name.
+        account = None
+        try:
+            account = await self._account_repo.get_by_email(username_or_email)
+        except AccountNotFoundError:
+            # Try display_name lookup as fallback.
+            try:
+                from sqlalchemy import select  # noqa: PLC0415
+
+                from src.database.models import Account as _Account  # noqa: PLC0415
+
+                result = await self._session.execute(
+                    select(_Account).where(
+                        _Account.display_name == username_or_email,
+                        _Account.status == "active",
+                    )
+                )
+                account = result.scalar_one_or_none()
+            except SQLAlchemyError:
+                account = None
+
+        if account is None:
+            # Do not reveal whether the account exists — return silently.
+            log.info(
+                "account.password_reset.not_found",
+                username_or_email=username_or_email,
+            )
+            return
+
+        token = secrets.token_urlsafe(32)
+        redis_key = f"password_reset:{token}"
+        reset_url = f"https://tradeready.io/reset-password?token={token}"
+
+        try:
+            r: Redis = redis  # type: ignore[assignment]
+            await r.set(redis_key, str(account.id), ex=3600)
+        except RedisError as exc:
+            log.error(
+                "account.password_reset.redis_error",
+                account_id=str(account.id),
+                error=str(exc),
+            )
+            # Fail silently to the caller — do not reveal the error.
+            return
+
+        log.info(
+            "password_reset.token_generated",
+            account_id=str(account.id),
+            reset_url=reset_url,
+        )
+
+    async def reset_password(
+        self,
+        token: str,
+        new_password: str,
+        redis: object,
+    ) -> None:
+        """Verify a password-reset token and update the account's password hash.
+
+        Looks up ``password_reset:{token}`` in Redis.  If the key exists the
+        stored ``account_id`` is used to fetch the account, the password hash is
+        updated, and the Redis key is deleted.  If the key is missing or expired
+        an :exc:`~src.utils.exceptions.InputValidationError` is raised.
+
+        Args:
+            token:        The reset token from the URL query parameter.
+            new_password: The new plaintext password (8-72 characters).
+            redis:        An active ``redis.asyncio.Redis`` client.
+
+        Raises:
+            InputValidationError: If the token is not found or has expired.
+            DatabaseError:        On any unexpected database failure.
+
+        Example::
+
+            await svc.reset_password(token_from_url, "n3wP@ssw0rd!", redis_client)
+        """
+        from uuid import UUID as _UUID  # noqa: PLC0415
+
+        from redis.asyncio import Redis  # noqa: PLC0415
+        from redis.exceptions import RedisError  # noqa: PLC0415
+
+        from src.utils.exceptions import InputValidationError  # noqa: PLC0415
+
+        redis_key = f"password_reset:{token}"
+
+        try:
+            r: Redis = redis  # type: ignore[assignment]
+            raw_account_id: str | None = await r.get(redis_key)
+        except RedisError as exc:
+            log.error(
+                "account.password_reset.redis_error",
+                error=str(exc),
+            )
+            raise InputValidationError("Invalid or expired reset token.") from exc
+
+        if raw_account_id is None:
+            raise InputValidationError("Invalid or expired reset token.")
+
+        try:
+            account_uuid = _UUID(raw_account_id)
+        except ValueError as exc:
+            raise InputValidationError("Invalid or expired reset token.") from exc
+
+        # Hash the new password (CPU-bound — offload to thread pool).
+        loop = asyncio.get_event_loop()
+        new_hash: str = await loop.run_in_executor(None, hash_password, new_password)
+
+        try:
+            from sqlalchemy import update as _update  # noqa: PLC0415
+
+            from src.database.models import Account as _Account  # noqa: PLC0415
+
+            await self._session.execute(
+                _update(_Account).where(_Account.id == account_uuid).values(password_hash=new_hash)
+            )
+            await self._session.flush()
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            log.exception(
+                "account.password_reset.db_error",
+                account_id=str(account_uuid),
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to update password.") from exc
+
+        # Delete the token so it cannot be reused.
+        try:
+            await r.delete(redis_key)
+        except RedisError as exc:
+            # Non-fatal: token TTL will expire it anyway.
+            log.warning(
+                "account.password_reset.token_delete_failed",
+                account_id=str(account_uuid),
+                error=str(exc),
+            )
+
+        log.info(
+            "account.password_reset.success",
+            account_id=str(account_uuid),
+        )
+
+    # ------------------------------------------------------------------
+    # Email verification
+    # ------------------------------------------------------------------
+
+    async def send_email_verification(
+        self,
+        account_id: UUID,
+        email: str,
+        redis: object,
+    ) -> None:
+        """Generate an email-verification token, store it in Redis, and log the link.
+
+        Stores the token in Redis under ``email_verify:{token}`` with a
+        24-hour TTL.  For MVP the verification URL is logged via structlog
+        rather than emailed.
+
+        Args:
+            account_id: UUID of the account whose email should be verified.
+            email:      The email address to include in the verification URL.
+            redis:      An active ``redis.asyncio.Redis`` client.
+
+        Returns:
+            ``None`` — always, regardless of Redis availability (non-fatal).
+
+        Example::
+
+            await svc.send_email_verification(account.id, "user@example.com", redis_client)
+        """
+        import secrets  # noqa: PLC0415
+
+        from redis.asyncio import Redis  # noqa: PLC0415
+        from redis.exceptions import RedisError  # noqa: PLC0415
+
+        token = secrets.token_urlsafe(32)
+        redis_key = f"email_verify:{token}"
+        verify_url = f"https://tradeready.io/verify-email?token={token}"
+
+        try:
+            r: Redis = redis  # type: ignore[assignment]
+            await r.set(redis_key, str(account_id), ex=86400)
+        except RedisError as exc:
+            log.error(
+                "account.email_verification.redis_error",
+                account_id=str(account_id),
+                error=str(exc),
+            )
+            return
+
+        log.info(
+            "account.email_verification.token_generated",
+            account_id=str(account_id),
+            email=email,
+            verify_url=verify_url,
+        )
+
+    async def verify_email(
+        self,
+        token: str,
+        redis: object,
+    ) -> None:
+        """Verify an email address using a one-time verification token.
+
+        Looks up ``email_verify:{token}`` in Redis.  If found, sets
+        ``accounts.email_verified = True`` for the associated account and
+        deletes the token so it cannot be reused.  Raises
+        :exc:`~src.utils.exceptions.InputValidationError` if the token is
+        missing or expired.
+
+        Args:
+            token: The verification token from the URL query parameter.
+            redis: An active ``redis.asyncio.Redis`` client.
+
+        Raises:
+            InputValidationError: If the token is not found or has expired.
+            DatabaseError:        On any unexpected database failure.
+
+        Example::
+
+            await svc.verify_email(token_from_url, redis_client)
+        """
+        from uuid import UUID as _UUID  # noqa: PLC0415
+
+        from redis.asyncio import Redis  # noqa: PLC0415
+        from redis.exceptions import RedisError  # noqa: PLC0415
+
+        from src.utils.exceptions import InputValidationError  # noqa: PLC0415
+
+        redis_key = f"email_verify:{token}"
+
+        try:
+            r: Redis = redis  # type: ignore[assignment]
+            raw_account_id: str | None = await r.get(redis_key)
+        except RedisError as exc:
+            log.error(
+                "account.email_verification.redis_error",
+                error=str(exc),
+            )
+            raise InputValidationError("Invalid or expired verification token.") from exc
+
+        if raw_account_id is None:
+            raise InputValidationError("Invalid or expired verification token.")
+
+        try:
+            account_uuid = _UUID(raw_account_id)
+        except ValueError as exc:
+            raise InputValidationError("Invalid or expired verification token.") from exc
+
+        try:
+            from sqlalchemy import update as _update  # noqa: PLC0415
+
+            from src.database.models import Account as _Account  # noqa: PLC0415
+
+            await self._session.execute(
+                _update(_Account).where(_Account.id == account_uuid).values(email_verified=True)
+            )
+            await self._session.flush()
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            log.exception(
+                "account.email_verification.db_error",
+                account_id=str(account_uuid),
+                error=str(exc),
+            )
+            raise DatabaseError("Failed to verify email.") from exc
+
+        # Delete the token so it cannot be reused.
+        try:
+            await r.delete(redis_key)
+        except RedisError as exc:
+            # Non-fatal: token TTL will expire it anyway.
+            log.warning(
+                "account.email_verification.token_delete_failed",
+                account_id=str(account_uuid),
+                error=str(exc),
+            )
+
+        log.info(
+            "account.email_verification.success",
+            account_id=str(account_uuid),
+        )

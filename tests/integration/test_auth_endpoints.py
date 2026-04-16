@@ -28,6 +28,7 @@ import pytest
 from src.accounts.service import AccountCredentials
 from src.config import Settings
 from src.database.models import Account
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 from src.utils.exceptions import (
     AccountNotFoundError,
     AccountSuspendedError,

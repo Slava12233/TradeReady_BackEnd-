@@ -6,8 +6,10 @@ Implements the following endpoints (Section 15.1 of the development plan):
   credentials shown exactly once.
 - ``POST /api/v1/auth/login`` — exchange an API key + secret for a signed JWT
   bearer token.
+- ``POST /api/v1/auth/verify-email`` — verify an email address using a
+  one-time token (24-hour TTL, stored in Redis).
 
-Both endpoints are **public** (no authentication middleware required) and are
+All endpoints are **public** (no authentication middleware required) and are
 listed in the whitelist inside :mod:`src.api.middleware.auth`.
 
 Example::
@@ -19,27 +21,37 @@ Example::
     # Obtain a JWT token
     POST /api/v1/auth/login
     {"api_key": "ak_live_...", "api_secret": "sk_live_..."}
+
+    # Verify an email address
+    POST /api/v1/auth/verify-email
+    {"token": "abc123..."}
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 
 from fastapi import APIRouter, status
+import structlog
 
 from src.accounts.auth import create_jwt, verify_api_secret
 from src.api.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     RegisterRequest,
     RegisterResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
     TokenResponse,
     UserLoginRequest,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
 )
-from src.dependencies import AccountServiceDep, SettingsDep
+from src.dependencies import AccountServiceDep, RedisDep, SettingsDep
 from src.utils.exceptions import AuthenticationError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -56,12 +68,15 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
     summary="Register a new agent account",
     description=(
         "Creates a new virtual-trading agent account.  Returns the plaintext "
-        "API key and secret **once only** — store the secret immediately."
+        "API key and secret **once only** — store the secret immediately.  "
+        "When an email address is supplied, a verification link is generated "
+        "(logged for MVP; email sending is a future enhancement)."
     ),
 )
 async def register(
     body: RegisterRequest,
     svc: AccountServiceDep,
+    redis: RedisDep,
 ) -> RegisterResponse:
     """Register a new account and return one-time credentials.
 
@@ -101,19 +116,26 @@ async def register(
             "message": "Save your API secret now. It will not be shown again."
         }
     """
+    email_str: str | None = str(body.email) if body.email else None
+
     creds = await svc.register(
         body.display_name,
-        email=str(body.email) if body.email else None,
+        email=email_str,
         starting_balance=body.starting_balance,
         password=body.password,
     )
 
+    # When an email is provided, generate a verification token and log the
+    # link.  This is a fire-and-forget operation — failure is non-fatal and
+    # does not affect the registration response.
+    if email_str:
+        await svc.send_email_verification(creds.account_id, email_str, redis)
+
     logger.info(
         "auth.register.success",
-        extra={
-            "account_id": str(creds.account_id),
-            "display_name": creds.display_name,
-        },
+        account_id=str(creds.account_id),
+        display_name=creds.display_name,
+        email_verification_sent=email_str is not None,
     )
 
     return RegisterResponse(
@@ -200,7 +222,7 @@ async def login(
     if not secret_valid:
         logger.warning(
             "auth.login.invalid_secret",
-            extra={"account_id": str(account.id)},
+            account_id=str(account.id),
         )
         raise AuthenticationError("API secret is invalid.")
 
@@ -218,10 +240,8 @@ async def login(
 
     logger.info(
         "auth.login.success",
-        extra={
-            "account_id": str(account.id),
-            "expires_at": jwt_payload.expires_at.isoformat(),
-        },
+        account_id=str(account.id),
+        expires_at=jwt_payload.expires_at.isoformat(),
     )
 
     return TokenResponse(
@@ -302,13 +322,175 @@ async def user_login(
 
     logger.info(
         "auth.user_login.success",
-        extra={
-            "account_id": str(account.id),
-            "expires_at": jwt_payload.expires_at.isoformat(),
-        },
+        account_id=str(account.id),
+        expires_at=jwt_payload.expires_at.isoformat(),
     )
 
     return TokenResponse(
         token=token_str,
         expires_at=jwt_payload.expires_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/auth/forgot-password
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Request a password reset link",
+    description=(
+        "Accepts a username or email address and, if an account exists, "
+        "generates a time-limited reset token (1-hour TTL) stored in Redis.  "
+        "For MVP the reset link is logged rather than emailed.  "
+        "Always returns HTTP 200 with a generic message to avoid leaking "
+        "whether the account exists."
+    ),
+)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    svc: AccountServiceDep,
+    redis: RedisDep,
+) -> ForgotPasswordResponse:
+    """Request a password-reset link for the given username or email.
+
+    The response is always the same generic message regardless of whether an
+    account was found, to prevent account-existence enumeration.
+
+    Args:
+        body:  Validated request payload (``username`` field).
+        svc:   Injected :class:`~src.accounts.service.AccountService`.
+        redis: Injected Redis client from the shared connection pool.
+
+    Returns:
+        :class:`~src.api.schemas.auth.ForgotPasswordResponse` with a generic
+        message.
+
+    Example::
+
+        POST /api/v1/auth/forgot-password
+        {"username": "alice@example.com"}
+        →  HTTP 200
+        {"message": "If an account exists, a reset link has been sent."}
+    """
+    await svc.request_password_reset(body.username, redis)
+
+    logger.info(
+        "auth.forgot_password.requested",
+        username=body.username,
+    )
+
+    return ForgotPasswordResponse()
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/auth/reset-password
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/reset-password",
+    response_model=ResetPasswordResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reset account password using a reset token",
+    description=(
+        "Validates the reset token from the forgot-password flow, updates the "
+        "account's password hash, and invalidates the token so it cannot be "
+        "reused.  Returns HTTP 400 if the token is not found or has expired."
+    ),
+)
+async def reset_password(
+    body: ResetPasswordRequest,
+    svc: AccountServiceDep,
+    redis: RedisDep,
+) -> ResetPasswordResponse:
+    """Reset a password using a valid one-time reset token.
+
+    Args:
+        body:  Validated request payload (``token``, ``new_password``).
+        svc:   Injected :class:`~src.accounts.service.AccountService`.
+        redis: Injected Redis client from the shared connection pool.
+
+    Returns:
+        :class:`~src.api.schemas.auth.ResetPasswordResponse` confirming the
+        password was updated.
+
+    Raises:
+        :exc:`~src.utils.exceptions.InputValidationError`: If the token is
+            not found or has expired (HTTP 422).
+        :exc:`~src.utils.exceptions.DatabaseError`: On an unexpected database
+            failure (HTTP 500).
+
+    Example::
+
+        POST /api/v1/auth/reset-password
+        {"token": "a3f8e2...", "new_password": "n3wS3cur3P@ss"}
+        →  HTTP 200
+        {"message": "Password has been reset successfully."}
+    """
+    await svc.reset_password(body.token, body.new_password, redis)
+
+    logger.info("auth.reset_password.success")
+
+    return ResetPasswordResponse()
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/auth/verify-email
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/verify-email",
+    response_model=VerifyEmailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Verify email address using a verification token",
+    description=(
+        "Validates the one-time email verification token generated at "
+        "registration.  When valid, sets ``email_verified = True`` on the "
+        "account and invalidates the token.  Returns HTTP 422 if the token "
+        "is not found or has expired (24-hour TTL).  Email verification is "
+        "**soft** — unverified users can still use the platform."
+    ),
+)
+async def verify_email(
+    body: VerifyEmailRequest,
+    svc: AccountServiceDep,
+    redis: RedisDep,
+) -> VerifyEmailResponse:
+    """Verify an email address using a one-time token.
+
+    Looks up the token in Redis under ``email_verify:{token}``.  If found,
+    sets ``email_verified = True`` on the associated account and deletes the
+    token so it cannot be reused.
+
+    Args:
+        body:  Validated request payload (``token`` field).
+        svc:   Injected :class:`~src.accounts.service.AccountService`.
+        redis: Injected Redis client from the shared connection pool.
+
+    Returns:
+        :class:`~src.api.schemas.auth.VerifyEmailResponse` confirming the
+        email was verified.
+
+    Raises:
+        :exc:`~src.utils.exceptions.InputValidationError`: If the token is
+            not found or has expired (HTTP 422).
+        :exc:`~src.utils.exceptions.DatabaseError`: On an unexpected database
+            failure (HTTP 500).
+
+    Example::
+
+        POST /api/v1/auth/verify-email
+        {"token": "abc123..."}
+        →  HTTP 200
+        {"message": "Email verified successfully."}
+    """
+    await svc.verify_email(body.token, redis)
+
+    logger.info("auth.verify_email.success")
+
+    return VerifyEmailResponse()

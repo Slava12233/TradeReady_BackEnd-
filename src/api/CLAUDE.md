@@ -1,6 +1,6 @@
 # API Gateway (`src/api/`)
 
-<!-- last-updated: 2026-03-20 -->
+<!-- last-updated: 2026-04-14 -->
 
 > HTTP + WebSocket gateway that wires middleware, REST routes, Pydantic schemas, and real-time channels into the FastAPI application.
 
@@ -16,7 +16,7 @@ This module contains everything between the incoming HTTP/WebSocket request and 
 | `middleware/auth.py` | `AuthMiddleware` (Starlette `BaseHTTPMiddleware`), `get_current_account` / `get_current_agent` FastAPI deps, `CurrentAccountDep` / `CurrentAgentDep` aliases |
 | `middleware/logging.py` | `LoggingMiddleware` -- structured request/response logging with correlation `request_id`, latency, account context |
 | `middleware/rate_limit.py` | `RateLimitMiddleware` -- Redis sliding-window rate limiter with 5 tiers (general 600/min, orders 100/min, market_data 1200/min, backtest 6000/min, training 3000/min) |
-| `routes/*.py` | 12 REST router modules, each exporting a single `router: APIRouter` |
+| `routes/*.py` | 15 REST router modules, each exporting a single `router: APIRouter` |
 | `schemas/*.py` | Pydantic v2 request/response models, one file per route module |
 | `websocket/manager.py` | `ConnectionManager` -- connection registry, auth, heartbeat, broadcast |
 | `websocket/channels.py` | Channel classes (`TickerChannel`, `CandleChannel`, `OrderChannel`, `PortfolioChannel`, `BattleChannel`) + `resolve_channel_name()` |
@@ -67,6 +67,9 @@ All routers are mounted under `/api/v1/` in `create_app()`. Each route file expo
 | `routes/strategies.py` | `/api/v1/strategies` | API key or JWT |
 | `routes/strategy_tests.py` | `/api/v1/strategies` | API key or JWT |
 | `routes/training.py` | `/api/v1/training` | API key or JWT |
+| `routes/indicators.py` | `/api/v1/indicators` | API key or JWT |
+| `routes/metrics.py` | `/api/v1/metrics` | API key or JWT |
+| `routes/webhooks.py` | `/api/v1/webhooks` | API key or JWT |
 | `routes/waitlist.py` | `/api/v1/waitlist` | Varies |
 
 Additional mounts:
@@ -159,5 +162,6 @@ Add the exact path to `_PUBLIC_PATHS` or a prefix to `_PUBLIC_PREFIXES` in `midd
 
 ## Recent Changes
 
+- `2026-04-14` — Updated Route Registry: added `indicators.py`, `metrics.py`, `webhooks.py` (all added in V.0.0.3). Route module count: 12 → 15.
 - `2026-03-20` -- Rate limit tiers expanded from 3 to 5: added `backtest` (6000/min) and `training` (3000/min) tiers before the general 600/min fallback.
 - `2026-03-17` -- Initial CLAUDE.md created

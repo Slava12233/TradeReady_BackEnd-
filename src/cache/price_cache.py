@@ -258,7 +258,7 @@ class PriceCache:
 
     # ── Staleness detection ───────────────────────────────────────────────────
 
-    async def get_stale_pairs(self, threshold_seconds: int = 60) -> list[str]:
+    async def get_stale_pairs(self, threshold_seconds: int = 60) -> list[str] | None:
         """Return symbols whose last price update is older than *threshold_seconds*.
 
         Reads all timestamp entries from ``prices:meta`` and compares them
@@ -269,8 +269,14 @@ class PriceCache:
                 stale.  Defaults to 60.
 
         Returns:
-            List of symbol strings with no recent update, sorted alphabetically,
-            or an empty list if Redis is unavailable.
+            List of symbol strings with no recent update, sorted alphabetically.
+            Returns ``None`` on Redis errors (fail-closed: callers must treat
+            ``None`` as "staleness unknown / assume degraded").
+
+        .. versionchanged:: 2026-04-15
+           Changed from fail-open (empty list) to fail-closed (``None``) on
+           Redis errors.  Returning ``[]`` falsely implied all pairs were
+           fresh when Redis was unavailable.
         """
         try:
             now = datetime.now(UTC)
@@ -294,5 +300,57 @@ class PriceCache:
             stale.sort()
             return stale
         except RedisError as exc:
-            logger.error("get_stale_pairs_failed", error=str(exc))
-            return []
+            logger.warning(
+                "staleness_check_degraded",
+                error=str(exc),
+                detail="Redis unavailable — staleness unknown, assuming degraded",
+            )
+            return None
+
+    async def get_price_timestamp(self, symbol: str) -> datetime | None:
+        """Return the last-update timestamp for *symbol* from ``prices:meta``.
+
+        Provides a public accessor for the price metadata hash, avoiding
+        direct ``_redis`` access from outside the cache module.
+
+        Args:
+            symbol: Uppercase trading pair, e.g. ``"BTCUSDT"``.
+
+        Returns:
+            ``datetime`` in UTC when metadata exists, or ``None`` when the
+            symbol is not in the cache or Redis is unavailable.
+        """
+        try:
+            raw: str | None = await self._redis.hget(_KEY_PRICES_META, symbol)
+            if raw is None:
+                return None
+            return datetime.fromisoformat(raw)
+        except (ValueError, OverflowError):
+            logger.warning(
+                "get_price_timestamp.corrupt_timestamp",
+                symbol=symbol,
+            )
+            return None
+        except RedisError as exc:
+            logger.error(
+                "get_price_timestamp.redis_error",
+                symbol=symbol,
+                error=str(exc),
+            )
+            return None
+
+    async def get_all_price_timestamps(self) -> dict[str, str]:
+        """Return all raw price metadata timestamps from ``prices:meta``.
+
+        Provides a public accessor for the full ``prices:meta`` hash,
+        avoiding direct ``_redis`` access from outside the cache module.
+
+        Returns:
+            Mapping of symbol → ISO-8601 timestamp string for all cached
+            pairs.  Returns an empty dict on Redis errors.
+        """
+        try:
+            return await self._redis.hgetall(_KEY_PRICES_META)
+        except RedisError as exc:
+            logger.error("get_all_price_timestamps.redis_error", error=str(exc))
+            return {}

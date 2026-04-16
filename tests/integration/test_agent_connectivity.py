@@ -46,18 +46,74 @@ _SKILL_MD_PATH = Path(__file__).parents[2] / "docs" / "skill.md"
 
 _EXPECTED_TOOL_NAMES: frozenset[str] = frozenset(
     {
+        # Market Data (7)
         "get_price",
         "get_all_prices",
         "get_candles",
+        "get_pairs",
+        "get_ticker",
+        "get_orderbook",
+        "get_recent_trades",
+        # Account (5)
         "get_balance",
         "get_positions",
+        "get_portfolio",
+        "get_account_info",
+        "reset_account",
+        # Trading (7)
         "place_order",
         "cancel_order",
         "get_order_status",
-        "get_portfolio",
         "get_trade_history",
+        "get_open_orders",
+        "cancel_all_orders",
+        "list_orders",
+        # Analytics (4)
         "get_performance",
-        "reset_account",
+        "get_pnl",
+        "get_portfolio_history",
+        "get_leaderboard",
+        # Backtesting (8)
+        "get_data_range",
+        "create_backtest",
+        "start_backtest",
+        "step_backtest",
+        "step_backtest_batch",
+        "backtest_trade",
+        "get_backtest_results",
+        "list_backtests",
+        # Agent Management (6)
+        "list_agents",
+        "create_agent",
+        "get_agent",
+        "reset_agent",
+        "update_agent_risk",
+        "get_agent_skill",
+        # Battles (6)
+        "create_battle",
+        "list_battles",
+        "start_battle",
+        "get_battle_live",
+        "get_battle_results",
+        "get_battle_replay",
+        # Strategy Management (7)
+        "create_strategy",
+        "get_strategies",
+        "get_strategy",
+        "create_strategy_version",
+        "get_strategy_versions",
+        "deploy_strategy",
+        "undeploy_strategy",
+        # Strategy Testing (5)
+        "run_strategy_test",
+        "get_test_status",
+        "get_test_results",
+        "compare_versions",
+        "get_strategy_recommendations",
+        # Training Observation (3)
+        "get_training_runs",
+        "get_training_run_detail",
+        "compare_training_runs",
     }
 )
 
@@ -211,11 +267,11 @@ class TestConcurrentAsyncAgents:
 
 
 class TestMcpToolDiscovery:
-    """MCP ``list_tools`` returns exactly 12 tools with the expected names."""
+    """MCP ``list_tools`` returns exactly 58 tools with the expected names."""
 
     @pytest.mark.asyncio
-    async def test_register_tools_list_tools_returns_twelve(self) -> None:
-        """Registering tools and calling the list handler yields 12 tools."""
+    async def test_register_tools_list_tools_returns_fifty_eight(self) -> None:
+        """Registering tools and calling the list handler yields 58 tools."""
         captured_list_handler = None
         server = MagicMock()
         client = AsyncMock(spec=httpx.AsyncClient)
@@ -233,11 +289,11 @@ class TestMcpToolDiscovery:
         assert captured_list_handler is not None, "list_tools handler was not captured"
         result = await captured_list_handler()
 
-        assert len(result) == 12, f"Expected 12 tools, got {len(result)}"
+        assert len(result) == 58, f"Expected 58 tools, got {len(result)}"
 
     @pytest.mark.asyncio
     async def test_register_tools_list_tools_returns_all_expected_names(self) -> None:
-        """All 12 expected tool names are present in the list_tools response."""
+        """All 58 expected tool names are present in the list_tools response."""
         captured_list_handler = None
         server = MagicMock()
         client = AsyncMock(spec=httpx.AsyncClient)
@@ -261,9 +317,9 @@ class TestMcpToolDiscovery:
             f"  Unexpected: {actual_names - _EXPECTED_TOOL_NAMES}"
         )
 
-    def test_tool_definitions_count_matches_twelve(self) -> None:
-        """The static ``_TOOL_DEFINITIONS`` list always has 12 entries."""
-        assert len(_TOOL_DEFINITIONS) == 12
+    def test_tool_definitions_count_matches_fifty_eight(self) -> None:
+        """The static ``_TOOL_DEFINITIONS`` list always has 58 entries."""
+        assert len(_TOOL_DEFINITIONS) == 58
 
     def test_tool_definitions_names_match_expected(self) -> None:
         """Every tool in ``_TOOL_DEFINITIONS`` is in the expected set."""
@@ -271,7 +327,7 @@ class TestMcpToolDiscovery:
         assert actual == _EXPECTED_TOOL_NAMES
 
     def test_each_tool_has_non_empty_description(self) -> None:
-        """All 12 tools carry a human-readable description."""
+        """All 58 tools carry a human-readable description."""
         for tool in _TOOL_DEFINITIONS:
             assert tool.description, f"Tool '{tool.name}' has an empty description"
 

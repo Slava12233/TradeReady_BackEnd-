@@ -1,0 +1,55 @@
+name: Publish SDK to PyPI
+
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+jobs:
+  build:
+    name: Build SDK distribution
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: pip install build
+
+      - name: Build source distribution and wheel
+        run: python -m build
+
+      - name: Store distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: sdk/dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tradeready
+
+    permissions:
+      id-token: write  # Required for OIDC trusted publisher authentication
+
+    steps:
+      - name: Download distribution packages
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

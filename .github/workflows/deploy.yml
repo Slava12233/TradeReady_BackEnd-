@@ -80,7 +80,11 @@ jobs:
               git checkout "$ROLLBACK_COMMIT"
               docker compose build api ingestion celery
               docker compose up -d api ingestion celery celery-beat
-              docker compose exec -T api alembic downgrade "${ROLLBACK_REVISION:-017}"
+              if [ -n "$ROLLBACK_REVISION" ] && [ "$ROLLBACK_REVISION" != "none" ]; then
+                docker compose exec -T api alembic downgrade "$ROLLBACK_REVISION"
+              else
+                docker compose exec -T api alembic downgrade -1
+              fi
               exit 1
             }
 

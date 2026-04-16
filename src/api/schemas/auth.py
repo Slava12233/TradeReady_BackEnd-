@@ -56,10 +56,9 @@ class RegisterRequest(_BaseSchema):
     """
 
     display_name: str = Field(
-        ...,
-        min_length=1,
+        default="",
         max_length=100,
-        description="Human-readable name for the agent account.",
+        description="Human-readable name for the agent account. Defaults to 'Agent' if empty.",
         examples=["MyTradingBot"],
     )
     email: EmailStr | None = Field(
@@ -70,7 +69,8 @@ class RegisterRequest(_BaseSchema):
     password: str | None = Field(
         default=None,
         min_length=8,
-        description="Optional password (min 8 chars) for human user login.",
+        max_length=72,
+        description="Optional password (8-72 chars). bcrypt truncates at 72 bytes.",
         examples=["s3cur3P@ssw0rd"],
     )
     starting_balance: Decimal = Field(
@@ -207,7 +207,8 @@ class UserLoginRequest(_BaseSchema):
     password: str = Field(
         ...,
         min_length=8,
-        description="Plaintext password (min 8 chars).",
+        max_length=72,
+        description="Plaintext password (8-72 chars). bcrypt truncates at 72 bytes.",
         examples=["s3cur3P@ssw0rd"],
     )
 
@@ -235,4 +236,109 @@ class TokenResponse(_BaseSchema):
         default="Bearer",
         description="Token type for OAuth 2.0 compatibility.",
         examples=["Bearer"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Password reset
+# ---------------------------------------------------------------------------
+
+
+class ForgotPasswordRequest(_BaseSchema):
+    """Request body for ``POST /api/v1/auth/forgot-password``.
+
+    Attributes:
+        username: Username or email address of the account to reset.
+    """
+
+    username: str = Field(
+        ...,
+        min_length=1,
+        description="Username or email address of the account.",
+        examples=["alice@example.com"],
+    )
+
+
+class ForgotPasswordResponse(_BaseSchema):
+    """Response body for ``POST /api/v1/auth/forgot-password`` (HTTP 200).
+
+    Always returns the same generic message regardless of whether the
+    account exists, to avoid leaking account existence information.
+
+    Attributes:
+        message: Generic advisory message.
+    """
+
+    message: str = Field(
+        default="If an account exists, a reset link has been sent.",
+        description="Generic response message (does not reveal account existence).",
+    )
+
+
+class ResetPasswordRequest(_BaseSchema):
+    """Request body for ``POST /api/v1/auth/reset-password``.
+
+    Attributes:
+        token:        The password reset token received via the reset link.
+        new_password: The new password to set (8-72 characters).
+    """
+
+    token: str = Field(
+        ...,
+        min_length=1,
+        description="Password reset token from the reset link.",
+        examples=["a3f8e2..."],
+    )
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=72,
+        description="New password (8-72 chars). bcrypt truncates at 72 bytes.",
+        examples=["n3wS3cur3P@ss"],
+    )
+
+
+class ResetPasswordResponse(_BaseSchema):
+    """Response body for ``POST /api/v1/auth/reset-password`` (HTTP 200).
+
+    Attributes:
+        message: Confirmation that the password was reset.
+    """
+
+    message: str = Field(
+        default="Password has been reset successfully.",
+        description="Confirmation message.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Email verification
+# ---------------------------------------------------------------------------
+
+
+class VerifyEmailRequest(_BaseSchema):
+    """Request body for ``POST /api/v1/auth/verify-email``.
+
+    Attributes:
+        token: The email verification token from the verification link.
+    """
+
+    token: str = Field(
+        ...,
+        min_length=1,
+        description="Email verification token received in the verification link.",
+        examples=["abc123xyz_token_here"],
+    )
+
+
+class VerifyEmailResponse(_BaseSchema):
+    """Response body for ``POST /api/v1/auth/verify-email`` (HTTP 200).
+
+    Attributes:
+        message: Confirmation that the email was verified.
+    """
+
+    message: str = Field(
+        default="Email verified successfully.",
+        description="Confirmation message.",
     )

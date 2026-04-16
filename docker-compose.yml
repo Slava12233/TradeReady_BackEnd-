@@ -177,6 +177,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A src.tasks.celery_app inspect ping --timeout 10 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -229,13 +235,19 @@ services:
 
   # ─────────────────────────────────────────────────────────────
   # Database Admin: pgAdmin 4 (web UI for PostgreSQL/TimescaleDB)
+  #
+  # WARNING: Development tool only. Do NOT start in production.
+  # Start with:  docker compose --profile dev up pgadmin
+  # Credentials must be set via PGADMIN_EMAIL / PGADMIN_PASSWORD
+  # in .env — do NOT rely on the changeme defaults in production.
   # ─────────────────────────────────────────────────────────────
   pgadmin:
     image: dpage/pgadmin4:latest
+    profiles: ["dev"]
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@agentexchange.dev}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin1234}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@tradeready.io}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
       PGADMIN_LISTEN_PORT: 5050
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     volumes:
@@ -284,6 +296,41 @@ services:
         limits:
           cpus: "0.5"
           memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────────────────────────
+  # Monitoring: Alertmanager (routes Prometheus alerts to receivers)
+  # ─────────────────────────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.listen-address=:9093'
+    ports:
+      - "9093:9093"
+    networks:
+      - internal
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9093/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
     logging:
       driver: json-file
       options:
@@ -371,6 +418,72 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ─────────────────────────────────────────────────────────────
+  # Backup Sidecar: Automated daily database backup at 02:00 UTC
+  #
+  # Uses Alpine Linux + postgresql16-client (pg_dump).
+  # Backup files are stored in the named volume `backup_data`.
+  # Retention: 7 daily + 4 weekly snapshots (managed by backup_db.sh).
+  #
+  # NOTE: pg_dump connects directly to timescaledb via the Docker
+  # network (not via docker compose exec) in this container.
+  # PGHOST is set to the timescaledb service hostname.
+  #
+  # Manual operations:
+  #   Trigger immediate backup:
+  #     docker compose exec db-backup backup_db.sh
+  #   Check backup health:
+  #     docker compose exec db-backup sh /scripts/check_backup_health.sh
+  #   List available backups:
+  #     docker compose exec db-backup ls -lht /backups/
+  #   Restore from backup:
+  #     See scripts/restore_database.sh for full instructions.
+  # ─────────────────────────────────────────────────────────────
+  db-backup:
+    image: alpine:3.21
+    restart: unless-stopped
+    environment:
+      BACKUP_DIR: /backups
+      POSTGRES_HOST: timescaledb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      BACKUP_LOG: /var/log/backup.log
+    volumes:
+      - backup_data:/backups
+      - ./scripts/backup_db.sh:/scripts/backup_db.sh:ro
+      - ./scripts/backup_cron.sh:/scripts/backup_cron.sh:ro
+      - ./scripts/check_backup_health.sh:/scripts/check_backup_health.sh:ro
+    networks:
+      - internal
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    # Install pg_dump, then hand off to the cron wrapper.
+    # bash is required because the backup scripts use bash features.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        apk add --no-cache bash postgresql16-client && \
+        chmod +x /scripts/backup_db.sh /scripts/backup_cron.sh /scripts/check_backup_health.sh && \
+        exec bash /scripts/backup_cron.sh
+    healthcheck:
+      test: ["CMD", "sh", "/scripts/check_backup_health.sh"]
+      interval: 1h
+      timeout: 10s
+      retries: 1
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 # ─────────────────────────────────────────────────────────────
 # Named volumes
 # ─────────────────────────────────────────────────────────────
@@ -379,6 +492,7 @@ volumes:
   redis_data:
   grafana_data:
   pgadmin_data:
+  backup_data:
 
 # ─────────────────────────────────────────────────────────────
 # Networks

@@ -1,0 +1,94 @@
+# Alertmanager configuration for AgentExchange Platform
+#
+# IMPORTANT: This file is committed to version control.
+# Fill in your real SMTP credentials on the server — do NOT commit real passwords.
+# On the production server, edit this file directly after pulling, or override it
+# with a secrets manager. The placeholders below are safe no-ops (Alertmanager
+# starts cleanly but sends no email until real values are set).
+#
+# Alertmanager does NOT support environment variable substitution in its config
+# file natively. Credentials must be written directly here (or managed via a
+# secrets system like Vault or Docker secrets if you add that later).
+
+global:
+  # SMTP relay — e.g. smtp.gmail.com:587
+  smtp_smarthost: 'smtp.gmail.com:587'
+  # Sender address shown in alert emails
+  smtp_from: 'alerts@yourdomain.com'
+  smtp_auth_username: 'alerts@yourdomain.com'
+  # Use an app-specific password, not your account password.
+  # Replace this on the server after first deploy.
+  smtp_auth_password: 'REPLACE_WITH_APP_PASSWORD'
+  smtp_require_tls: true
+  # Consider an alert resolved if it stops firing within this window
+  resolve_timeout: 5m
+
+# ─── Routing ────────────────────────────────────────────────────────────────────
+#
+# All alerts flow to the default receiver.
+# Critical alerts get a shorter repeat_interval so on-call hears about them quickly.
+# Info alerts are throttled to once per 24h to avoid noise.
+
+route:
+  # Group alerts that share the same alertname to reduce notification noise
+  group_by: ['alertname', 'severity']
+  # Wait 30s after first alert fires before sending the group
+  group_wait: 30s
+  # Wait 5m before sending an updated notification for an ongoing alert group
+  group_interval: 5m
+  # Re-notify every 4h while the alert is still firing
+  repeat_interval: 4h
+  receiver: default
+
+  routes:
+    # Critical alerts — shorten repeat interval so they are not silenced for long
+    - match:
+        severity: critical
+      receiver: default
+      repeat_interval: 1h
+      continue: false
+
+    # Info-severity alerts — extend repeat to 24h to avoid noise
+    - match:
+        severity: info
+      receiver: default
+      repeat_interval: 24h
+      continue: false
+
+# ─── Receivers ──────────────────────────────────────────────────────────────────
+
+receivers:
+  - name: default
+    email_configs:
+      - to: 'oncall@yourdomain.com'
+        send_resolved: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} — AgentExchange'
+        html: |
+          {{ range .Alerts }}
+          <b>Alert:</b> {{ .Annotations.summary }}<br/>
+          <b>Severity:</b> {{ .Labels.severity }}<br/>
+          <b>Description:</b> {{ .Annotations.description }}<br/>
+          <b>Started:</b> {{ .StartsAt }}<br/>
+          <br/>
+          {{ end }}
+
+# ─── Inhibition rules ───────────────────────────────────────────────────────────
+#
+# Suppress lower-severity alerts when a critical alert is already firing for the
+# same alertname. This prevents duplicate noise when the root cause is already
+# being escalated at the critical level.
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    # Only inhibit alerts that share the same alertname
+    equal: ['alertname']
+
+  - source_match:
+      severity: critical
+    target_match:
+      severity: info
+    equal: ['alertname']

@@ -41,7 +41,7 @@ Example::
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import logging
 from typing import Annotated, Any
@@ -587,13 +587,18 @@ async def get_pnl(
     Computes unrealised PnL from live prices, realised PnL from trade history,
     and calculates fees paid and win-rate statistics within the requested period.
 
+    Fees paid and win/loss/breakeven counts are aggregated entirely in the
+    database via a single SQL query (``get_pnl_stats_by_period``), filtered
+    by a time-based cutoff derived from *period*.  This avoids fetching large
+    result sets into Python for accounts with many trades.
+
     Args:
         account:    Injected authenticated account.
         agent:      Injected authenticated agent (may be None).
         tracker:    Injected :class:`~src.portfolio.tracker.PortfolioTracker`
                     (unrealised PnL + all-time realised PnL).
         trade_repo: Injected :class:`~src.database.repositories.trade_repo.TradeRepository`
-                    (per-period trade statistics).
+                    (per-period trade statistics — aggregated in SQL).
         period:     One of ``"1d"``, ``"7d"``, ``"30d"``, or ``"all"``
                     (query param, default ``"all"``).
 
@@ -626,22 +631,14 @@ async def get_pnl(
     agent_id = agent.id if agent is not None else None
     pnl_breakdown = await tracker.get_pnl(account.id, agent_id=agent_id)
 
-    # Fetch the scoped trade list to compute fees + win-rate for the period.
-    limit_by_period = _period_to_trade_limit(period)
-    period_trades = await trade_repo.list_by_account(
+    # Compute cutoff time from period string, then aggregate stats in SQL.
+    since = _period_to_cutoff(period)
+    fees_paid, winning_trades, losing_trades, breakeven_trades = await trade_repo.get_pnl_stats_by_period(
         account.id,
         agent_id=agent_id,
-        limit=limit_by_period,
-        offset=0,
+        since=since,
     )
 
-    fees_paid = sum(
-        (Decimal(str(t.fee)) for t in period_trades if t.fee is not None),
-        Decimal("0"),
-    )
-    winning_trades = sum(1 for t in period_trades if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) > 0)
-    losing_trades = sum(1 for t in period_trades if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) < 0)
-    breakeven_trades = sum(1 for t in period_trades if t.realized_pnl is not None and Decimal(str(t.realized_pnl)) == 0)
     total_trades_with_pnl = winning_trades + losing_trades + breakeven_trades
     win_rate = (
         Decimal(str(winning_trades)) / Decimal(str(total_trades_with_pnl)) * Decimal("100")
@@ -738,26 +735,35 @@ async def update_risk_profile(
     return body
 
 
-def _period_to_trade_limit(period: PnLPeriod) -> int:
-    """Map a PnL period string to a reasonable trade fetch limit.
+def _period_to_cutoff(period: PnLPeriod) -> datetime | None:
+    """Convert a PnL period string to a UTC cutoff timestamp.
 
-    This is a coarse approximation — a production system would use time-bounded
-    queries.  For now we fetch enough trades to cover the period for most
-    accounts.
+    The returned timestamp is the earliest ``created_at`` value that should
+    be included in the period's aggregation.  Returns ``None`` for ``"all"``,
+    which means no lower-bound filter is applied (i.e. the entire trade
+    history is included).
 
     Args:
         period: One of ``"1d"``, ``"7d"``, ``"30d"``, or ``"all"``.
 
     Returns:
-        An integer upper bound on the number of trades to fetch.
+        A timezone-aware UTC :class:`~datetime.datetime` for bounded periods,
+        or ``None`` for the ``"all"`` period.
+
+    Example::
+
+        cutoff = _period_to_cutoff("7d")
+        # cutoff == datetime.now(UTC) - timedelta(days=7)  (approximately)
     """
-    limits: dict[PnLPeriod, int] = {
-        "1d": 500,
-        "7d": 2000,
-        "30d": 5000,
-        "all": 10000,
+    _period_days: dict[PnLPeriod, int] = {
+        "1d": 1,
+        "7d": 7,
+        "30d": 30,
     }
-    return limits.get(period, 10000)
+    days = _period_days.get(period)
+    if days is None:
+        return None  # "all" — no lower bound
+    return datetime.now(tz=UTC) - timedelta(days=days)
 
 
 # ---------------------------------------------------------------------------

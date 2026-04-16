@@ -39,6 +39,7 @@ from src.accounts.auth import create_jwt
 from src.agents.service import AgentCredentials
 from src.config import Settings
 from src.database.models import Account, Agent, Battle, BattleParticipant, Order, Trade
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 from src.order_engine.engine import OrderResult
 
 pytestmark = pytest.mark.slow

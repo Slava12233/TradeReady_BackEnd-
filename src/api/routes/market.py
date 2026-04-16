@@ -28,13 +28,14 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
-import logging
 import random
 from typing import Annotated
 
 from fastapi import APIRouter, Query
+from redis.asyncio import Redis
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from src.api.schemas.market import (
     BatchTickersResponse,
@@ -52,11 +53,12 @@ from src.api.schemas.market import (
 from src.cache.price_cache import PriceCache
 from src.cache.types import TickerData
 from src.database.models import Tick, TradingPair
-from src.dependencies import DbSessionDep, PriceCacheDep
+from src.dependencies import DbSessionDep, PriceCacheDep, RedisDep
+from src.exchange.symbol_validation import is_valid_symbol_cached
 from src.price_ingestion.binance_klines import fetch_binance_klines
 from src.utils.exceptions import InvalidSymbolError, PriceNotAvailableError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
@@ -145,7 +147,7 @@ async def list_pairs(
         for pair in pairs
     ]
 
-    logger.debug("market.pairs.fetched", extra={"count": len(pair_responses)})
+    logger.debug("market.pairs.fetched", count=len(pair_responses))
 
     return PairsListResponse(pairs=pair_responses, total=len(pair_responses))
 
@@ -165,16 +167,19 @@ async def get_price(
     symbol: str,
     cache: PriceCacheDep,
     db: DbSessionDep,
+    redis: RedisDep,
 ) -> PriceResponse:
     """Return the current cached price for *symbol*.
 
-    First validates that the symbol exists in ``trading_pairs``, then reads
-    the price and its timestamp from Redis.
+    First validates that the symbol exists in ``trading_pairs`` (using the
+    Redis-backed symbol cache to avoid a DB round-trip on every request), then
+    reads the price and its timestamp from Redis.
 
     Args:
         symbol: Uppercase trading pair symbol, e.g. ``"BTCUSDT"``.
         cache:  Injected :class:`~src.cache.price_cache.PriceCache`.
-        db:     Injected async DB session (used for symbol validation).
+        db:     Injected async DB session (used for symbol validation fallback).
+        redis:  Injected Redis client (used for symbol validation cache).
 
     Returns:
         :class:`~src.api.schemas.market.PriceResponse`.
@@ -189,7 +194,7 @@ async def get_price(
         → {"symbol": "BTCUSDT", "price": "64521.30000000", "timestamp": "..."}
     """
     symbol = symbol.upper()
-    await _validate_symbol(symbol, db)
+    await _validate_symbol(symbol, redis, db)
 
     price = await cache.get_price(symbol)
     if price is None:
@@ -248,7 +253,7 @@ async def get_prices(
     now = datetime.now(UTC)
     stale, data_age = await _compute_staleness(cache, now)
 
-    logger.debug("market.prices.fetched", extra={"count": len(prices_str), "stale": stale})
+    logger.debug("market.prices.fetched", count=len(prices_str), stale=stale)
 
     return PricesMapResponse(
         prices=prices_str,
@@ -274,13 +279,15 @@ async def get_ticker(
     symbol: str,
     cache: PriceCacheDep,
     db: DbSessionDep,
+    redis: RedisDep,
 ) -> TickerResponse:
     """Return the 24h rolling ticker for *symbol* from Redis.
 
     Args:
         symbol: Uppercase trading pair symbol, e.g. ``"BTCUSDT"``.
         cache:  Injected :class:`~src.cache.price_cache.PriceCache`.
-        db:     Injected async DB session (used for symbol validation).
+        db:     Injected async DB session (used for symbol validation fallback).
+        redis:  Injected Redis client (used for symbol validation cache).
 
     Returns:
         :class:`~src.api.schemas.market.TickerResponse`.
@@ -294,7 +301,7 @@ async def get_ticker(
         GET /api/v1/market/ticker/BTCUSDT
     """
     symbol = symbol.upper()
-    await _validate_symbol(symbol, db)
+    await _validate_symbol(symbol, redis, db)
 
     ticker = await cache.get_ticker(symbol)
     if ticker is None:
@@ -426,6 +433,7 @@ async def get_tickers_batch(
 async def get_candles(
     symbol: str,
     db: DbSessionDep,
+    redis: RedisDep,
     interval: Annotated[
         str,
         Query(description="Candle interval: '1m', '5m', '1h', '1d'.", examples=["1h"]),
@@ -451,6 +459,7 @@ async def get_candles(
     Args:
         symbol:     Uppercase trading pair symbol.
         db:         Injected async DB session.
+        redis:      Injected Redis client (used for symbol validation cache).
         interval:   Candle granularity; must be one of ``1m``, ``5m``, ``1h``, ``1d``.
         limit:      Maximum number of bars to return (default 100, max 1000).
         start_time: Optional start of the time window (inclusive).
@@ -468,7 +477,7 @@ async def get_candles(
         GET /api/v1/market/candles/BTCUSDT?interval=1h&limit=24
     """
     symbol = symbol.upper()
-    await _validate_symbol(symbol, db)
+    await _validate_symbol(symbol, redis, db)
 
     if interval not in _CANDLE_VIEWS:
         raise InvalidSymbolError(f"Interval '{interval}' is not supported. Use one of: {', '.join(_CANDLE_VIEWS)}.")
@@ -545,12 +554,17 @@ async def get_candles(
             candles = sorted(merged, key=lambda c: c.time)[:limit]
             logger.debug(
                 "market.candles.binance_fallback",
-                extra={"symbol": symbol, "interval": interval, "local": len(rows), "total": len(candles)},
+                symbol=symbol,
+                interval=interval,
+                local=len(rows),
+                total=len(candles),
             )
 
     logger.debug(
         "market.candles.fetched",
-        extra={"symbol": symbol, "interval": interval, "count": len(candles)},
+        symbol=symbol,
+        interval=interval,
+        count=len(candles),
     )
 
     return CandlesListResponse(
@@ -575,6 +589,7 @@ async def get_candles(
 async def get_trades(
     symbol: str,
     db: DbSessionDep,
+    redis: RedisDep,
     limit: Annotated[
         int,
         Query(ge=1, le=500, description="Number of recent trades to return (1–500).", examples=[100]),
@@ -588,6 +603,7 @@ async def get_trades(
     Args:
         symbol: Uppercase trading pair symbol.
         db:     Injected async DB session.
+        redis:  Injected Redis client (used for symbol validation cache).
         limit:  Maximum number of trades to return (default 100, max 500).
 
     Returns:
@@ -601,7 +617,7 @@ async def get_trades(
         GET /api/v1/market/trades/BTCUSDT?limit=50
     """
     symbol = symbol.upper()
-    await _validate_symbol(symbol, db)
+    await _validate_symbol(symbol, redis, db)
 
     stmt = select(Tick).where(Tick.symbol == symbol).order_by(Tick.time.desc()).limit(limit)
     result = await db.execute(stmt)
@@ -620,7 +636,8 @@ async def get_trades(
 
     logger.debug(
         "market.trades.fetched",
-        extra={"symbol": symbol, "count": len(trades)},
+        symbol=symbol,
+        count=len(trades),
     )
 
     return TradesPublicResponse(symbol=symbol, trades=trades)
@@ -645,6 +662,7 @@ async def get_orderbook(
     symbol: str,
     cache: PriceCacheDep,
     db: DbSessionDep,
+    redis: RedisDep,
     depth: Annotated[
         int,
         Query(description="Number of levels on each side (5, 10, or 20).", examples=[10]),
@@ -660,7 +678,8 @@ async def get_orderbook(
     Args:
         symbol: Uppercase trading pair symbol.
         cache:  Injected :class:`~src.cache.price_cache.PriceCache`.
-        db:     Injected async DB session (symbol validation).
+        db:     Injected async DB session (symbol validation fallback).
+        redis:  Injected Redis client (used for symbol validation cache).
         depth:  Levels per side; must be 5, 10, or 20 (default 10).
 
     Returns:
@@ -679,7 +698,7 @@ async def get_orderbook(
     if depth not in _ALLOWED_DEPTHS:
         raise InvalidSymbolError(f"depth={depth} is not supported. Use one of: {sorted(_ALLOWED_DEPTHS)}.")
 
-    await _validate_symbol(symbol, db)
+    await _validate_symbol(symbol, redis, db)
 
     price = await cache.get_price(symbol)
     if price is None:
@@ -691,7 +710,9 @@ async def get_orderbook(
 
     logger.debug(
         "market.orderbook.fetched",
-        extra={"symbol": symbol, "depth": depth, "mid_price": str(price)},
+        symbol=symbol,
+        depth=depth,
+        mid_price=str(price),
     )
 
     return OrderbookResponse(symbol=symbol, bids=bids, asks=asks, timestamp=now)
@@ -702,18 +723,28 @@ async def get_orderbook(
 # ---------------------------------------------------------------------------
 
 
-async def _validate_symbol(symbol: str, db: AsyncSession) -> None:
+async def _validate_symbol(
+    symbol: str,
+    redis: Redis,  # type: ignore[type-arg]
+    db: AsyncSession,
+) -> None:
     """Raise :exc:`InvalidSymbolError` if *symbol* is not in ``trading_pairs``.
+
+    Checks the Redis ``valid_symbols`` set first (O(1)) and only queries the
+    database when the cache is empty or on a Redis error.  Falls back
+    transparently to a single-row DB query so the endpoint keeps working even
+    when Redis is unavailable.
 
     Args:
         symbol: Uppercase symbol string.
-        db:     Async SQLAlchemy session.
+        redis:  Async Redis client for cache lookup.
+        db:     Async SQLAlchemy session (DB fallback).
 
     Raises:
         :exc:`~src.utils.exceptions.InvalidSymbolError`: If the symbol is not found.
     """
-    result = await db.execute(select(TradingPair.symbol).where(TradingPair.symbol == symbol).limit(1))
-    if result.scalar_one_or_none() is None:
+    valid = await is_valid_symbol_cached(symbol, redis, db)
+    if not valid:
         raise InvalidSymbolError(symbol=symbol)
 
 
@@ -729,13 +760,10 @@ async def _get_price_timestamp(cache: PriceCache, symbol: str) -> datetime:
     Returns:
         ``datetime`` in UTC.
     """
-    raw: str | None = await cache._redis.hget("prices:meta", symbol)  # noqa: SLF001
-    if raw is None:
+    ts = await cache.get_price_timestamp(symbol)
+    if ts is None:
         return datetime.now(UTC)
-    try:
-        return datetime.fromisoformat(raw)
-    except (ValueError, OverflowError):
-        return datetime.now(UTC)
+    return ts
 
 
 _STALE_THRESHOLD_SECONDS = 60
@@ -760,14 +788,13 @@ async def _compute_staleness(
     """
     try:
         # Fast path: check BTCUSDT as a representative pair
-        raw: str | None = await cache._redis.hget("prices:meta", "BTCUSDT")  # noqa: SLF001
-        if raw:
-            ts = datetime.fromisoformat(raw)
-            age = max(0.0, (now - ts).total_seconds())
+        btc_ts = await cache.get_price_timestamp("BTCUSDT")
+        if btc_ts is not None:
+            age = max(0.0, (now - btc_ts).total_seconds())
             return age > _STALE_THRESHOLD_SECONDS, round(age, 1)
 
         # Fallback: scan all pairs for the freshest timestamp
-        meta: dict[str, str] = await cache._redis.hgetall("prices:meta")  # noqa: SLF001
+        meta: dict[str, str] = await cache.get_all_price_timestamps()
         if not meta:
             return True, None
 
@@ -785,7 +812,7 @@ async def _compute_staleness(
             return True, None
         return freshest_age > _STALE_THRESHOLD_SECONDS, round(freshest_age, 1)
     except Exception:
-        logger.warning("staleness_check_failed", exc_info=True)
+        logger.warning("staleness_check_failed")
         return False, None
 
 

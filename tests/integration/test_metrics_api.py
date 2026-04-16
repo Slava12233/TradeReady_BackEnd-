@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from src.config import Settings
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 
 pytestmark = pytest.mark.slow
 

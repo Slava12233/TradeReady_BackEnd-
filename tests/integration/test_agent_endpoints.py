@@ -37,6 +37,7 @@ from src.agents.service import AgentCredentials
 from src.config import Settings
 from src.database.models import Account, Agent
 from src.database.repositories.agent_repo import AgentNotFoundError
+import src.database.session  # noqa: F401 — ensures submodule is importable by patch()
 from src.utils.exceptions import PermissionDeniedError
 
 pytestmark = pytest.mark.slow

@@ -7,6 +7,12 @@ global:
     project: agentexchange
     env: production
 
+# Route firing alerts to Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 # Load alert rules — agent ecosystem alerts
 rule_files:
   - /etc/prometheus/rules/agent-alerts.yml

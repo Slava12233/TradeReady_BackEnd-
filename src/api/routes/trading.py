@@ -37,11 +37,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-import logging
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
+import structlog
 
 from src.api.middleware.auth import CurrentAccountDep, CurrentAgentDep
 from src.api.schemas.trading import (
@@ -64,7 +64,7 @@ from src.dependencies import (
 from src.order_engine.validators import OrderRequest as EngineOrderRequest
 from src.utils.exceptions import OrderRejectedError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/trade", tags=["trading"])
 
@@ -201,12 +201,10 @@ async def place_order(
     if not risk_result.approved:
         logger.warning(
             "trading.place_order.risk_rejected",
-            extra={
-                "account_id": str(account.id),
-                "agent_id": str(agent_id) if agent_id else None,
-                "symbol": body.symbol,
-                "reason": risk_result.rejection_reason,
-            },
+            account_id=str(account.id),
+            agent_id=str(agent_id) if agent_id else None,
+            symbol=body.symbol,
+            reason=risk_result.rejection_reason,
         )
         raise OrderRejectedError(
             risk_result.rejection_reason or "Order rejected by risk manager.",
@@ -218,14 +216,12 @@ async def place_order(
 
     logger.info(
         "trading.place_order.success",
-        extra={
-            "account_id": str(account.id),
-            "order_id": str(result.order_id),
-            "symbol": body.symbol,
-            "side": body.side,
-            "type": body.type,
-            "status": result.status,
-        },
+        account_id=str(account.id),
+        order_id=str(result.order_id),
+        symbol=body.symbol,
+        side=body.side,
+        type=body.type,
+        status=result.status,
     )
 
     if result.status == "filled":
@@ -541,7 +537,8 @@ async def cancel_order(
     cancelled_at = datetime.now(tz=UTC)
     logger.info(
         "trading.cancel_order.success",
-        extra={"account_id": str(account.id), "order_id": str(order_id)},
+        account_id=str(account.id),
+        order_id=str(order_id),
     )
 
     return CancelResponse(
@@ -618,11 +615,9 @@ async def cancel_all_orders(
 
     logger.info(
         "trading.cancel_all_orders.success",
-        extra={
-            "account_id": str(account.id),
-            "cancelled_count": cancelled_count,
-            "total_unlocked": str(total_unlocked),
-        },
+        account_id=str(account.id),
+        cancelled_count=cancelled_count,
+        total_unlocked=str(total_unlocked),
     )
 
     return CancelAllResponse(

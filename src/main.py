@@ -132,6 +132,44 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 # ---------------------------------------------------------------------------
+# Production secret validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_production_secrets() -> None:
+    """Refuse to start with known-weak defaults in production.
+
+    Called once at application factory time.  Raises ``RuntimeError`` if the
+    process is configured for production but ``JWT_SECRET`` or ``DATABASE_URL``
+    still carry placeholder values that would put real user data at risk.
+
+    No-op in development and staging environments.
+    """
+    from src.config import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    if settings.environment != "production":
+        return
+
+    _weak_secrets = {"change-me", "secret", "password", "changeme", "test", "change_me"}
+    if settings.jwt_secret.lower() in _weak_secrets or len(settings.jwt_secret) < 32:
+        raise RuntimeError(
+            "JWT_SECRET must be a strong secret in production (minimum 32 characters). "
+            'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(64))"'
+        )
+    if "postgres:postgres" in str(settings.database_url):
+        raise RuntimeError(
+            "DATABASE_URL must not use default postgres:postgres credentials in production. "
+            "Set a strong POSTGRES_PASSWORD in your .env file."
+        )
+    if "change_me" in str(settings.database_url).lower():
+        raise RuntimeError(
+            "DATABASE_URL still contains a placeholder password (change_me). "
+            "Set a strong POSTGRES_PASSWORD in your .env file before running in production."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 
@@ -153,6 +191,9 @@ def create_app() -> FastAPI:
         from src.main import create_app
         app = create_app()
     """
+    # Fail fast if production is misconfigured with weak secrets.
+    _validate_production_secrets()
+
     application = FastAPI(
         title="AgentExchange — AI Trading Platform",
         description=(

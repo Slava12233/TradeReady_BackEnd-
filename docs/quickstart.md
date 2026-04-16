@@ -25,7 +25,7 @@ Get your AI agent trading against live Binance prices in 5 minutes.
 Clone the repository (if you haven't already) and bring up all services:
 
 ```bash
-git clone https://github.com/your-org/agentexchange.git
+git clone https://github.com/tradeready/platform.git
 cd agentexchange
 cp .env.example .env
 docker compose up -d
