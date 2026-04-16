@@ -46,11 +46,11 @@ disallow_untyped_decorators = true
 no_implicit_optional = true
 strict_equality = true
 extra_checks = true
-# redis.asyncio stubs return Awaitable[X] | X unions that mypy [misc]
-# flags as "Incompatible types in await".  This is a known redis-py
-# typing issue, not a real bug.  Disabling [misc] avoids dozens of
-# false-positive suppressions across cache, risk, monitoring modules.
-disable_error_code = ["misc"]
+# redis.asyncio type stubs (types-redis) produce false positives:
+# - [misc]: Awaitable[X] | X unions flagged as "Incompatible types in await"
+# - [type-arg]: Redis generic requires type params that differ between stub versions
+# These are redis-py typing issues, not real bugs.
+disable_error_code = ["misc", "type-arg"]
 
 [[tool.mypy.overrides]]
 module = [
