@@ -250,7 +250,7 @@ class CircuitBreaker:
             )
             raise CacheError("Failed to read circuit breaker state.") from exc
 
-        return value == b"1" or value == "1"
+        return value == b"1" or value == "1"  # type: ignore[no-any-return]
 
     async def get_daily_pnl(self, account_id: UUID) -> Decimal:
         """Return the account's accumulated realized PnL for today (UTC).

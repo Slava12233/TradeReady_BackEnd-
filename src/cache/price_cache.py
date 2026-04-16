@@ -350,7 +350,8 @@ class PriceCache:
             pairs.  Returns an empty dict on Redis errors.
         """
         try:
-            return await self._redis.hgetall(_KEY_PRICES_META)
+            result: dict[str, str] = await self._redis.hgetall(_KEY_PRICES_META)
+            return result
         except RedisError as exc:
             logger.error("get_all_price_timestamps.redis_error", error=str(exc))
             return {}

@@ -104,7 +104,7 @@ DbSessionDep: TypeAlias = Annotated[AsyncSession, Depends(get_db_session)]
 # ---------------------------------------------------------------------------
 
 
-async def get_redis() -> AsyncGenerator[Redis[Any], None]:
+async def get_redis() -> AsyncGenerator[Redis, None]:  # type: ignore[type-arg]
     """Yield a Redis client from the shared connection pool.
 
     The pool is created lazily on the first call and reused across requests.
