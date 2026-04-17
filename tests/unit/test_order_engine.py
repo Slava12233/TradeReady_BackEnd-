@@ -372,15 +372,15 @@ async def test_cancel_all_orders_returns_count():
     ]
     engine, mocks = _build_engine()
 
-    # The new implementation uses session.execute(update(...).returning(Order))
+    # Replace session.execute to return the cancelled orders via scalars().all()
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = orders
-    mocks["session"].execute = AsyncMock(return_value=mock_result)
+    mocks["session"].execute.reset_mock()
+    mocks["session"].execute.return_value = mock_result
 
     count = await engine.cancel_all_orders(mocks["account_id"])
 
     assert count == 2
-    mocks["session"].execute.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

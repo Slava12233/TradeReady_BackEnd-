@@ -298,10 +298,7 @@ class TestCancelOrderAgentScoping:
             await engine.cancel_order(ACCOUNT_ID, order_id, agent_id=AGENT_B)
 
     async def test_cancel_all_orders_only_cancels_agent_orders(self):
-        engine, mocks = _make_engine()
-
-        # The new cancel_all_orders uses an atomic UPDATE ... RETURNING
-        # via session.execute().  Mock the session to return one cancelled order.
+        # Build a custom session whose execute returns one cancelled order.
         agent_a_order = MagicMock(spec=Order)
         agent_a_order.id = uuid4()
         agent_a_order.account_id = ACCOUNT_ID
@@ -314,12 +311,18 @@ class TestCancelOrderAgentScoping:
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [agent_a_order]
-        mocks["session"].execute = AsyncMock(return_value=mock_result)
+
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=mock_result)
+        session.commit = AsyncMock()
+        session.rollback = AsyncMock()
+
+        engine, mocks = _make_engine(session=session)
 
         count = await engine.cancel_all_orders(ACCOUNT_ID, agent_id=AGENT_A)
 
-        # Should have executed an UPDATE statement (atomic cancel)
-        mocks["session"].execute.assert_called_once()
+        # Should have executed an atomic UPDATE statement
+        session.execute.assert_called_once()
         assert count == 1
 
 
