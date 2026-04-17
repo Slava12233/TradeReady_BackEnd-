@@ -451,9 +451,9 @@ services:
       BACKUP_LOG: /var/log/backup.log
     volumes:
       - backup_data:/backups
-      - ./scripts/backup_db.sh:/scripts/backup_db.sh:ro
-      - ./scripts/backup_cron.sh:/scripts/backup_cron.sh:ro
-      - ./scripts/check_backup_health.sh:/scripts/check_backup_health.sh:ro
+      - ./scripts/backup_db.sh:/scripts/backup_db.sh
+      - ./scripts/backup_cron.sh:/scripts/backup_cron.sh
+      - ./scripts/check_backup_health.sh:/scripts/check_backup_health.sh
     networks:
       - internal
     depends_on:
@@ -465,7 +465,6 @@ services:
     command:
       - |
         apk add --no-cache bash postgresql16-client && \
-        chmod +x /scripts/backup_db.sh /scripts/backup_cron.sh /scripts/check_backup_health.sh && \
         exec bash /scripts/backup_cron.sh
     healthcheck:
       test: ["CMD", "sh", "/scripts/check_backup_health.sh"]
