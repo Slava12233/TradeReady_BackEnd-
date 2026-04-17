@@ -365,21 +365,22 @@ async def test_cancel_order_unlocks_funds():
 
 @pytest.mark.asyncio
 async def test_cancel_all_orders_returns_count():
-    """cancel_all_orders() returns number of cancelled orders."""
+    """cancel_all_orders() returns number of cancelled orders via atomic UPDATE."""
     orders = [
-        _make_db_order(side="buy", type_="limit", status="pending", price="59000"),
-        _make_db_order(side="sell", type_="limit", status="pending", price="65000"),
+        _make_db_order(side="buy", type_="limit", status="cancelled", price="59000"),
+        _make_db_order(side="sell", type_="limit", status="cancelled", price="65000"),
     ]
     engine, mocks = _build_engine()
-    mocks["order_repo"].list_open_by_account = AsyncMock(return_value=orders)
-    # cancel() must return the order being cancelled so _release_locked_funds
-    # can access .price/.quantity/.side as real values (not bare AsyncMock).
-    mocks["order_repo"].cancel = AsyncMock(side_effect=orders)
+
+    # The new implementation uses session.execute(update(...).returning(Order))
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = orders
+    mocks["session"].execute = AsyncMock(return_value=mock_result)
 
     count = await engine.cancel_all_orders(mocks["account_id"])
 
     assert count == 2
-    assert mocks["order_repo"].cancel.await_count == 2
+    mocks["session"].execute.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

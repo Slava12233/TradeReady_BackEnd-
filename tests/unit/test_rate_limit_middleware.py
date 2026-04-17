@@ -89,8 +89,9 @@ class TestIsPublicPath:
     def test_docs_is_public(self) -> None:
         assert _is_public_path("/docs") is True
 
-    def test_auth_is_public(self) -> None:
-        assert _is_public_path("/api/v1/auth/login") is True
+    def test_auth_is_not_public(self) -> None:
+        """Auth paths go through IP-based auth rate limiter, not public bypass."""
+        assert _is_public_path("/api/v1/auth/login") is False
 
     def test_trade_is_not_public(self) -> None:
         assert _is_public_path("/api/v1/trade/order") is False

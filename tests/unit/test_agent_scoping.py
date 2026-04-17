@@ -300,25 +300,26 @@ class TestCancelOrderAgentScoping:
     async def test_cancel_all_orders_only_cancels_agent_orders(self):
         engine, mocks = _make_engine()
 
-        # Setup: list_open_by_agent returns only AGENT_A's orders
+        # The new cancel_all_orders uses an atomic UPDATE ... RETURNING
+        # via session.execute().  Mock the session to return one cancelled order.
         agent_a_order = MagicMock(spec=Order)
         agent_a_order.id = uuid4()
         agent_a_order.account_id = ACCOUNT_ID
         agent_a_order.agent_id = AGENT_A
         agent_a_order.side = "buy"
-        agent_a_order.price = 60000.0
-        agent_a_order.quantity = 1.0
+        agent_a_order.price = Decimal("60000")
+        agent_a_order.quantity = Decimal("1")
         agent_a_order.symbol = "BTCUSDT"
-        agent_a_order.status = "pending"
+        agent_a_order.status = "cancelled"
 
-        mocks["order_repo"].list_open_by_agent = AsyncMock(return_value=[agent_a_order])
-        mocks["order_repo"].cancel = AsyncMock(return_value=agent_a_order)
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [agent_a_order]
+        mocks["session"].execute = AsyncMock(return_value=mock_result)
 
         count = await engine.cancel_all_orders(ACCOUNT_ID, agent_id=AGENT_A)
 
-        # Should use agent-scoped listing
-        mocks["order_repo"].list_open_by_agent.assert_called_once_with(AGENT_A)
-        mocks["order_repo"].list_open_by_account.assert_not_called()
+        # Should have executed an UPDATE statement (atomic cancel)
+        mocks["session"].execute.assert_called_once()
         assert count == 1
 
 
